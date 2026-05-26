@@ -1,0 +1,3 @@
+isin,name,currency,coupon_rate,coupon_frequency,day_count_convention,maturity_date,first_coupon_date
+XS1234567890,EXAMPLE CORP 5% 2030,EUR,0.05,2,Act/360,2030-06-15,2025-06-15
+XS0987654321,EXAMPLE BANK 4.75% 2028,EUR,0.0475,2,Act/360,2028-09-20,2025-09-20
