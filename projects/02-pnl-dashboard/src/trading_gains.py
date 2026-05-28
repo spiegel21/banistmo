@@ -18,25 +18,25 @@ BONDS_STATIC_PATH = Path(__file__).parent.parent / "data" / "bonds_static.csv"
 
 def realized_pnl(trades_df: pd.DataFrame) -> pd.DataFrame:
     """
-    FIFO P&L for all ISINs.
+    FIFO P&L for all CUSIPs.
 
     Returns a DataFrame with one row per sell trade:
-    isin, sell_date, sold_nominal, proceeds, cost_basis, realized_gain
+    cusip, sell_date, sold_nominal, proceeds, cost_basis, realized_gain
     """
     results = []
 
-    for isin, group in trades_df.groupby("isin"):
+    for cusip, group in trades_df.groupby("cusip"):
         group = group.sort_values("trade_date").reset_index(drop=True)
-        buy_queue: deque[tuple[float, float]] = deque()  # (nominal, net_proceeds_per_unit)
+        buy_queue: deque[tuple[float, float]] = deque()  # (nominal, net_per_unit)
 
         for _, row in group.iterrows():
             if row["nominal"] > 0:
-                # buy: push (nominal, proceeds_per_unit) onto queue
-                buy_queue.append((row["nominal"], row["net_proceeds"] / row["nominal"]))
+                # buy: push (nominal, net_per_unit) onto queue
+                buy_queue.append((row["nominal"], row["net"] / row["nominal"]))
             else:
                 # sell: match against earliest buys
                 sell_nominal = abs(row["nominal"])
-                sell_proceeds = abs(row["net_proceeds"])
+                sell_proceeds = abs(row["net"])
                 remaining = sell_nominal
                 cost_basis = 0.0
 
@@ -51,7 +51,7 @@ def realized_pnl(trades_df: pd.DataFrame) -> pd.DataFrame:
                         buy_queue[0] = (buy_nom - matched, buy_unit_cost)
 
                 results.append({
-                    "isin": isin,
+                    "cusip": cusip,
                     "sell_date": row["trade_date"],
                     "sold_nominal": sell_nominal,
                     "proceeds": sell_proceeds,
@@ -61,22 +61,22 @@ def realized_pnl(trades_df: pd.DataFrame) -> pd.DataFrame:
 
     if not results:
         return pd.DataFrame(columns=[
-            "isin", "sell_date", "sold_nominal", "proceeds", "cost_basis", "realized_gain"
+            "cusip", "sell_date", "sold_nominal", "proceeds", "cost_basis", "realized_gain"
         ])
     return pd.DataFrame(results)
 
 
 def total_realized_pnl(trades_df: pd.DataFrame) -> pd.DataFrame:
-    """Aggregate realized P&L by ISIN."""
+    """Aggregate realized P&L by CUSIP."""
     detail = realized_pnl(trades_df)
     if detail.empty:
         return detail
-    return detail.groupby("isin", as_index=False)["realized_gain"].sum()
+    return detail.groupby("cusip", as_index=False)["realized_gain"].sum()
 
 
 def unrealized_pnl(
     positions: dict[str, Position],
-    current_prices: dict[str, float],  # {isin: clean_price}
+    current_prices: dict[str, float],  # {cusip: clean_price}
     bonds_static_path: Path = BONDS_STATIC_PATH,
     as_of: date | None = None,
 ) -> pd.DataFrame:
@@ -84,7 +84,7 @@ def unrealized_pnl(
     Unrealized P&L = (current dirty price - book dirty price) × net_nominal / 100
 
     current_prices are clean prices (% of par). We add today's accrued to get dirty.
-    Book dirty price = wavg_clean_price + accrued_at_trade (approximated from bonds_static).
+    Book dirty price = wavg_price + accrued at last settle (from bonds_static).
     """
     if as_of is None:
         as_of = date.today()
@@ -92,32 +92,32 @@ def unrealized_pnl(
     bonds_static = load_bonds_static(bonds_static_path)
     rows = []
 
-    for isin, pos in positions.items():
+    for cusip, pos in positions.items():
         if pos.net_nominal == 0:
             continue
 
-        clean_px = current_prices.get(isin)
+        clean_px = current_prices.get(cusip)
         if clean_px is None:
-            rows.append({"isin": isin, "unrealized_gain": None, "note": "no price"})
+            rows.append({"cusip": cusip, "unrealized_gain": None, "note": "no price"})
             continue
 
-        bond = bonds_static.get(isin)
+        bond = bonds_static.get(cusip)
         if bond is None:
-            rows.append({"isin": isin, "unrealized_gain": None, "note": "missing bond static"})
+            rows.append({"cusip": cusip, "unrealized_gain": None, "note": "missing bond static"})
             continue
 
         current_accrued_pct = accrued_interest(100, bond, as_of)  # per 100 nominal
         current_dirty = clean_px + current_accrued_pct
 
         book_accrued_pct = accrued_interest(100, bond, pos.last_settle)
-        book_dirty = pos.wavg_clean_price + book_accrued_pct
+        book_dirty = pos.wavg_price + book_accrued_pct
 
         unrealized = (current_dirty - book_dirty) * pos.net_nominal / 100
         rows.append({
-            "isin": isin,
+            "cusip": cusip,
             "net_nominal": pos.net_nominal,
-            "book_clean_px": pos.wavg_clean_price,
-            "current_clean_px": clean_px,
+            "book_price": pos.wavg_price,
+            "current_price": clean_px,
             "unrealized_gain": round(unrealized, 2),
             "note": "",
         })

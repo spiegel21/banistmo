@@ -15,13 +15,13 @@ TRADES_PATH = Path(__file__).parent.parent / "data" / "trades.csv"
 PORTFOLIO_PATH = Path(__file__).parent.parent / "data" / "portfolio.csv"
 
 _DTYPES = {
-    "isin": str,
+    "cusip": str,
+    "side": str,
     "nominal": float,
     "principal": float,
-    "net_proceeds": float,
-    "accrued_at_trade": float,
-    "clean_price": float,
-    "yield_pct": float,
+    "net": float,
+    "accrued": float,
+    "price": float,
     "trader": str,
 }
 
@@ -30,34 +30,50 @@ def load_trades(trades_path: Path = TRADES_PATH) -> pd.DataFrame:
     """Read trades.csv; return empty DataFrame if file doesn't exist yet."""
     path = Path(trades_path)
     if not path.exists() or path.stat().st_size == 0:
-        return pd.DataFrame(columns=list(_DTYPES.keys()) + ["trade_date", "settle_date"])
+        return pd.DataFrame(columns=list(_DTYPES.keys()) + ["yield_closed", "trade_date", "settle_date"])
 
-    df = pd.read_csv(path, dtype=_DTYPES, parse_dates=["trade_date", "settle_date"])
-    df = df.drop_duplicates(subset=["isin", "trade_date", "trader", "nominal"])
+    df = pd.read_csv(
+        path,
+        dtype=_DTYPES,
+        parse_dates=["trade_date", "settle_date"],
+    )
+
+    # sign nominal by side so downstream code can use nominal > 0 for buys
+    df["side"] = df["side"].str.lower().str.strip()
+    df["nominal"] = df.apply(
+        lambda r: r["nominal"] if r["side"] == "buy" else -abs(r["nominal"]),
+        axis=1,
+    )
+
+    # yield_closed may be None/NaN — leave as float column with NaN
+    if "yield_closed" in df.columns:
+        df["yield_closed"] = pd.to_numeric(df["yield_closed"], errors="coerce")
+
+    df = df.drop_duplicates(subset=["cusip", "trade_date", "trader", "nominal"])
     return df.sort_values("trade_date").reset_index(drop=True)
 
 
 def compute_positions(trades_df: pd.DataFrame) -> dict[str, Position]:
-    """Group trades by ISIN → net position with weighted-average clean price."""
+    """Group trades by CUSIP → net position with weighted-average price."""
     if trades_df.empty:
         return {}
 
     positions: dict[str, Position] = {}
-    for isin, group in trades_df.groupby("isin"):
+    for cusip, group in trades_df.groupby("cusip"):
         net_nominal = group["nominal"].sum()
-        book_value = group["net_proceeds"].sum()
+        book_value = group["net"].sum()
 
         buys = group[group["nominal"] > 0]
         wavg = (
-            (buys["clean_price"] * buys["nominal"]).sum() / buys["nominal"].sum()
+            (buys["price"] * buys["nominal"]).sum() / buys["nominal"].sum()
             if not buys.empty else 0.0
         )
         last_settle = group["settle_date"].max().date()
 
-        positions[isin] = Position(
-            isin=isin,
+        positions[cusip] = Position(
+            cusip=cusip,
             net_nominal=net_nominal,
-            wavg_clean_price=wavg,
+            wavg_price=wavg,
             book_value=book_value,
             last_settle=last_settle,
         )
@@ -81,13 +97,13 @@ def load_portfolio(portfolio_path: Path = PORTFOLIO_PATH) -> dict[str, Position]
     positions = {}
     for _, row in df.iterrows():
         p = Position(
-            isin=row["isin"],
+            cusip=row["cusip"],
             net_nominal=float(row["net_nominal"]),
-            wavg_clean_price=float(row["wavg_clean_price"]),
+            wavg_price=float(row["wavg_price"]),
             book_value=float(row["book_value"]),
             last_settle=row["last_settle"].date(),
         )
-        positions[p.isin] = p
+        positions[p.cusip] = p
     return positions
 
 
@@ -101,9 +117,9 @@ def refresh_portfolio() -> dict[str, Position]:
 
 if __name__ == "__main__":
     positions = refresh_portfolio()
-    for isin, pos in positions.items():
+    for cusip, pos in positions.items():
         print(
-            f"{isin}  nominal={pos.net_nominal:,.0f}"
-            f"  wavg_px={pos.wavg_clean_price:.4f}"
+            f"{cusip}  nominal={pos.net_nominal:,.0f}"
+            f"  wavg_px={pos.wavg_price:.4f}"
             f"  book={pos.book_value:,.2f}"
         )

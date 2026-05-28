@@ -42,16 +42,18 @@ Written and appended to by the local email parser. One row per trade confirmatio
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `isin` | str | 12-char ISIN, e.g. `XS1234567890` |
-| `nominal` | float | Face value, **signed** (+buy / −sell) |
-| `principal` | float | clean_price × \|nominal\| / 100 |
-| `net_proceeds` | float | Cash exchanged (negative for buys) |
-| `accrued_at_trade` | float | Accrued interest at settle date |
-| `clean_price` | float | Quoted price (% of par, e.g. 98.5) |
-| `yield_pct` | float | Yield to maturity at trade time |
+| `Timestamp` | str | Parse timestamp (informational) |
+| `cusip` | str | 9-char CUSIP, e.g. `037833100` |
+| `side` | str | `buy` or `sell` |
+| `nominal` | float | Face value (always positive in CSV; `load_trades` applies sign) |
+| `principal` | float | price × \|nominal\| / 100 |
+| `price` | float | Quoted clean price (% of par, e.g. 98.5) |
+| `accrued` | float | Accrued interest at settle date |
+| `net` | float | Cash exchanged (negative for buys) |
+| `yield_closed` | float\|None | Yield to maturity; may be blank — ignored in calculations |
 | `trade_date` | date | ISO 8601 (YYYY-MM-DD) |
-| `trader` | str | Trader name |
 | `settle_date` | date | Settlement date |
+| `trader` | str | Trader name |
 
 ### Bond static data (`data/bonds_static.csv`)
 

@@ -125,25 +125,25 @@ with left:
             st.info("Positions loaded but no prices available. Refresh Bloomberg prices.")
     else:
         accruals_lookup = (
-            accruals_df.set_index("isin")["accrued"].to_dict()
+            accruals_df.set_index("cusip")["accrued"].to_dict()
             if not accruals_df.empty else {}
         )
         realized_lookup = (
-            realized_df.set_index("isin")["realized_gain"].to_dict()
+            realized_df.set_index("cusip")["realized_gain"].to_dict()
             if not realized_df.empty else {}
         )
 
         display_rows = []
         for _, row in mtm_df.iterrows():
-            isin = row["isin"]
+            cusip = row["cusip"]
             display_rows.append({
-                "ISIN": isin,
+                "CUSIP": cusip,
                 "Nominal": f"{row['net_nominal']:,.0f}",
                 "Clean Px": f"{row['clean_px']:.3f}" if row["clean_px"] else "—",
                 "Dirty Px": f"{row['dirty_px']:.3f}" if row["dirty_px"] else "—",
                 "MTM Gain": _fmt(row["mtm_gain"]),
-                "Accrued": _fmt(accruals_lookup.get(isin)),
-                "Realized": _fmt(realized_lookup.get(isin, 0.0)),
+                "Accrued": _fmt(accruals_lookup.get(cusip)),
+                "Realized": _fmt(realized_lookup.get(cusip, 0.0)),
             })
 
         st.dataframe(pd.DataFrame(display_rows), use_container_width=True, hide_index=True)
@@ -191,5 +191,5 @@ else:
 # ── footer ────────────────────────────────────────────────────────────────────
 
 st.markdown("---")
-st.caption(f"As of {as_of}  |  {len(positions)} ISINs  |  "
+st.caption(f"As of {as_of}  |  {len(positions)} CUSIPs  |  "
            f"{len(trades_df)} trade confirmations")

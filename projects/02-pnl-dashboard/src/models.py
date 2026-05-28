@@ -4,30 +4,31 @@ from datetime import date
 
 @dataclass
 class Trade:
-    isin: str
+    cusip: str
+    side: str               # "buy" or "sell" (normalised to lowercase)
     nominal: float          # signed: positive = buy, negative = sell
-    principal: float        # clean_price * |nominal| / 100
-    net_proceeds: float     # cash exchanged; negative for buys
-    accrued_at_trade: float # accrued interest at settle date
-    clean_price: float      # quoted clean price (% of par)
-    yield_pct: float        # yield to maturity at trade time
+    principal: float        # price * |nominal| / 100
+    net: float              # cash exchanged; negative for buys
+    accrued: float          # accrued interest at settle date
+    price: float            # quoted clean price (% of par)
+    yield_closed: float | None  # yield to maturity at trade time; may be None
     trade_date: date
-    trader: str
     settle_date: date
+    trader: str
 
 
 @dataclass
 class Position:
-    isin: str
+    cusip: str
     net_nominal: float      # sum of signed nominals
-    wavg_clean_price: float # weighted-average clean price (cost basis)
-    book_value: float       # sum of net_proceeds (negative = net long position)
+    wavg_price: float       # weighted-average clean price (cost basis)
+    book_value: float       # sum of net (negative = net long position)
     last_settle: date
 
 
 @dataclass
 class BondStatic:
-    isin: str
+    cusip: str
     name: str
     currency: str
     coupon_rate: float          # decimal, e.g. 0.045 for 4.5%

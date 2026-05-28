@@ -1,7 +1,7 @@
 """
 Bloomberg pricing bridge via xlwings.
 
-Writes ISINs to the Excel template, triggers Bloomberg BDP formula refresh,
+Writes CUSIPs to the Excel template, triggers Bloomberg BDP formula refresh,
 reads back clean prices (and optionally ASW spread + YTM).
 
 Requirements:
@@ -75,7 +75,7 @@ def refresh_and_read(wb, n_isins: int) -> dict[str, dict]:
         wb.app.calculate()
         elapsed += _POLL_INTERVAL
 
-    isins = [sheet["A" + str(i + 2)].value for i in range(n_isins)]
+    cusips = [sheet["A" + str(i + 2)].value for i in range(n_isins)]
     px_last = sheet.range(f"B2:B{n_isins + 1}").value
     asw = sheet.range(f"C2:C{n_isins + 1}").value
     ytm = sheet.range(f"D2:D{n_isins + 1}").value
@@ -85,9 +85,9 @@ def refresh_and_read(wb, n_isins: int) -> dict[str, dict]:
         px_last, asw, ytm = [px_last], [asw], [ytm]
 
     result = {}
-    for i, isin in enumerate(isins):
-        if isin:
-            result[isin] = {
+    for i, cusip in enumerate(cusips):
+        if cusip:
+            result[cusip] = {
                 "px_last": px_last[i],
                 "asw": asw[i] if asw else None,
                 "ytm": ytm[i] if ytm else None,
@@ -118,7 +118,7 @@ def get_prices(
             finally:
                 app.quit()
 
-            prices = {isin: v["px_last"] for isin, v in data.items() if v["px_last"] is not None}
+            prices = {cusip: v["px_last"] for cusip, v in data.items() if v["px_last"] is not None}
             _save_price_snapshot(prices)
             return prices
         except Exception as e:
@@ -133,28 +133,28 @@ def _save_price_snapshot(prices: dict[str, float]) -> None:
     out_path = PRICES_DIR / f"prices_{ts}.csv"
     with open(out_path, "w", newline="") as f:
         writer = csv.writer(f)
-        writer.writerow(["isin", "px_last", "date"])
+        writer.writerow(["cusip", "px_last", "date"])
         today = date.today().isoformat()
-        for isin, px in prices.items():
-            writer.writerow([isin, px, today])
+        for cusip, px in prices.items():
+            writer.writerow([cusip, px, today])
 
 
-def _load_manual_prices(isins: list[str]) -> dict[str, float]:
-    """Load the most recent price for each ISIN from manual_prices.csv."""
+def _load_manual_prices(cusips: list[str]) -> dict[str, float]:
+    """Load the most recent price for each CUSIP from manual_prices.csv."""
     if not MANUAL_PRICES_PATH.exists():
         return {}
 
-    prices: dict[str, tuple[str, float]] = {}  # {isin: (date_str, price)}
+    prices: dict[str, tuple[str, float]] = {}  # {cusip: (date_str, price)}
     with open(MANUAL_PRICES_PATH, newline="") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            isin = row["isin"]
-            if isin in isins:
-                existing_date = prices.get(isin, ("", 0.0))[0]
+            cusip = row["cusip"]
+            if not cusips or cusip in cusips:
+                existing_date = prices.get(cusip, ("", 0.0))[0]
                 if row["date"] >= existing_date:
-                    prices[isin] = (row["date"], float(row["px_last"]))
+                    prices[cusip] = (row["date"], float(row["px_last"]))
 
-    return {isin: v[1] for isin, v in prices.items()}
+    return {cusip: v[1] for cusip, v in prices.items()}
 
 
 def load_latest_prices() -> dict[str, float]:
@@ -167,4 +167,4 @@ def load_latest_prices() -> dict[str, float]:
             for row in reader:
                 prices[row["isin"]] = float(row["px_last"])
         return prices
-    return _load_manual_prices([])
+    return _load_manual_prices(cusips=[])

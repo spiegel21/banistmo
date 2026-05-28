@@ -10,30 +10,33 @@ Multi-project monorepo. Each project under `projects/` is independent — do not
 
 ### Data model
 
-Trade confirmation fields (sourced from email parser, written to `data/trades/`):
-- `isin` — ISIN identifier (12-char string, e.g. `XS1234567890`)
-- `nominal` — face value in currency units, **signed**: positive = buy, negative = sell
-- `principal` — clean price × |nominal| / 100
-- `net_proceeds` — cash actually exchanged (principal + accrued_at_trade); negative for buys (cash out)
-- `accrued_at_trade` — interest accrued from last coupon to settle date at time of trade
-- `clean_price` — quoted price (percent of par, e.g. 98.5)
-- `yield_pct` — yield to maturity at time of trade
+Trade confirmation fields (exact headers from `data/trades.csv`, written by email parser):
+- `Timestamp` — when the confirmation was parsed (informational only)
+- `cusip` — CUSIP identifier (9-char string, e.g. `037833100`)
+- `side` — `buy` or `sell`; `load_trades()` normalises to signed nominal
+- `nominal` — face value in currency units (always positive in CSV; sign applied by `load_trades`)
+- `principal` — price × |nominal| / 100
+- `net` — cash actually exchanged (principal + accrued); negative for buys (cash out)
+- `accrued` — interest accrued from last coupon to settle date at time of trade
+- `price` — quoted clean price (percent of par, e.g. 98.5)
+- `yield_closed` — yield to maturity at time of trade; may be `None` (ignored in calculations)
 - `trade_date` — date trade was agreed (ISO 8601)
-- `trader` — trader name string
 - `settle_date` — settlement date (typically T+2 for bonds)
+- `trader` — trader name string
 
-Position fields (computed by position_manager.py):
-- `net_nominal` — sum of all signed nominals for this ISIN
-- `wavg_clean_price` — weighted average clean price (cost basis)
-- `book_value` — sum of net_proceeds across all trades
+Position fields (computed by position_manager.py, written to `data/portfolio.csv`):
+- `net_nominal` — sum of all signed nominals for this CUSIP
+- `wavg_price` — weighted average clean price (cost basis)
+- `book_value` — sum of `net` across all trades
 
 ### Key invariants
 
-- Positions are always recomputed from full trade history. Snapshots are cache only.
-- `nominal > 0` means the desk is long; `nominal < 0` means a sell/short.
-- `net_proceeds` for a buy is negative (cash leaves). For a sell it is positive.
+- Positions are always recomputed from full trade history. `portfolio.csv` is cache only.
+- After `load_trades()`, `nominal > 0` = long (buy), `nominal < 0` = sell/short.
+- `net` for a buy is negative (cash leaves). For a sell it is positive.
 - Bloomberg prices are clean prices (percent of par). Dirty price = clean price + accrued today.
 - All monetary values are in the bond's native currency (no FX conversion).
+- `yield_closed` NaN values are ignored in all calculations.
 
 ### Day-count conventions supported
 
@@ -44,8 +47,8 @@ Position fields (computed by position_manager.py):
 ### Bloomberg bridge
 
 - Requires Windows + Bloomberg Terminal running + xlwings + pywin32
-- Template: `templates/bloomberg_prices.xlsx` — column A = ISINs, B/C/D = BDP formulas
-- Fallback: `data/prices/manual_prices.csv` with columns `isin, px_last, date`
+- Template: `templates/bloomberg_prices.xlsx` — column A = CUSIPs, B/C/D = BDP formulas
+- Fallback: `data/prices/manual_prices.csv` with columns `cusip, px_last, date`
 
 ### File layout
 

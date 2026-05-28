@@ -21,7 +21,7 @@ def load_bonds_static(path: Path = BONDS_STATIC_PATH) -> dict[str, BondStatic]:
     result = {}
     for _, row in df.iterrows():
         b = BondStatic(
-            isin=row["isin"],
+            cusip=row["cusip"],
             name=row["name"],
             currency=row["currency"],
             coupon_rate=float(row["coupon_rate"]),
@@ -30,7 +30,7 @@ def load_bonds_static(path: Path = BONDS_STATIC_PATH) -> dict[str, BondStatic]:
             maturity_date=row["maturity_date"].date(),
             first_coupon_date=row["first_coupon_date"].date(),
         )
-        result[b.isin] = b
+        result[b.cusip] = b
     return result
 
 
@@ -115,19 +115,19 @@ def total_portfolio_accruals(
         as_of = date.today()
 
     rows = []
-    for isin, pos in positions.items():
+    for cusip, pos in positions.items():
         if pos.net_nominal == 0:
             continue
-        bond = bonds_static.get(isin)
+        bond = bonds_static.get(cusip)
         if bond is None:
-            rows.append({"isin": isin, "net_nominal": pos.net_nominal, "accrued": None,
+            rows.append({"cusip": cusip, "net_nominal": pos.net_nominal, "accrued": None,
                          "note": "missing bond static"})
             continue
         ai = accrued_interest(abs(pos.net_nominal), bond, as_of)
         if pos.net_nominal < 0:
             ai = -ai  # short position accrues as a liability
         rows.append({
-            "isin": isin,
+            "cusip": cusip,
             "net_nominal": pos.net_nominal,
             "accrued": round(ai, 2),
             "note": "",
