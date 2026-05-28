@@ -15,6 +15,7 @@ class Trade:
     trade_date: date
     settle_date: date
     trader: str
+    portfolio: str          # book/portfolio name, e.g. "HY Book"
 
 
 @dataclass
@@ -31,6 +32,7 @@ class BondStatic:
     cusip: str
     name: str
     currency: str
+    country: str            # issuer country, e.g. "US", "DE"
     coupon_rate: float          # decimal, e.g. 0.045 for 4.5%
     coupon_frequency: int       # 1=annual, 2=semi-annual, 4=quarterly
     day_count_convention: str   # "Act/360", "Act/365", "30/360"

@@ -1,1 +1,1 @@
-cusip,name,currency,coupon_rate,coupon_frequency,day_count_convention,maturity_date,first_coupon_date
+cusip,name,currency,country,coupon_rate,coupon_frequency,day_count_convention,maturity_date,first_coupon_date

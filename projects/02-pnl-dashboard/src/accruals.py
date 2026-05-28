@@ -24,6 +24,7 @@ def load_bonds_static(path: Path = BONDS_STATIC_PATH) -> dict[str, BondStatic]:
             cusip=row["cusip"],
             name=row["name"],
             currency=row["currency"],
+            country=row.get("country", ""),
             coupon_rate=float(row["coupon_rate"]),
             coupon_frequency=int(row["coupon_frequency"]),
             day_count_convention=row["day_count_convention"],

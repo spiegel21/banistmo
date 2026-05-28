@@ -23,6 +23,7 @@ Trade confirmation fields (exact headers from `data/trades.csv`, written by emai
 - `trade_date` — date trade was agreed (ISO 8601)
 - `settle_date` — settlement date (typically T+2 for bonds)
 - `trader` — trader name string
+- `portfolio` — book name (e.g. `"HY Book"`); defaults to `"default"` if blank
 
 Position fields (computed by position_manager.py, written to `data/portfolio.csv`):
 - `net_nominal` — sum of all signed nominals for this CUSIP
@@ -37,6 +38,7 @@ Position fields (computed by position_manager.py, written to `data/portfolio.csv
 - Bloomberg prices are clean prices (percent of par). Dirty price = clean price + accrued today.
 - All monetary values are in the bond's native currency (no FX conversion).
 - `yield_closed` NaN values are ignored in all calculations.
+- `trade_date` (not `Timestamp`) is the effective date for all portfolio history calculations.
 
 ### Day-count conventions supported
 
@@ -46,15 +48,23 @@ Position fields (computed by position_manager.py, written to `data/portfolio.csv
 
 ### Bloomberg bridge
 
-- Requires Windows + Bloomberg Terminal running + xlwings + pywin32
-- Template: `templates/bloomberg_prices.xlsx` — column A = CUSIPs, B/C/D = BDP formulas
-- Fallback: `data/prices/manual_prices.csv` with columns `cusip, px_last, date`
+- BDP (current prices): `bloomberg.get_prices()` — uses Sheet1 of the Excel template
+- BDH (historical prices): `bloomberg.get_historical_prices_bdh()` — uses History sheet
+- Template: `templates/bloomberg_prices.xlsx` — regenerate with `templates/create_bloomberg_template.py`
+- Fallback: `data/prices/manual_prices.csv` (`cusip, px_last, date`) for current prices
+- Fallback: `data/prices/manual_price_history.csv` (`date, cusip, px_last`) for historical
 
 ### File layout
 
-- `data/trades.csv` — append-only trade log; written by the local email parser; never hand-edited
-- `data/portfolio.csv` — computed positions (rewritten from trades.csv on every run; not committed)
-- `data/prices/prices_YYYYMMDD_HHMMSS.csv` — Bloomberg price snapshots (auto-generated)
+| File | Description | Committed? |
+|------|------------|-----------|
+| `data/trades.csv` | Append-only trade log from email parser | No (real data) |
+| `data/initial_positions.csv` | Seed positions at portfolio inception (user-entered once) | Yes |
+| `data/bonds_static.csv` | Bond reference data: coupon, country, day-count (user-entered once per new CUSIP) | Yes |
+| `data/portfolio.csv` | Computed current positions (rewritten each run) | No |
+| `data/price_history.csv` | Accumulated daily Bloomberg prices (date, cusip, px_last) | No |
+| `data/pnl_history.csv` | Pre-computed daily P&L by CUSIP and portfolio | No |
+| `data/prices/prices_*.csv` | Timestamped BDP snapshots | No |
 
 ## Conventions
 
