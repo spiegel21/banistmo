@@ -47,11 +47,11 @@ Position fields (computed by position_manager.py):
 - Template: `templates/bloomberg_prices.xlsx` — column A = ISINs, B/C/D = BDP formulas
 - Fallback: `data/prices/manual_prices.csv` with columns `isin, px_last, date`
 
-### File naming
+### File layout
 
-- Trade CSVs: `data/trades/YYYY-MM-DD_trades.csv` (one file per trading day; re-running is safe)
-- Price snapshots: `data/prices/prices_YYYYMMDD_HHMMSS.csv`
-- Position snapshots: `data/positions/snapshot_YYYYMMDD_HHMMSS.parquet`
+- `data/trades.csv` — append-only trade log; written by the local email parser; never hand-edited
+- `data/portfolio.csv` — computed positions (rewritten from trades.csv on every run; not committed)
+- `data/prices/prices_YYYYMMDD_HHMMSS.csv` — Bloomberg price snapshots (auto-generated)
 
 ## Conventions
 

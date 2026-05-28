@@ -13,7 +13,7 @@ import streamlit as st
 # allow imports from src/
 sys.path.insert(0, str(Path(__file__).parent))
 
-from position_manager import get_positions, load_trades
+from position_manager import refresh_portfolio, load_portfolio, load_trades
 from accruals import load_bonds_static, total_portfolio_accruals
 from trading_gains import total_realized_pnl, unrealized_pnl
 from mtm import mark_to_market
@@ -50,8 +50,8 @@ st.title("Fixed-Income P&L Dashboard")
 # ── load data ─────────────────────────────────────────────────────────────────
 
 as_of = st.sidebar.date_input("As of date", value=date.today())
-trades_df = load_trades(DATA_DIR / "trades")
-positions = get_positions()
+trades_df = load_trades(DATA_DIR / "trades.csv")
+positions = refresh_portfolio()
 bonds_static = load_bonds_static(DATA_DIR / "bonds_static.csv")
 prices = load_latest_prices()
 
@@ -120,7 +120,7 @@ with left:
 
     if mtm_df.empty:
         if trades_df.empty:
-            st.info("No trades found. Drop CSVs into `data/trades/`.")
+            st.info("No trades found. Place your `trades.csv` in the `data/` folder.")
         else:
             st.info("Positions loaded but no prices available. Refresh Bloomberg prices.")
     else:

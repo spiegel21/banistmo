@@ -1,18 +1,18 @@
 """
-Compute net positions from full trade history.
+Compute net positions from full trade history and persist to portfolio.csv.
 
-Positions are always recomputed from scratch — snapshots are cache only.
+trades.csv   — append-only source of truth written by the email parser
+portfolio.csv — computed positions (recomputed from trades every time; not hand-edited)
 """
-import os
-from datetime import datetime, date
+from datetime import date
 from pathlib import Path
 
 import pandas as pd
 
-from models import Trade, Position
+from models import Position
 
-TRADES_DIR = Path(__file__).parent.parent / "data" / "trades"
-POSITIONS_DIR = Path(__file__).parent.parent / "data" / "positions"
+TRADES_PATH = Path(__file__).parent.parent / "data" / "trades.csv"
+PORTFOLIO_PATH = Path(__file__).parent.parent / "data" / "portfolio.csv"
 
 _DTYPES = {
     "isin": str,
@@ -26,23 +26,15 @@ _DTYPES = {
 }
 
 
-def load_trades(trades_dir: Path = TRADES_DIR) -> pd.DataFrame:
-    """Read all CSVs in trades_dir, deduplicate, return sorted DataFrame."""
-    files = sorted(Path(trades_dir).glob("*_trades.csv"))
-    if not files:
+def load_trades(trades_path: Path = TRADES_PATH) -> pd.DataFrame:
+    """Read trades.csv; return empty DataFrame if file doesn't exist yet."""
+    path = Path(trades_path)
+    if not path.exists() or path.stat().st_size == 0:
         return pd.DataFrame(columns=list(_DTYPES.keys()) + ["trade_date", "settle_date"])
 
-    frames = []
-    for f in files:
-        df = pd.read_csv(f, dtype=_DTYPES, parse_dates=["trade_date", "settle_date"])
-        frames.append(df)
-
-    all_trades = pd.concat(frames, ignore_index=True)
-    # deduplicate: same isin + trade_date + trader + nominal is the same confirmation
-    all_trades = all_trades.drop_duplicates(
-        subset=["isin", "trade_date", "trader", "nominal"]
-    )
-    return all_trades.sort_values("trade_date").reset_index(drop=True)
+    df = pd.read_csv(path, dtype=_DTYPES, parse_dates=["trade_date", "settle_date"])
+    df = df.drop_duplicates(subset=["isin", "trade_date", "trader", "nominal"])
+    return df.sort_values("trade_date").reset_index(drop=True)
 
 
 def compute_positions(trades_df: pd.DataFrame) -> dict[str, Position]:
@@ -56,11 +48,10 @@ def compute_positions(trades_df: pd.DataFrame) -> dict[str, Position]:
         book_value = group["net_proceeds"].sum()
 
         buys = group[group["nominal"] > 0]
-        if not buys.empty:
-            wavg = (buys["clean_price"] * buys["nominal"]).sum() / buys["nominal"].sum()
-        else:
-            wavg = 0.0
-
+        wavg = (
+            (buys["clean_price"] * buys["nominal"]).sum() / buys["nominal"].sum()
+            if not buys.empty else 0.0
+        )
         last_settle = group["settle_date"].max().date()
 
         positions[isin] = Position(
@@ -74,51 +65,42 @@ def compute_positions(trades_df: pd.DataFrame) -> dict[str, Position]:
     return positions
 
 
-def save_snapshot(positions: dict[str, Position], positions_dir: Path = POSITIONS_DIR) -> Path:
-    """Write a timestamped parquet snapshot of current positions."""
-    Path(positions_dir).mkdir(parents=True, exist_ok=True)
+def update_portfolio(positions: dict[str, Position], portfolio_path: Path = PORTFOLIO_PATH) -> None:
+    """Rewrite portfolio.csv with current positions (replaces previous contents)."""
     rows = [vars(p) for p in positions.values()]
-    df = pd.DataFrame(rows)
-    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out_path = Path(positions_dir) / f"snapshot_{ts}.parquet"
-    df.to_parquet(out_path, index=False)
-    return out_path
+    pd.DataFrame(rows).to_csv(portfolio_path, index=False)
 
 
-def load_latest_snapshot(positions_dir: Path = POSITIONS_DIR) -> dict[str, Position] | None:
-    """Load the most recent snapshot; returns None if none exists."""
-    snapshots = sorted(Path(positions_dir).glob("snapshot_*.parquet"))
-    if not snapshots:
-        return None
+def load_portfolio(portfolio_path: Path = PORTFOLIO_PATH) -> dict[str, Position]:
+    """Read portfolio.csv; returns empty dict if file doesn't exist."""
+    path = Path(portfolio_path)
+    if not path.exists():
+        return {}
 
-    df = pd.read_parquet(snapshots[-1])
+    df = pd.read_csv(path, parse_dates=["last_settle"])
     positions = {}
     for _, row in df.iterrows():
         p = Position(
             isin=row["isin"],
-            net_nominal=row["net_nominal"],
-            wavg_clean_price=row["wavg_clean_price"],
-            book_value=row["book_value"],
-            last_settle=row["last_settle"] if isinstance(row["last_settle"], date)
-                        else row["last_settle"].date(),
+            net_nominal=float(row["net_nominal"]),
+            wavg_clean_price=float(row["wavg_clean_price"]),
+            book_value=float(row["book_value"]),
+            last_settle=row["last_settle"].date(),
         )
         positions[p.isin] = p
     return positions
 
 
-def get_positions(use_cache: bool = False) -> dict[str, Position]:
-    """Main entry point: load trades and return current positions."""
-    if use_cache:
-        cached = load_latest_snapshot()
-        if cached is not None:
-            return cached
-
+def refresh_portfolio() -> dict[str, Position]:
+    """Recompute positions from trades.csv and write portfolio.csv. Main entry point."""
     trades = load_trades()
-    return compute_positions(trades)
+    positions = compute_positions(trades)
+    update_portfolio(positions)
+    return positions
 
 
 if __name__ == "__main__":
-    positions = get_positions()
+    positions = refresh_portfolio()
     for isin, pos in positions.items():
         print(
             f"{isin}  nominal={pos.net_nominal:,.0f}"

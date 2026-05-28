@@ -19,22 +19,15 @@ ENV/
 .ipynb_checkpoints/
 *.ipynb
 
-# Data / outputs (generated — not committed)
-projects/02-pnl-dashboard/data/positions/
+# Data files with real trade / price data (not committed)
+projects/02-pnl-dashboard/data/trades.csv
+projects/02-pnl-dashboard/data/portfolio.csv
 projects/02-pnl-dashboard/data/prices/
-projects/02-pnl-dashboard/data/trades/
-# keep the drop-zone folder itself
-!projects/02-pnl-dashboard/data/trades/.gitkeep
-!projects/02-pnl-dashboard/data/positions/.gitkeep
-!projects/02-pnl-dashboard/data/prices/.gitkeep
 
 # Bloomberg Excel outputs (contain market data, not committed)
 *.xlsm
 # But DO commit the template
 !projects/02-pnl-dashboard/templates/bloomberg_prices.xlsx
-
-# Parquet snapshots
-*.parquet
 
 # Secrets / credentials
 *.env

@@ -6,12 +6,12 @@ Real-time P&L dashboard for a fixed-income bond portfolio. Tracks positions, acc
 
 ```
 Email parser (local, not in repo)
-    │ writes CSV
+    │ appends rows to
     ▼
-data/trades/YYYY-MM-DD_trades.csv
+data/trades.csv
     │
     ▼
-src/position_manager.py  ──►  net positions per ISIN
+src/position_manager.py  ──►  data/portfolio.csv (current positions)
     │
     ├── src/accruals.py      ◄── data/bonds_static.csv
     ├── src/trading_gains.py     (realized FIFO + unrealized)
@@ -28,7 +28,7 @@ python -m venv .venv
 .venv\Scripts\activate         # Windows
 pip install -r requirements.txt
 
-# 1. Drop trade CSVs into data/trades/
+# 1. Place your trades.csv in data/  (email parser writes here)
 # 2. Fill data/bonds_static.csv for any new ISINs
 # 3. Run the dashboard
 streamlit run src/dashboard.py
@@ -36,9 +36,9 @@ streamlit run src/dashboard.py
 
 ## Data inputs
 
-### Trade CSV (`data/trades/YYYY-MM-DD_trades.csv`)
+### Trade log (`data/trades.csv`)
 
-Written by the local email parser. One row per trade confirmation.
+Written and appended to by the local email parser. One row per trade confirmation. Never hand-edit.
 
 | Column | Type | Description |
 |--------|------|-------------|
