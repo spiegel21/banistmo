@@ -1,125 +1,96 @@
 """
-Realized and unrealized P&L calculation.
+Realized P&L via signed-lot FIFO matching.
 
-Realized P&L uses FIFO matching: sells are matched against the earliest buys.
-Unrealized P&L compares current mark-to-market dirty price vs. book dirty price.
+Handles longs, shorts, and position flips symmetrically: a closing trade is
+matched FIFO against open lots of the opposite sign; any excess opens a new lot
+in the new direction. Realized gain is booked on the date of the closing trade.
+
+Unrealized P&L lives in mtm.py (it requires current prices), keeping this module
+dependent only on the trade blotter.
 """
 from collections import deque
-from datetime import date
-from pathlib import Path
+from dataclasses import dataclass
 
 import pandas as pd
 
-from models import Position
-from accruals import accrued_interest, load_bonds_static
+_QTY_EPS = 1e-6  # nominal smaller than this is treated as fully closed
 
-BONDS_STATIC_PATH = Path(__file__).parent.parent / "data" / "bonds_static.csv"
+
+@dataclass
+class _Lot:
+    qty: float        # signed: >0 long, <0 short
+    unit_cash: float  # absolute cash per unit of nominal (always positive)
+
+
+def _grouping_keys(trades_df: pd.DataFrame) -> list[str]:
+    """Match FIFO within (portfolio, cusip) when portfolio is present, else cusip."""
+    return ["portfolio", "cusip"] if "portfolio" in trades_df.columns else ["cusip"]
 
 
 def realized_pnl(trades_df: pd.DataFrame) -> pd.DataFrame:
     """
-    FIFO P&L for all CUSIPs.
+    FIFO realized P&L, one row per closing event.
 
-    Returns a DataFrame with one row per sell trade:
-    cusip, sell_date, sold_nominal, proceeds, cost_basis, realized_gain
+    Returns columns: portfolio (if present), cusip, close_date,
+    closed_nominal, realized_gain.
     """
-    results = []
+    keys = _grouping_keys(trades_df)
+    out_cols = keys + ["close_date", "closed_nominal", "realized_gain"]
 
-    for cusip, group in trades_df.groupby("cusip"):
+    if trades_df.empty:
+        return pd.DataFrame(columns=out_cols)
+
+    results = []
+    for key_vals, group in trades_df.groupby(keys):
+        if not isinstance(key_vals, tuple):
+            key_vals = (key_vals,)
         group = group.sort_values("trade_date").reset_index(drop=True)
-        buy_queue: deque[tuple[float, float]] = deque()  # (nominal, net_per_unit)
+        lots: deque[_Lot] = deque()
 
         for _, row in group.iterrows():
-            if row["nominal"] > 0:
-                # buy: push (nominal, net_per_unit) onto queue
-                buy_queue.append((row["nominal"], row["net"] / row["nominal"]))
-            else:
-                # sell: match against earliest buys
-                sell_nominal = abs(row["nominal"])
-                sell_proceeds = abs(row["net"])
-                remaining = sell_nominal
-                cost_basis = 0.0
+            q = float(row["nominal"])
+            if q == 0:
+                continue
+            unit = abs(float(row["net"])) / abs(q)
+            direction = 1 if q > 0 else -1
+            remaining = q
+            closed_here = 0.0
+            gain_here = 0.0
 
-                while remaining > 0 and buy_queue:
-                    buy_nom, buy_unit_cost = buy_queue[0]
-                    matched = min(remaining, buy_nom)
-                    cost_basis += matched * abs(buy_unit_cost)
-                    remaining -= matched
-                    if matched == buy_nom:
-                        buy_queue.popleft()
-                    else:
-                        buy_queue[0] = (buy_nom - matched, buy_unit_cost)
+            # Close against opposite-sign lots FIFO.
+            while abs(remaining) > _QTY_EPS and lots and (lots[0].qty > 0) == (direction < 0):
+                lot = lots[0]
+                m = min(abs(remaining), abs(lot.qty))  # units matched (positive)
+                if lot.qty > 0:
+                    # closing a long with a sell: gain = (sell - buy) per unit
+                    gain_here += m * (unit - lot.unit_cash)
+                else:
+                    # closing a short with a buy: gain = (short sale - buy cover) per unit
+                    gain_here += m * (lot.unit_cash - unit)
+                closed_here += m
+                remaining -= direction * m   # move remaining toward zero
+                lot.qty += direction * m     # move lot toward zero
+                if abs(lot.qty) <= _QTY_EPS:
+                    lots.popleft()
 
+            # Any leftover opens a new lot in the trade's direction.
+            if abs(remaining) > _QTY_EPS:
+                lots.append(_Lot(qty=remaining, unit_cash=unit))
+
+            if closed_here > _QTY_EPS:
                 results.append({
-                    "cusip": cusip,
-                    "sell_date": row["trade_date"],
-                    "sold_nominal": sell_nominal,
-                    "proceeds": sell_proceeds,
-                    "cost_basis": cost_basis,
-                    "realized_gain": sell_proceeds - cost_basis,
+                    **dict(zip(keys, key_vals)),
+                    "close_date": row["trade_date"],
+                    "closed_nominal": round(closed_here, 2),
+                    "realized_gain": round(gain_here, 2),
                 })
 
-    if not results:
-        return pd.DataFrame(columns=[
-            "cusip", "sell_date", "sold_nominal", "proceeds", "cost_basis", "realized_gain"
-        ])
-    return pd.DataFrame(results)
+    return pd.DataFrame(results, columns=out_cols)
 
 
 def total_realized_pnl(trades_df: pd.DataFrame) -> pd.DataFrame:
-    """Aggregate realized P&L by CUSIP."""
+    """Aggregate realized P&L by cusip (summed across the grouping keys)."""
     detail = realized_pnl(trades_df)
     if detail.empty:
-        return detail
+        return pd.DataFrame(columns=["cusip", "realized_gain"])
     return detail.groupby("cusip", as_index=False)["realized_gain"].sum()
-
-
-def unrealized_pnl(
-    positions: dict[str, Position],
-    current_prices: dict[str, float],  # {cusip: clean_price}
-    bonds_static_path: Path = BONDS_STATIC_PATH,
-    as_of: date | None = None,
-) -> pd.DataFrame:
-    """
-    Unrealized P&L = (current dirty price - book dirty price) × net_nominal / 100
-
-    current_prices are clean prices (% of par). We add today's accrued to get dirty.
-    Book dirty price = wavg_price + accrued at last settle (from bonds_static).
-    """
-    if as_of is None:
-        as_of = date.today()
-
-    bonds_static = load_bonds_static(bonds_static_path)
-    rows = []
-
-    for cusip, pos in positions.items():
-        if pos.net_nominal == 0:
-            continue
-
-        clean_px = current_prices.get(cusip)
-        if clean_px is None:
-            rows.append({"cusip": cusip, "unrealized_gain": None, "note": "no price"})
-            continue
-
-        bond = bonds_static.get(cusip)
-        if bond is None:
-            rows.append({"cusip": cusip, "unrealized_gain": None, "note": "missing bond static"})
-            continue
-
-        current_accrued_pct = accrued_interest(100, bond, as_of)  # per 100 nominal
-        current_dirty = clean_px + current_accrued_pct
-
-        book_accrued_pct = accrued_interest(100, bond, pos.last_settle)
-        book_dirty = pos.wavg_price + book_accrued_pct
-
-        unrealized = (current_dirty - book_dirty) * pos.net_nominal / 100
-        rows.append({
-            "cusip": cusip,
-            "net_nominal": pos.net_nominal,
-            "book_price": pos.wavg_price,
-            "current_price": clean_px,
-            "unrealized_gain": round(unrealized, 2),
-            "note": "",
-        })
-
-    return pd.DataFrame(rows)

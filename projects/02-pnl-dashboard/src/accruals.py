@@ -3,68 +3,90 @@ Accrued interest calculations for fixed-income bonds.
 
 Supports day-count conventions: Act/360, Act/365, 30/360.
 """
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 
 import pandas as pd
 
+import config
+from config import get_logger
 from models import Position, BondStatic
 
-BONDS_STATIC_PATH = Path(__file__).parent.parent / "data" / "bonds_static.csv"
+log = get_logger(__name__)
 
 
-def load_bonds_static(path: Path = BONDS_STATIC_PATH) -> dict[str, BondStatic]:
-    if not Path(path).exists():
+def load_bonds_static(path: Path | None = None) -> dict[str, BondStatic]:
+    """Load bond reference data, validating each row via BondStatic.__post_init__."""
+    path = Path(path) if path is not None else config.BONDS_STATIC_PATH
+    if not path.exists() or path.stat().st_size == 0:
         return {}
 
-    df = pd.read_csv(path, parse_dates=["maturity_date", "first_coupon_date"])
-    result = {}
+    df = pd.read_csv(path, dtype={"cusip": str}, parse_dates=["maturity_date", "first_coupon_date"])
+    result: dict[str, BondStatic] = {}
     for _, row in df.iterrows():
-        b = BondStatic(
-            cusip=row["cusip"],
-            name=row["name"],
-            currency=row["currency"],
-            country=row.get("country", ""),
-            coupon_rate=float(row["coupon_rate"]),
-            coupon_frequency=int(row["coupon_frequency"]),
-            day_count_convention=row["day_count_convention"],
-            maturity_date=row["maturity_date"].date(),
-            first_coupon_date=row["first_coupon_date"].date(),
-        )
-        result[b.cusip] = b
+        try:
+            bond = BondStatic(
+                cusip=str(row["cusip"]),
+                name=row.get("name", ""),
+                currency=row.get("currency", ""),
+                country=row.get("country", "") if pd.notna(row.get("country", "")) else "",
+                coupon_rate=float(row["coupon_rate"]),
+                coupon_frequency=int(row["coupon_frequency"]),
+                day_count_convention=str(row["day_count_convention"]),
+                maturity_date=row["maturity_date"].date(),
+                first_coupon_date=row["first_coupon_date"].date(),
+            )
+        except (ValueError, KeyError, TypeError) as exc:
+            log.warning("Skipping invalid bonds_static row for %s: %s", row.get("cusip"), exc)
+            continue
+        result[bond.cusip] = bond
     return result
 
 
 def _coupon_dates(bond: BondStatic) -> list[date]:
     """Generate all coupon dates from first_coupon_date up to and including maturity."""
     months_per_period = 12 // bond.coupon_frequency
-    dates = []
+    dates: list[date] = []
     d = bond.first_coupon_date
     while d <= bond.maturity_date:
         dates.append(d)
         month = d.month + months_per_period
         year = d.year + (month - 1) // 12
         month = (month - 1) % 12 + 1
-        d = d.replace(year=year, month=month)
+        # clamp day to end of month (handles 31st → shorter months)
+        day = min(d.day, _days_in_month(year, month))
+        d = d.replace(year=year, month=month, day=day)
     return dates
 
 
-def last_coupon_date(bond: BondStatic, as_of: date) -> date:
-    """Most recent coupon date on or before as_of."""
-    all_dates = _coupon_dates(bond)
-    past = [d for d in all_dates if d <= as_of]
-    if past:
-        return max(past)
-    # before first coupon — accrue from issue (approximate as first_coupon_date minus period)
+def _days_in_month(year: int, month: int) -> int:
+    if month == 12:
+        nxt = date(year + 1, 1, 1)
+    else:
+        nxt = date(year, month + 1, 1)
+    return (nxt - date(year, month, 1)).days
+
+
+def _prev_period_start(bond: BondStatic) -> date:
+    """The coupon date one period before first_coupon_date (proxy for issue date)."""
     months = 12 // bond.coupon_frequency
     m = bond.first_coupon_date.month - months
     y = bond.first_coupon_date.year + (m - 1) // 12
     m = (m - 1) % 12 + 1
-    return bond.first_coupon_date.replace(year=y, month=m)
+    day = min(bond.first_coupon_date.day, _days_in_month(y, m))
+    return bond.first_coupon_date.replace(year=y, month=m, day=day)
+
+
+def last_coupon_date(bond: BondStatic, as_of: date) -> date:
+    """Most recent coupon date on or before as_of."""
+    past = [d for d in _coupon_dates(bond) if d <= as_of]
+    if past:
+        return max(past)
+    return _prev_period_start(bond)
 
 
 def _days_30_360(start: date, end: date) -> int:
-    """30/360 day count."""
+    """30/360 (bond basis) day count between two dates."""
     d1 = min(start.day, 30)
     d2 = min(end.day, 30) if d1 == 30 else end.day
     return (end.year - start.year) * 360 + (end.month - start.month) * 30 + (d2 - d1)
@@ -78,32 +100,21 @@ def days_accrued(bond: BondStatic, as_of: date) -> int:
     return (as_of - lcd).days  # actual days for Act/360 and Act/365
 
 
-def _period_basis(bond: BondStatic, as_of: date) -> float:
-    """Day-count denominator (full coupon period length)."""
-    if bond.day_count_convention == "Act/360":
-        return 360.0
-    if bond.day_count_convention == "Act/365":
-        return 365.0
-    # 30/360: full period is always 360 / frequency days
-    return 360.0 / bond.coupon_frequency
-
-
 def accrued_interest(nominal: float, bond: BondStatic, as_of: date) -> float:
     """
-    Accrued interest in currency units.
+    Accrued interest in currency units, per the bond's day-count convention.
 
-    Formula: nominal × coupon_rate × days_accrued / day_count_basis / coupon_frequency
-    For Act/360 and Act/365 the denominator is the annual basis.
-    For 30/360 we use 360/frequency as the full-period length.
+    Act/360, Act/365: annual_coupon * days / basis
+    30/360:           annual_coupon * days_30_360 / 360
     """
     days = days_accrued(bond, as_of)
-    basis = _period_basis(bond, as_of)
     annual_coupon = nominal * bond.coupon_rate
-    if bond.day_count_convention in ("Act/360", "Act/365"):
-        return annual_coupon * days / basis
-    # 30/360: accrual within the coupon period
-    period_length = 360 / bond.coupon_frequency
-    return annual_coupon / bond.coupon_frequency * days / period_length
+    if bond.day_count_convention == "Act/360":
+        return annual_coupon * days / 360
+    if bond.day_count_convention == "Act/365":
+        return annual_coupon * days / 365
+    # 30/360
+    return annual_coupon * days / 360
 
 
 def total_portfolio_accruals(
@@ -111,7 +122,13 @@ def total_portfolio_accruals(
     bonds_static: dict[str, BondStatic],
     as_of: date | None = None,
 ) -> pd.DataFrame:
-    """Return DataFrame with accrued interest for each position as of today."""
+    """
+    Accrued interest (carry) for each position as of a date.
+
+    Equals the accrued portion of each position's current market value:
+        accrued = net_nominal * accrued_interest(100, bond, as_of) / 100
+    Short positions carry a negative accrual (liability).
+    """
     if as_of is None:
         as_of = date.today()
 
@@ -121,16 +138,15 @@ def total_portfolio_accruals(
             continue
         bond = bonds_static.get(cusip)
         if bond is None:
-            rows.append({"cusip": cusip, "net_nominal": pos.net_nominal, "accrued": None,
-                         "note": "missing bond static"})
+            rows.append({"cusip": cusip, "net_nominal": pos.net_nominal,
+                         "accrued": None, "note": "missing bond static"})
             continue
-        ai = accrued_interest(abs(pos.net_nominal), bond, as_of)
-        if pos.net_nominal < 0:
-            ai = -ai  # short position accrues as a liability
+        accrued_pct = accrued_interest(100, bond, as_of)  # per 100 par
+        accrued = pos.net_nominal * accrued_pct / 100      # signed with position
         rows.append({
             "cusip": cusip,
             "net_nominal": pos.net_nominal,
-            "accrued": round(ai, 2),
+            "accrued": round(accrued, 2),
             "note": "",
         })
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows, columns=["cusip", "net_nominal", "accrued", "note"])

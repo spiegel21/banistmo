@@ -18,17 +18,14 @@ import pandas as pd
 # allow imports from src/
 sys.path.insert(0, str(Path(__file__).parent))
 
-from position_manager import load_trades, load_initial_positions, compute_positions
+from position_manager import load_all_trades
 from bloomberg import get_historical_prices_bdh, _append_df_to_price_history, TEMPLATE_PATH
 
 
 def _get_cusips(portfolio: str | None) -> list[str]:
-    trades = load_trades()
-    initial = load_initial_positions()
-    all_trades = (
-        pd.concat([initial, trades], ignore_index=True)
-        if not initial.empty else trades
-    )
+    all_trades = load_all_trades()
+    if all_trades.empty:
+        return []
     if portfolio:
         all_trades = all_trades[all_trades["portfolio"] == portfolio]
     return sorted(all_trades["cusip"].dropna().unique().tolist())

@@ -23,11 +23,16 @@ from pathlib import Path
 
 import pandas as pd
 
-TEMPLATE_PATH = Path(__file__).parent.parent / "templates" / "bloomberg_prices.xlsx"
-PRICES_DIR = Path(__file__).parent.parent / "data" / "prices"
-MANUAL_PRICES_PATH = PRICES_DIR / "manual_prices.csv"
-MANUAL_HISTORY_PATH = PRICES_DIR / "manual_price_history.csv"
-PRICE_HISTORY_PATH = Path(__file__).parent.parent / "data" / "price_history.csv"
+import config
+from config import get_logger
+
+log = get_logger(__name__)
+
+TEMPLATE_PATH = config.BLOOMBERG_TEMPLATE_PATH
+PRICES_DIR = config.PRICES_DIR
+MANUAL_PRICES_PATH = config.MANUAL_PRICES_PATH
+MANUAL_HISTORY_PATH = config.MANUAL_HISTORY_PATH
+PRICE_HISTORY_PATH = config.PRICE_HISTORY_PATH
 
 _BDP_TIMEOUT = 30   # seconds
 _BDH_TIMEOUT = 60   # seconds (BDH is slower)
@@ -120,7 +125,7 @@ def get_prices(cusips: list[str], wb_path: Path = TEMPLATE_PATH) -> dict[str, fl
             _append_to_price_history(prices, date.today())
             return prices
         except Exception as e:
-            print(f"Bloomberg BDP failed ({e}), falling back to manual prices")
+            log.warning("Bloomberg BDP failed (%s); falling back to manual prices", e)
 
     return _load_manual_prices(cusips)
 
@@ -157,7 +162,7 @@ def get_historical_prices_bdh(
                 _append_df_to_price_history(df)
                 return df
         except Exception as e:
-            print(f"Bloomberg BDH failed ({e}), falling back to manual history")
+            log.warning("Bloomberg BDH failed (%s); falling back to manual history", e)
 
     return _load_manual_price_history(cusips, start_date, end_date)
 
@@ -234,7 +239,7 @@ def _append_df_to_price_history(df: pd.DataFrame) -> None:
     path = PRICE_HISTORY_PATH
 
     if path.exists() and path.stat().st_size > 0:
-        existing = pd.read_csv(path)
+        existing = pd.read_csv(path, dtype={"cusip": str})
         combined = pd.concat([existing, df], ignore_index=True)
         combined["date"] = pd.to_datetime(combined["date"]).dt.date.astype(str)
         combined = combined.drop_duplicates(subset=["date", "cusip"], keep="last")
@@ -248,7 +253,7 @@ def load_price_history(path: Path = PRICE_HISTORY_PATH) -> pd.DataFrame:
     """Load full price history; returns empty DataFrame if file doesn't exist."""
     if not Path(path).exists() or Path(path).stat().st_size == 0:
         return pd.DataFrame(columns=["date", "cusip", "px_last"])
-    df = pd.read_csv(path)
+    df = pd.read_csv(path, dtype={"cusip": str})
     df["date"] = pd.to_datetime(df["date"])
     return df
 
@@ -304,7 +309,7 @@ def _load_manual_price_history(cusips, start_date, end_date) -> pd.DataFrame:
     if not MANUAL_HISTORY_PATH.exists():
         return pd.DataFrame(columns=["date", "cusip", "px_last"])
 
-    df = pd.read_csv(MANUAL_HISTORY_PATH)
+    df = pd.read_csv(MANUAL_HISTORY_PATH, dtype={"cusip": str})
     df["date"] = pd.to_datetime(df["date"])
     mask = (df["date"] >= pd.Timestamp(start_date)) & (df["date"] <= pd.Timestamp(end_date))
     if cusips:

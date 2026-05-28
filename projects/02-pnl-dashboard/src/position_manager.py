@@ -10,11 +10,11 @@ from pathlib import Path
 
 import pandas as pd
 
+import config
+from config import DEFAULT_PORTFOLIO, get_logger
 from models import Position
 
-TRADES_PATH = Path(__file__).parent.parent / "data" / "trades.csv"
-INITIAL_PATH = Path(__file__).parent.parent / "data" / "initial_positions.csv"
-PORTFOLIO_PATH = Path(__file__).parent.parent / "data" / "portfolio.csv"
+log = get_logger(__name__)
 
 _DTYPES = {
     "cusip": str,
@@ -28,47 +28,56 @@ _DTYPES = {
     "portfolio": str,
 }
 
+# Columns used to detect a re-appended (duplicate) confirmation. Includes
+# Timestamp + the economics so two genuine same-day clips are NOT collapsed.
+_DEDUP_KEYS = ["Timestamp", "cusip", "side", "nominal", "net", "price", "trade_date", "trader"]
 
-def load_trades(trades_path: Path = TRADES_PATH) -> pd.DataFrame:
+
+def load_trades(trades_path: Path | None = None) -> pd.DataFrame:
     """Read trades.csv; return empty DataFrame if file doesn't exist yet."""
-    path = Path(trades_path)
+    path = Path(trades_path) if trades_path is not None else config.TRADES_PATH
+    empty_cols = list(_DTYPES.keys()) + ["yield_closed", "trade_date", "settle_date", "Timestamp"]
     if not path.exists() or path.stat().st_size == 0:
-        return pd.DataFrame(columns=list(_DTYPES.keys()) + ["yield_closed", "trade_date", "settle_date"])
+        return pd.DataFrame(columns=empty_cols)
 
     df = pd.read_csv(path, dtype=_DTYPES, parse_dates=["trade_date", "settle_date"])
 
-    # sign nominal by side so downstream code can use nominal > 0 for buys
+    # normalise side, then sign nominal so nominal > 0 = buy, < 0 = sell
     df["side"] = df["side"].str.lower().str.strip()
-    df["nominal"] = df.apply(
-        lambda r: r["nominal"] if r["side"] == "buy" else -abs(r["nominal"]),
-        axis=1,
-    )
+    invalid = ~df["side"].isin(["buy", "sell"])
+    if invalid.any():
+        log.warning("%d trade(s) with side not in {buy, sell}; treated as sell", invalid.sum())
+    df["nominal"] = df["nominal"].abs() * df["side"].map({"buy": 1}).fillna(-1)
 
-    # yield_closed may be None/NaN
     if "yield_closed" in df.columns:
         df["yield_closed"] = pd.to_numeric(df["yield_closed"], errors="coerce")
 
-    # portfolio defaults to "default" if not provided
     if "portfolio" not in df.columns:
-        df["portfolio"] = "default"
+        df["portfolio"] = DEFAULT_PORTFOLIO
     else:
-        df["portfolio"] = df["portfolio"].fillna("default")
+        df["portfolio"] = df["portfolio"].fillna(DEFAULT_PORTFOLIO)
 
-    df = df.drop_duplicates(subset=["cusip", "trade_date", "trader", "nominal"])
+    # Drop only exact re-appends (same confirmation parsed twice).
+    dedup_keys = [k for k in _DEDUP_KEYS if k in df.columns]
+    before = len(df)
+    df = df.drop_duplicates(subset=dedup_keys)
+    if len(df) < before:
+        log.info("Dropped %d duplicate trade row(s)", before - len(df))
+
     return df.sort_values("trade_date").reset_index(drop=True)
 
 
-def load_initial_positions(initial_path: Path = INITIAL_PATH) -> pd.DataFrame:
+def load_initial_positions(initial_path: Path | None = None) -> pd.DataFrame:
     """
     Read initial_positions.csv and return rows shaped like a trades DataFrame.
 
     initial_positions.csv columns:
         portfolio, cusip, nominal, price, book_value, inception_date
 
-    nominal is signed (positive = long). These are treated as synthetic buys/sells
-    on inception_date so they can be combined with live trades in compute_positions().
+    nominal is signed (positive = long). Treated as synthetic trades on
+    inception_date so they combine with live trades in compute_positions().
     """
-    path = Path(initial_path)
+    path = Path(initial_path) if initial_path is not None else config.INITIAL_POSITIONS_PATH
     if not path.exists() or path.stat().st_size == 0:
         return pd.DataFrame()
 
@@ -84,7 +93,7 @@ def load_initial_positions(initial_path: Path = INITIAL_PATH) -> pd.DataFrame:
     for _, row in df.iterrows():
         signed_nominal = float(row["nominal"])
         rows.append({
-            "cusip": row["cusip"],
+            "cusip": str(row["cusip"]),
             "side": "buy" if signed_nominal >= 0 else "sell",
             "nominal": signed_nominal,
             "principal": abs(signed_nominal) * float(row["price"]) / 100,
@@ -95,7 +104,7 @@ def load_initial_positions(initial_path: Path = INITIAL_PATH) -> pd.DataFrame:
             "trade_date": row["inception_date"],
             "settle_date": row["inception_date"],
             "trader": "inception",
-            "portfolio": row["portfolio"],
+            "portfolio": str(row["portfolio"]),
         })
 
     result = pd.DataFrame(rows)
@@ -104,12 +113,18 @@ def load_initial_positions(initial_path: Path = INITIAL_PATH) -> pd.DataFrame:
     return result
 
 
-def _merge_with_initial(trades_df: pd.DataFrame) -> pd.DataFrame:
-    """Prepend initial positions to the trades DataFrame."""
-    initial = load_initial_positions()
+def load_all_trades(
+    trades_path: Path | None = None,
+    initial_path: Path | None = None,
+) -> pd.DataFrame:
+    """Initial positions + live trades, sorted by trade_date. Single source of truth."""
+    trades = load_trades(trades_path)
+    initial = load_initial_positions(initial_path)
     if initial.empty:
-        return trades_df
-    combined = pd.concat([initial, trades_df], ignore_index=True)
+        return trades
+    if trades.empty:
+        return initial.sort_values("trade_date").reset_index(drop=True)
+    combined = pd.concat([initial, trades], ignore_index=True)
     return combined.sort_values("trade_date").reset_index(drop=True)
 
 
@@ -121,17 +136,17 @@ def compute_positions(
     """
     Group trades by CUSIP → net position with weighted-average price.
 
-    as_of:     if given, only include trades with trade_date <= as_of
-    portfolio: if given, only include trades for that portfolio
+    as_of:     include only trades with trade_date <= as_of
+    portfolio: include only trades for that portfolio
     """
-    df = trades_df.copy()
+    if trades_df.empty:
+        return {}
 
+    df = trades_df
     if as_of is not None:
         df = df[df["trade_date"] <= pd.Timestamp(as_of)]
-
     if portfolio is not None:
         df = df[df["portfolio"] == portfolio]
-
     if df.empty:
         return {}
 
@@ -147,44 +162,40 @@ def compute_positions(
         )
         last_settle = group["settle_date"].max().date()
 
-        positions[cusip] = Position(
-            cusip=cusip,
-            net_nominal=net_nominal,
-            wavg_price=wavg,
-            book_value=book_value,
+        positions[str(cusip)] = Position(
+            cusip=str(cusip),
+            net_nominal=float(net_nominal),
+            wavg_price=float(wavg),
+            book_value=float(book_value),
             last_settle=last_settle,
         )
-
     return positions
 
 
-def get_positions_as_of(
-    as_of_date: date,
-    portfolio: str | None = None,
-) -> dict[str, Position]:
-    """Compute positions as of a specific date, including initial positions."""
-    trades = load_trades()
-    all_trades = _merge_with_initial(trades)
-    return compute_positions(all_trades, as_of=as_of_date, portfolio=portfolio)
+def get_positions_as_of(as_of_date: date, portfolio: str | None = None) -> dict[str, Position]:
+    """Positions as of a date, including initial positions."""
+    return compute_positions(load_all_trades(), as_of=as_of_date, portfolio=portfolio)
 
 
-def update_portfolio(positions: dict[str, Position], portfolio_path: Path = PORTFOLIO_PATH) -> None:
+def update_portfolio(positions: dict[str, Position], portfolio_path: Path | None = None) -> None:
     """Rewrite portfolio.csv with current positions (replaces previous contents)."""
+    path = Path(portfolio_path) if portfolio_path is not None else config.PORTFOLIO_PATH
     rows = [vars(p) for p in positions.values()]
-    pd.DataFrame(rows).to_csv(portfolio_path, index=False)
+    cols = ["cusip", "net_nominal", "wavg_price", "book_value", "last_settle"]
+    pd.DataFrame(rows, columns=cols).to_csv(path, index=False)
 
 
-def load_portfolio(portfolio_path: Path = PORTFOLIO_PATH) -> dict[str, Position]:
+def load_portfolio(portfolio_path: Path | None = None) -> dict[str, Position]:
     """Read portfolio.csv; returns empty dict if file doesn't exist."""
-    path = Path(portfolio_path)
-    if not path.exists():
+    path = Path(portfolio_path) if portfolio_path is not None else config.PORTFOLIO_PATH
+    if not path.exists() or path.stat().st_size == 0:
         return {}
 
-    df = pd.read_csv(path, parse_dates=["last_settle"])
+    df = pd.read_csv(path, dtype={"cusip": str}, parse_dates=["last_settle"])
     positions = {}
     for _, row in df.iterrows():
         p = Position(
-            cusip=row["cusip"],
+            cusip=str(row["cusip"]),
             net_nominal=float(row["net_nominal"]),
             wavg_price=float(row["wavg_price"]),
             book_value=float(row["book_value"]),
@@ -196,18 +207,12 @@ def load_portfolio(portfolio_path: Path = PORTFOLIO_PATH) -> dict[str, Position]
 
 def refresh_portfolio(portfolio: str | None = None) -> dict[str, Position]:
     """Recompute positions from full trade history and write portfolio.csv."""
-    trades = load_trades()
-    all_trades = _merge_with_initial(trades)
-    positions = compute_positions(all_trades, portfolio=portfolio)
+    positions = compute_positions(load_all_trades(), portfolio=portfolio)
     update_portfolio(positions)
     return positions
 
 
 if __name__ == "__main__":
-    positions = refresh_portfolio()
-    for cusip, pos in positions.items():
-        print(
-            f"{cusip}  nominal={pos.net_nominal:,.0f}"
-            f"  wavg_px={pos.wavg_price:.4f}"
-            f"  book={pos.book_value:,.2f}"
-        )
+    for cusip, pos in refresh_portfolio().items():
+        print(f"{cusip}  nominal={pos.net_nominal:,.0f}  "
+              f"wavg_px={pos.wavg_price:.4f}  book={pos.book_value:,.2f}")

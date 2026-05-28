@@ -1,1 +1,3 @@
 cusip,name,currency,country,coupon_rate,coupon_frequency,day_count_convention,maturity_date,first_coupon_date
+037833100,APPLE 5% 2030,USD,US,0.05,2,30/360,2030-06-15,2024-06-15
+912828XY9,UST 3% 2029,USD,US,0.03,2,Act/360,2029-09-20,2024-09-20
