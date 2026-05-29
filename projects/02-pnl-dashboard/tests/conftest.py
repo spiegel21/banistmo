@@ -37,6 +37,9 @@ def _write_fixtures():
     ]).to_csv(_DATA_DIR / "initial_positions.csv", index=False)
 
     pd.DataFrame([
+        dict(date="2025-01-03", cusip="037833100", px_last=97.5),   # for inception-fallback test
+        dict(date="2025-02-28", cusip="037833100", px_last=100.3),  # prev-day for Mar 3
+        dict(date="2025-02-28", cusip="912828XY9", px_last=95.8),   # prev-day for Mar 3
         dict(date="2025-03-03", cusip="037833100", px_last=100.5),
         dict(date="2025-03-03", cusip="912828XY9", px_last=96.0),
         dict(date="2025-03-04", cusip="037833100", px_last=100.6),

@@ -195,11 +195,13 @@ else:
     daily["date"] = pd.to_datetime(daily["date"])
     chart_tab, data_tab = st.tabs(["Chart", "Data"])
     with chart_tab:
-        comp = daily.set_index("date")[["price_pnl", "accrued", "realized_gain"]]
+        # cumsum converts daily increments into a running P&L curve
+        comp = daily.set_index("date")[["price_pnl", "accrued", "realized_gain"]].fillna(0).cumsum()
         comp.columns = ["Price MTM", "Accrued", "Realized"]
         st.line_chart(comp, use_container_width=True)
-        st.caption("Total P&L")
-        st.line_chart(daily.set_index("date")[["total_pnl"]], use_container_width=True)
+        st.caption("Total P&L (cumulative)")
+        total_cum = daily.set_index("date")[["total_pnl"]].fillna(0).cumsum()
+        st.line_chart(total_cum, use_container_width=True)
     with data_tab:
         st.dataframe(daily, use_container_width=True, hide_index=True)
 

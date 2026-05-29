@@ -1,15 +1,22 @@
 """
-Historical daily P&L.
+Historical daily P&L using the dirty-price change method.
 
-For each business day in a range, compute per-CUSIP:
-  - price_pnl  : unrealized P&L from clean-price moves
-  - accrued    : accrued interest (carry) on the current position
-  - realized   : cumulative realized P&L from closes up to that day
-  - total_pnl  : price_pnl + accrued + realized   (no double counting)
+For each business day in a range, per-CUSIP P&L is computed as:
 
-Realized P&L persists for fully-closed positions (they no longer have a live
-position, but their booked gains remain in the daily total).
+    price_pnl  = (clean_today  - clean_prev ) × net_nominal_sod / 100
+    accrual    = (accrued_today - accrued_prev) × net_nominal_sod / 100
+    realized   = WAVG gains from trades that closed on this exact day
+    total_pnl  = price_pnl + accrual + realized
 
+net_nominal_sod is the start-of-day (= prior business day end-of-day) position.
+Using SOD nominal means bonds sold today are included in the daily price move;
+bonds bought today start contributing the following day (standard convention).
+
+Previous-day clean price is sourced from price_history.csv. For the first day
+of the range, if no prior-day price is in price_history, the `price` field from
+initial_positions.csv is used as the Day-0 (e.g. April 30th) reference.
+
+Cumulating daily rows produces the running P&L curve from inception to today.
 Results are cached in pnl_history.csv.
 """
 from datetime import date, timedelta
@@ -42,6 +49,28 @@ def business_days(start: date, end: date) -> list[date]:
     return days
 
 
+def _prev_business_day(d: date) -> date:
+    """Return the previous Mon–Fri date (Monday goes back to Friday)."""
+    delta = 3 if d.weekday() == 0 else 1
+    return d - timedelta(days=delta)
+
+
+def _load_inception_prices(portfolio: str | None = None) -> dict[str, float]:
+    """
+    Clean prices from initial_positions.csv — used as the Day-0 price reference
+    when price_history.csv has no entry for the previous business day.
+    """
+    path = config.INITIAL_POSITIONS_PATH
+    if not path.exists() or path.stat().st_size == 0:
+        return {}
+    df = pd.read_csv(path, dtype={"cusip": str, "portfolio": str})
+    if df.empty or "price" not in df.columns:
+        return {}
+    if portfolio is not None and "portfolio" in df.columns:
+        df = df[df["portfolio"] == portfolio]
+    return dict(zip(df["cusip"], df["price"].astype(float)))
+
+
 def compute_daily_pnl(
     start_date: date,
     end_date: date,
@@ -52,7 +81,7 @@ def compute_daily_pnl(
     Daily P&L for every business day in [start_date, end_date].
 
     Writes results to pnl_history.csv (replacing rows for the same portfolio
-    scope) and returns them.
+    scope) and returns them. Cumulate the returned rows to get the running curve.
     """
     all_trades = load_all_trades()
     if portfolio is not None and not all_trades.empty:
@@ -62,42 +91,60 @@ def compute_daily_pnl(
     if prices_df is None:
         prices_df = load_price_history()
 
+    inception_prices = _load_inception_prices(portfolio)
     realized_detail = realized_pnl(all_trades)
     scope = portfolio or ALL_PORTFOLIOS
 
+    # Pre-index price history by date for O(1) lookup
+    def _px_on(d: date) -> dict[str, float]:
+        if prices_df.empty:
+            return {}
+        row = prices_df[prices_df["date"] == pd.Timestamp(d)]
+        return dict(zip(row["cusip"], row["px_last"])) if not row.empty else {}
+
     records = []
     for day in business_days(start_date, end_date):
-        ts = pd.Timestamp(day)
-        positions = compute_positions(all_trades, as_of=day)
+        prev_day = _prev_business_day(day)
 
-        day_px = prices_df[prices_df["date"] == ts] if not prices_df.empty else prices_df
-        px_lookup = dict(zip(day_px["cusip"], day_px["px_last"])) if not day_px.empty else {}
+        # SOD = end-of-previous-business-day positions (the ones that earned today's P&L)
+        positions_sod = compute_positions(all_trades, as_of=prev_day)
 
-        realized_to_day: dict[str, float] = {}
+        px_today = _px_on(day)
+        px_prev_hist = _px_on(prev_day)
+
+        def prev_price(cusip: str) -> float | None:
+            if cusip in px_prev_hist:
+                return px_prev_hist[cusip]
+            return inception_prices.get(cusip)  # Day-0 fallback
+
+        # Daily realized only (not cumulative)
+        realized_today: dict[str, float] = {}
         if not realized_detail.empty:
-            mask = realized_detail["close_date"] <= ts
-            realized_to_day = (
-                realized_detail[mask].groupby("cusip")["realized_gain"].sum().to_dict()
-            )
+            mask = realized_detail["close_date"] == pd.Timestamp(day)
+            if mask.any():
+                realized_today = (
+                    realized_detail[mask].groupby("cusip")["realized_gain"].sum().to_dict()
+                )
 
-        # Union: live positions + any cusip with realized P&L booked by this day.
-        cusips = set(positions.keys()) | set(realized_to_day.keys())
+        # Include SOD positions + any CUSIP with realized booked today
+        cusips = set(positions_sod.keys()) | set(realized_today.keys())
+
         for cusip in cusips:
-            pos = positions.get(cusip)
-            net_nominal = pos.net_nominal if pos else 0.0
-            px = px_lookup.get(cusip)
+            sod_pos = positions_sod.get(cusip)
+            net_nominal = sod_pos.net_nominal if sod_pos else 0.0
             bond = bonds_static.get(cusip)
+            clean_t = px_today.get(cusip)
+            clean_prev = prev_price(cusip)
 
             price_pnl = None
             accrued = None
-            if pos and net_nominal != 0 and px is not None:
-                accrued_pct = accrued_interest(100, bond, day) if bond else 0.0
-                dirty = px + accrued_pct
-                mtm_gain = net_nominal * dirty / 100 + pos.book_value
-                accrued = round(net_nominal * accrued_pct / 100, 2)
-                price_pnl = round(mtm_gain - accrued, 2)
+            if net_nominal != 0 and clean_t is not None and clean_prev is not None:
+                acc_t = accrued_interest(100, bond, day) if bond else 0.0
+                acc_prev = accrued_interest(100, bond, prev_day) if bond else 0.0
+                price_pnl = round(net_nominal * (clean_t - clean_prev) / 100, 2)
+                accrued = round(net_nominal * (acc_t - acc_prev) / 100, 2)
 
-            realized_gain = round(realized_to_day.get(cusip, 0.0), 2)
+            realized_gain = round(realized_today.get(cusip, 0.0), 2)
             total = (price_pnl or 0.0) + (accrued or 0.0) + realized_gain
 
             records.append({
@@ -105,7 +152,7 @@ def compute_daily_pnl(
                 "portfolio": scope,
                 "cusip": cusip,
                 "net_nominal": round(net_nominal, 2),
-                "px_last": px,
+                "px_last": clean_t,
                 "price_pnl": price_pnl,
                 "accrued": accrued,
                 "realized_gain": realized_gain,
@@ -140,6 +187,8 @@ def load_pnl_history(
     """
     Load pnl_history.csv. When portfolio is None, returns the ALL_PORTFOLIOS scope
     (not every scope concatenated) so totals are never double counted.
+
+    Rows are DAILY values — cumsum them in the caller to get a running P&L curve.
     """
     path = Path(path) if path is not None else config.PNL_HISTORY_PATH
     if not path.exists() or path.stat().st_size == 0:
