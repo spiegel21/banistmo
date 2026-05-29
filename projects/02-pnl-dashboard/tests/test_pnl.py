@@ -9,11 +9,14 @@ from trading_gains import realized_pnl, total_realized_pnl
 from mtm import mark_to_market
 
 
-def test_realized_fifo_long():
+def test_realized_wavg_long():
     detail = realized_pnl(load_all_trades())
     g = detail[detail["cusip"] == "037833100"]["realized_gain"].sum()
-    # FIFO: sell 600k vs 300k@0.97 + 300k@0.986; proceeds 601000
-    assert g == pytest.approx(601000 - (300_000 * 0.97 + 300_000 * 0.986), abs=1)
+    # Inception 300k@0.97 + buy 1M@0.986 + buy 500k@0.996 → wavg = 1775000/1800000
+    # Sell 600k at unit 601000/600000; gain = 600k × (sell_unit − wavg)
+    wavg = (300_000 * 0.97 + 1_000_000 * 0.986 + 500_000 * 0.996) / 1_800_000
+    expected = 600_000 * (601_000 / 600_000 - wavg)
+    assert g == pytest.approx(expected, abs=1)
 
 
 def test_realized_handles_short_open_and_cover():
