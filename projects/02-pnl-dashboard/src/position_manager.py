@@ -40,7 +40,16 @@ def load_trades(trades_path: Path | None = None) -> pd.DataFrame:
     if not path.exists() or path.stat().st_size == 0:
         return pd.DataFrame(columns=empty_cols)
 
-    df = pd.read_csv(path, dtype=_DTYPES, parse_dates=["trade_date", "settle_date"])
+    df = pd.read_csv(path, dtype=_DTYPES)
+    for col in ("trade_date", "settle_date"):
+        if col not in df.columns:
+            continue
+        parsed = pd.to_datetime(df[col], format="%m/%d/%y", errors="coerce")
+        # Fall back to ISO / default parsing for any values that didn't match mm/dd/yy
+        unresolved = parsed.isna() & df[col].notna()
+        if unresolved.any():
+            parsed[unresolved] = pd.to_datetime(df.loc[unresolved, col], errors="coerce")
+        df[col] = parsed
 
     # normalise side, then sign nominal so nominal > 0 = buy, < 0 = sell
     df["side"] = df["side"].str.lower().str.strip()
