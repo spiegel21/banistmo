@@ -5,6 +5,8 @@ trades.csv            — append-only source written by the email parser
 initial_positions.csv — seed positions at portfolio inception (user-entered once)
 portfolio.csv         — computed positions (recomputed from trades; not hand-edited)
 """
+from __future__ import annotations
+
 from datetime import date
 from pathlib import Path
 

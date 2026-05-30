@@ -8,6 +8,8 @@ Usage:
     python backfill_prices.py --start 2025-01-01 --end 2025-06-01 --portfolio "HY Book"
     python backfill_prices.py --start 2025-01-01 --manual path/to/prices.csv
 """
+from __future__ import annotations
+
 import argparse
 import sys
 from datetime import date, datetime

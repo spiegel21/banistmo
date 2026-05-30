@@ -19,6 +19,8 @@ initial_positions.csv is used as the Day-0 (e.g. April 30th) reference.
 Cumulating daily rows produces the running P&L curve from inception to today.
 Results are cached in pnl_history.csv.
 """
+from __future__ import annotations
+
 from datetime import date, timedelta
 from pathlib import Path
 

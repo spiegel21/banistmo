@@ -10,6 +10,8 @@ This decomposes cleanly into a price component and an accrued (carry) component:
 
 so total P&L = realized + price_pnl + accrued_pnl with no double counting.
 """
+from __future__ import annotations
+
 from datetime import date
 
 import pandas as pd

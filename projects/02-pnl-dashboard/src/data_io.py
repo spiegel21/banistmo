@@ -10,6 +10,8 @@ On-disk conventions (must match the readers in position_manager / bloomberg):
   - dates               : written ISO (YYYY-MM-DD)
   - cusip               : string (leading zeros preserved)
 """
+from __future__ import annotations
+
 import shutil
 from datetime import datetime
 from pathlib import Path

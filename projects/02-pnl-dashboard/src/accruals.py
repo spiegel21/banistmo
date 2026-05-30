@@ -3,6 +3,8 @@ Accrued interest calculations for fixed-income bonds.
 
 Supports day-count conventions: Act/360, Act/365, 30/360.
 """
+from __future__ import annotations
+
 from datetime import date
 from pathlib import Path
 
