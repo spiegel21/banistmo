@@ -27,8 +27,9 @@ import pandas as pd
 import config
 from config import ALL_PORTFOLIOS, get_logger
 from position_manager import load_all_trades, compute_positions
-from accruals import load_bonds_static, accrued_interest
+from accruals import load_bonds_static, accrued_interest, last_coupon_date, days_accrued
 from trading_gains import realized_pnl
+from mtm import mark_to_market
 from bloomberg import load_price_history
 
 log = get_logger(__name__)
@@ -205,3 +206,86 @@ def load_pnl_history(
     if end_date is not None:
         df = df[df["date"] <= pd.Timestamp(end_date)]
     return df.reset_index(drop=True)
+
+
+# ── daily transparency views ──────────────────────────────────────────────────
+
+_SNAPSHOT_COLUMNS = [
+    "cusip", "net_nominal", "clean_px", "accrued_pct", "dirty_px",
+    "mtm_value", "book_value", "price_pnl", "accrued_pnl", "note",
+]
+
+
+def daily_snapshot(day: date, portfolio: str | None = None) -> pd.DataFrame:
+    """
+    One row per CUSIP held on `day`: position size, clean & dirty price, MTM value,
+    and the price/accrued P&L split — all marked as of `day`.
+
+    Prices come from price_history.csv for that exact day. Reuses mark_to_market
+    so the numbers reconcile with the rest of the app.
+    """
+    positions = compute_positions(load_all_trades(), as_of=day, portfolio=portfolio)
+    if not positions:
+        return pd.DataFrame(columns=_SNAPSHOT_COLUMNS)
+
+    bonds_static = load_bonds_static()
+    prices_df = load_price_history()
+    day_px = prices_df[prices_df["date"] == pd.Timestamp(day)] if not prices_df.empty else prices_df
+    prices = dict(zip(day_px["cusip"], day_px["px_last"])) if not day_px.empty else {}
+
+    mtm = mark_to_market(positions, prices, bonds_static, as_of=day)
+    if mtm.empty:
+        return pd.DataFrame(columns=_SNAPSHOT_COLUMNS)
+
+    out = mtm.rename(columns={"accrued_today_pct": "accrued_pct"})
+    return out[_SNAPSHOT_COLUMNS].reset_index(drop=True)
+
+
+def position_timeseries(
+    start: date, end: date, portfolio: str | None = None
+) -> pd.DataFrame:
+    """`daily_snapshot` stacked for every business day in [start, end]."""
+    frames = []
+    for day in business_days(start, end):
+        snap = daily_snapshot(day, portfolio)
+        if not snap.empty:
+            snap.insert(0, "date", day.isoformat())
+            frames.append(snap)
+    if not frames:
+        return pd.DataFrame(columns=["date"] + _SNAPSHOT_COLUMNS)
+    return pd.concat(frames, ignore_index=True)
+
+
+_ACCRUAL_COLUMNS = [
+    "cusip", "day_count_convention", "last_coupon_date", "days_accrued",
+    "accrued_per_100", "accrued_total", "note",
+]
+
+
+def accrual_breakdown(positions, bonds_static, as_of: date) -> pd.DataFrame:
+    """
+    Per-CUSIP accrual transparency: last coupon date, days accrued, accrued per 100
+    par, and the position-scaled accrued total. Mirrors accruals.accrued_interest.
+    """
+    rows = []
+    for cusip, pos in positions.items():
+        if pos.net_nominal == 0:
+            continue
+        bond = bonds_static.get(cusip)
+        if bond is None:
+            rows.append({
+                "cusip": cusip, "day_count_convention": "", "last_coupon_date": None,
+                "days_accrued": None, "accrued_per_100": None, "accrued_total": None,
+                "note": "missing bond static",
+            })
+            continue
+        rows.append({
+            "cusip": cusip,
+            "day_count_convention": bond.day_count_convention,
+            "last_coupon_date": last_coupon_date(bond, as_of).isoformat(),
+            "days_accrued": days_accrued(bond, as_of),
+            "accrued_per_100": round(accrued_interest(100, bond, as_of), 6),
+            "accrued_total": round(accrued_interest(pos.net_nominal, bond, as_of), 2),
+            "note": "",
+        })
+    return pd.DataFrame(rows, columns=_ACCRUAL_COLUMNS)

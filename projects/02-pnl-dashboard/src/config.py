@@ -27,6 +27,9 @@ MANUAL_PRICES_PATH = PRICES_DIR / "manual_prices.csv"
 MANUAL_HISTORY_PATH = PRICES_DIR / "manual_price_history.csv"
 BLOOMBERG_TEMPLATE_PATH = TEMPLATES_DIR / "bloomberg_prices.xlsx"
 
+# Timestamped copies of any file the UI overwrites are kept here.
+BACKUPS_DIR = DATA_DIR / "backups"
+
 # Sentinel portfolio name used when no portfolio filter is applied.
 ALL_PORTFOLIOS = "all"
 DEFAULT_PORTFOLIO = "default"

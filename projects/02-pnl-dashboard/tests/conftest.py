@@ -50,6 +50,13 @@ def _write_fixtures():
 _write_fixtures()
 
 
+@pytest.fixture(autouse=True)
+def _reset_fixtures():
+    """Restore the input CSVs before every test so write-tests stay isolated."""
+    _write_fixtures()
+    yield
+
+
 @pytest.fixture
 def data_dir() -> Path:
     return _DATA_DIR

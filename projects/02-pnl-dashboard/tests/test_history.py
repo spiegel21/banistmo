@@ -1,8 +1,14 @@
 from datetime import date
 
+import pandas as pd
 import pytest
 
-from history import business_days, compute_daily_pnl, load_pnl_history
+from history import (
+    business_days, compute_daily_pnl, load_pnl_history,
+    daily_snapshot, position_timeseries, accrual_breakdown,
+)
+from position_manager import get_positions_as_of
+from accruals import load_bonds_static, accrued_interest
 
 
 def test_business_days_skips_weekends():
@@ -55,3 +61,37 @@ def test_load_pnl_history_scope_isolation():
     every = load_pnl_history(portfolio=None)  # ALL_PORTFOLIOS scope only
     assert (hy["portfolio"] == "HY").all()
     assert (every["portfolio"] == "all").all()
+
+
+def test_daily_snapshot_exposes_clean_and_dirty():
+    snap = daily_snapshot(date(2025, 3, 3), portfolio="HY")
+    row = snap[snap["cusip"] == "037833100"].iloc[0]
+    assert row["clean_px"] == 100.5
+    # dirty = clean + accrued_pct
+    assert row["dirty_px"] == pytest.approx(row["clean_px"] + row["accrued_pct"], abs=1e-6)
+
+
+def test_daily_snapshot_flags_missing_price():
+    # No price in history for 2025-03-05.
+    snap = daily_snapshot(date(2025, 3, 5), portfolio="HY")
+    row = snap[snap["cusip"] == "037833100"].iloc[0]
+    assert row["note"] == "no price"
+    assert pd.isna(row["clean_px"])
+
+
+def test_accrual_breakdown_matches_accrued_interest():
+    day = date(2025, 3, 3)
+    bonds = load_bonds_static()
+    pos = get_positions_as_of(day, "HY")
+    acc = accrual_breakdown(pos, bonds, day)
+    row = acc[acc["cusip"] == "037833100"].iloc[0]
+    bond = bonds["037833100"]
+    assert row["accrued_per_100"] == pytest.approx(round(accrued_interest(100, bond, day), 6))
+
+
+def test_position_timeseries_one_row_per_day_per_cusip():
+    ts = position_timeseries(date(2025, 3, 3), date(2025, 3, 4), portfolio="HY")
+    # 2 business days × 1 held CUSIP in HY
+    assert len(ts) == 2
+    assert set(ts["date"]) == {"2025-03-03", "2025-03-04"}
+    assert (ts["cusip"] == "037833100").all()

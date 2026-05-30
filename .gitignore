@@ -25,6 +25,7 @@ projects/02-pnl-dashboard/data/portfolio.csv
 projects/02-pnl-dashboard/data/price_history.csv
 projects/02-pnl-dashboard/data/pnl_history.csv
 projects/02-pnl-dashboard/data/prices/
+projects/02-pnl-dashboard/data/backups/
 
 # initial_positions.csv and bonds_static.csv contain no market data — committed
 # (they are static reference data entered once by the user)
