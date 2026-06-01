@@ -17,6 +17,7 @@ Fallback: if Excel/Bloomberg is unavailable, reads from data/prices/manual_price
   or data/prices/manual_price_history.csv for historical data.
 """
 import csv
+import math
 import time
 from datetime import date, datetime
 from pathlib import Path
@@ -61,14 +62,19 @@ def _write_cusips(cusips: list[str], wb) -> None:
         cell.value = str(cusip)
 
 
+def _is_real_price(v) -> bool:
+    """True only for a finite number — excludes None, strings, and NaN (Bloomberg's #N/A response)."""
+    return isinstance(v, (int, float)) and not math.isnan(v)
+
+
 def _all_prices_filled(sheet, n: int) -> bool:
-    """Return True only when all price cells contain numeric values (not Bloomberg error strings)."""
+    """Return True only when all price cells contain finite numeric values."""
     values = sheet.range(f"B2:B{n + 1}").value
     if values is None:
         return False
     if isinstance(values, list):
-        return all(isinstance(v, (int, float)) for v in values)
-    return isinstance(values, (int, float))
+        return all(_is_real_price(v) for v in values)
+    return _is_real_price(values)
 
 
 def _refresh_and_read_bdp(wb, cusips: list[str]) -> dict[str, dict]:
@@ -95,11 +101,10 @@ def _refresh_and_read_bdp(wb, cusips: list[str]) -> dict[str, dict]:
 
     result = {}
     for i, cusip in enumerate(cusips):
-        px = px_last[i] if isinstance(px_last[i], (int, float)) else None
         result[str(cusip)] = {
-            "px_last": px,
-            "asw": asw[i] if asw and isinstance(asw[i], (int, float)) else None,
-            "ytm": ytm[i] if ytm and isinstance(ytm[i], (int, float)) else None,
+            "px_last": px_last[i] if _is_real_price(px_last[i]) else None,
+            "asw": asw[i] if asw and _is_real_price(asw[i]) else None,
+            "ytm": ytm[i] if ytm and _is_real_price(ytm[i]) else None,
         }
     return result
 
