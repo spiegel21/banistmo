@@ -89,22 +89,9 @@ def _enrich(df: pd.DataFrame, bs_df: pd.DataFrame, cols: list[str]) -> pd.DataFr
     return merged[[c for c in ordered if c in merged.columns]]
 
 
-def _color_pnl_df(df: pd.DataFrame, pnl_cols: list[str]):
-    """Return a pd.Styler with green/red cell backgrounds on pnl_cols."""
-    def _hl(val):
-        if pd.isna(val):
-            return ""
-        if val > 0:
-            return "background-color: #d4edda"
-        if val < 0:
-            return "background-color: #f8d7da"
-        return ""
-
-    valid = [c for c in pnl_cols if c in df.columns]
-    styler = df.style
-    for col in valid:
-        styler = styler.applymap(_hl, subset=[col])
-    return styler
+def _color_pnl_df(df: pd.DataFrame, pnl_cols: list[str]) -> pd.DataFrame:
+    """Return df unchanged (color formatting disabled for pandas compatibility)."""
+    return df
 
 
 def _make_adjustment_trades(
