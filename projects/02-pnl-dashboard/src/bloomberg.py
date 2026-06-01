@@ -109,7 +109,48 @@ def _refresh_and_read_bdp(wb, cusips: list[str]) -> dict[str, dict]:
     return result
 
 
-def get_prices(cusips: list[str], wb_path: Path = TEMPLATE_PATH) -> dict[str, float]:
+def prepare_template(cusips: list[str], wb_path: Path = TEMPLATE_PATH) -> Path:
+    """Write CUSIPs into Sheet1 col A and save the template.
+
+    After calling this, the user opens the file in Excel, waits for Bloomberg
+    BDP formulas to populate, saves and closes. Then call read_prices_from_template().
+    """
+    from openpyxl import load_workbook
+    wb = load_workbook(str(wb_path))
+    ws = wb["Sheet1"]
+    for row in range(2, 52):           # clear up to 50 rows
+        ws.cell(row=row, column=1).value = None
+    for i, cusip in enumerate(cusips):
+        ws.cell(row=i + 2, column=1).value = str(cusip)
+    wb.save(str(wb_path))
+    return wb_path
+
+
+def read_prices_from_template(wb_path: Path = TEMPLATE_PATH) -> dict[str, float]:
+    """Read cached Bloomberg prices from a template saved after a manual Excel refresh.
+
+    openpyxl data_only=True reads the last-calculated cell values (not formulas),
+    so this only works after the user has opened the file in Excel and saved it
+    with Bloomberg prices populated.
+    """
+    from openpyxl import load_workbook
+    wb = load_workbook(str(wb_path), data_only=True)
+    ws = wb["Sheet1"]
+    prices = {}
+    for row in range(2, 52):
+        cusip = ws.cell(row=row, column=1).value
+        price = ws.cell(row=row, column=2).value
+        if not cusip:
+            continue
+        if isinstance(price, (int, float)) and not math.isnan(float(price)):
+            prices[str(cusip)] = float(price)
+    if prices:
+        _save_price_snapshot(prices)
+        _append_to_price_history(prices, date.today())
+    return prices
+
+
+
     """
     Fetch current prices via Bloomberg BDP.
 

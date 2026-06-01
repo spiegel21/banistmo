@@ -32,7 +32,10 @@ from position_manager import load_all_trades, compute_positions, get_positions_a
 from accruals import load_bonds_static, total_portfolio_accruals
 from trading_gains import total_realized_pnl, realized_pnl
 from mtm import mark_to_market
-from bloomberg import get_prices, load_latest_prices
+from bloomberg import (
+    get_prices, load_latest_prices,
+    prepare_template, read_prices_from_template,
+)
 from history import (
     compute_daily_pnl, load_pnl_history,
     daily_snapshot, position_timeseries, accrual_breakdown,
@@ -201,15 +204,31 @@ if snapshots:
 else:
     st.sidebar.caption("No price snapshot yet")
 
-if st.sidebar.button("Refresh Bloomberg Prices"):
-    cusip_list = list(positions.keys())
+st.sidebar.markdown("**Bloomberg prices — 2 steps:**")
+cusip_list = list(positions.keys())
+
+if st.sidebar.button("① Write CUSIPs to template"):
     if cusip_list:
-        with st.spinner("Fetching Bloomberg prices..."):
-            prices = get_prices(cusip_list, TEMPLATE_PATH)
-        st.sidebar.success(f"Updated {len(prices)} CUSIPs")
+        path = prepare_template(cusip_list, TEMPLATE_PATH)
+        st.sidebar.success(
+            f"Template ready — {len(cusip_list)} CUSIP(s) written.\n\n"
+            f"Open **{path.name}** in Excel, wait for Bloomberg to populate the prices, "
+            "then save and close the file."
+        )
+    else:
+        st.sidebar.warning("No positions to price.")
+
+if st.sidebar.button("② Import prices from template"):
+    imported = read_prices_from_template(TEMPLATE_PATH)
+    if imported:
+        prices = imported
+        st.sidebar.success(f"Imported {len(imported)} price(s).")
         st.rerun()
     else:
-        st.sidebar.warning("No positions to price")
+        st.sidebar.warning(
+            "No prices found. Make sure you opened the template in Excel, "
+            "waited for Bloomberg to load, and saved the file."
+        )
 
 # ── sidebar: history ──────────────────────────────────────────────────────────
 
