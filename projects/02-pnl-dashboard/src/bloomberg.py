@@ -120,7 +120,7 @@ def get_prices(cusips: list[str], wb_path: Path = TEMPLATE_PATH) -> dict[str, fl
 
     if xw is not None:
         try:
-            app = xw.App(visible=False, add_book=False)
+            app = xw.App(visible=True, add_book=False)
             try:
                 wb = app.books.open(str(wb_path))
                 _write_cusips(cusips, wb)
