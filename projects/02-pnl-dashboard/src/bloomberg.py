@@ -50,25 +50,31 @@ def _try_xlwings_import():
 # ── BDP (current prices) ─────────────────────────────────────────────────────
 
 def _write_cusips(cusips: list[str], wb) -> None:
-    """Write CUSIPs into Sheet1 column A starting at row 2."""
+    """Write CUSIPs into Sheet1 column A starting at row 2, forcing text format."""
     sheet = wb.sheets["Sheet1"]
     last_row = sheet.range("A2").end("down").row
     if last_row >= 2:
         sheet.range(f"A2:A{max(last_row, len(cusips) + 1)}").clear_contents()
     for i, cusip in enumerate(cusips):
-        sheet["A" + str(i + 2)].value = cusip
+        cell = sheet["A" + str(i + 2)]
+        cell.number_format = "@"   # force text so leading zeros are preserved
+        cell.value = str(cusip)
 
 
 def _all_prices_filled(sheet, n: int) -> bool:
+    """Return True only when all price cells contain numeric values (not Bloomberg error strings)."""
     values = sheet.range(f"B2:B{n + 1}").value
     if values is None:
         return False
     if isinstance(values, list):
-        return all(v is not None and v != "" for v in values)
-    return values is not None
+        return all(isinstance(v, (int, float)) for v in values)
+    return isinstance(values, (int, float))
 
 
-def _refresh_and_read_bdp(wb, n_cusips: int) -> dict[str, dict]:
+def _refresh_and_read_bdp(wb, cusips: list[str]) -> dict[str, dict]:
+    """Trigger BDP refresh and poll until all prices are numeric, then return results.
+    Uses the original cusips list as keys to avoid Excel stripping leading zeros."""
+    n_cusips = len(cusips)
     sheet = wb.sheets["Sheet1"]
     wb.app.calculate()
 
@@ -80,7 +86,6 @@ def _refresh_and_read_bdp(wb, n_cusips: int) -> dict[str, dict]:
         wb.app.calculate()
         elapsed += _POLL_INTERVAL
 
-    cusips = [sheet["A" + str(i + 2)].value for i in range(n_cusips)]
     px_last = sheet.range(f"B2:B{n_cusips + 1}").value
     asw = sheet.range(f"C2:C{n_cusips + 1}").value
     ytm = sheet.range(f"D2:D{n_cusips + 1}").value
@@ -90,12 +95,12 @@ def _refresh_and_read_bdp(wb, n_cusips: int) -> dict[str, dict]:
 
     result = {}
     for i, cusip in enumerate(cusips):
-        if cusip:
-            result[cusip] = {
-                "px_last": px_last[i],
-                "asw": asw[i] if asw else None,
-                "ytm": ytm[i] if ytm else None,
-            }
+        px = px_last[i] if isinstance(px_last[i], (int, float)) else None
+        result[str(cusip)] = {
+            "px_last": px,
+            "asw": asw[i] if asw and isinstance(asw[i], (int, float)) else None,
+            "ytm": ytm[i] if ytm and isinstance(ytm[i], (int, float)) else None,
+        }
     return result
 
 
@@ -114,7 +119,7 @@ def get_prices(cusips: list[str], wb_path: Path = TEMPLATE_PATH) -> dict[str, fl
             try:
                 wb = app.books.open(str(wb_path))
                 _write_cusips(cusips, wb)
-                data = _refresh_and_read_bdp(wb, len(cusips))
+                data = _refresh_and_read_bdp(wb, cusips)
                 wb.save()
                 wb.close()
             finally:
@@ -269,7 +274,7 @@ def _save_price_snapshot(prices: dict[str, float]) -> None:
         writer.writerow(["cusip", "px_last", "date"])
         today = date.today().isoformat()
         for cusip, px in prices.items():
-            writer.writerow([cusip, px, today])
+            writer.writerow([str(cusip), px, today])
 
 
 def load_latest_prices() -> dict[str, float]:
