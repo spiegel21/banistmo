@@ -19,7 +19,7 @@ Fallback: if Excel/Bloomberg is unavailable, reads from data/prices/manual_price
 import csv
 import math
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -34,6 +34,7 @@ PRICES_DIR = config.PRICES_DIR
 MANUAL_PRICES_PATH = config.MANUAL_PRICES_PATH
 MANUAL_HISTORY_PATH = config.MANUAL_HISTORY_PATH
 PRICE_HISTORY_PATH = config.PRICE_HISTORY_PATH
+BONDS_STATIC_PATH = config.BONDS_STATIC_PATH
 
 _BDP_TIMEOUT = 30   # seconds
 _BDH_TIMEOUT = 60   # seconds (BDH is slower)
@@ -155,7 +156,7 @@ def read_prices_from_template(wb_path: Path = TEMPLATE_PATH) -> dict[str, float]
     return prices
 
 
-
+def get_prices(cusips: list[str], wb_path: Path = TEMPLATE_PATH) -> dict[str, float]:
     """
     Fetch current prices via Bloomberg BDP.
 
