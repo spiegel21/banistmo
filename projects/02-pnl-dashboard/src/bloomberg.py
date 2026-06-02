@@ -336,6 +336,149 @@ def load_latest_prices() -> dict[str, float]:
     return _load_manual_prices(cusips=[])
 
 
+# ── history template (manual two-step BDH workflow) ──────────────────────────
+
+_BACKFILL_STATE_PATH = PRICES_DIR / "backfill_state.json"
+_TICKER_SUFFIX = " Corp"
+_BDH_BLOCK_ROWS = 510   # rows reserved per CUSIP block (ample for ~500 business days)
+
+
+def _load_backfill_state() -> dict:
+    if _BACKFILL_STATE_PATH.exists():
+        import json
+        return json.loads(_BACKFILL_STATE_PATH.read_text())
+    return {}
+
+
+def _save_backfill_state(state: dict) -> None:
+    import json
+    _BACKFILL_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _BACKFILL_STATE_PATH.write_text(json.dumps(state, indent=2, default=str))
+
+
+def last_priced_date() -> date | None:
+    """Return the latest date in price_history.csv, or None if the file is empty."""
+    if not PRICE_HISTORY_PATH.exists():
+        return None
+    try:
+        df = pd.read_csv(PRICE_HISTORY_PATH, dtype={"cusip": str})
+        if df.empty:
+            return None
+        return pd.to_datetime(df["date"]).max().date()
+    except Exception:
+        return None
+
+
+def prepare_history_template(
+    cusip_ranges: list[tuple[str, date, date]],
+    wb_path: Path = TEMPLATE_PATH,
+    ticker_suffix: str = _TICKER_SUFFIX,
+) -> Path:
+    """Write one BDH block per CUSIP into the History sheet of the template.
+
+    Each block (offset by _BDH_BLOCK_ROWS rows per CUSIP):
+      Row n  : [ticker, start_YYYYMMDD, end_YYYYMMDD]   ← BDH parameters
+      Row n+1: ["Date", "PX_LAST"]                       ← column labels
+      Row n+2: =BDH formula (Bloomberg fills downward)
+
+    After this call the user opens the file in Excel, waits for Bloomberg to
+    populate every block, saves and closes. Then call read_history_from_template().
+
+    cusip_ranges: list of (cusip, start_date, end_date) — one entry per security.
+    """
+    from openpyxl import load_workbook
+    from openpyxl.styles import Font
+
+    wb = load_workbook(str(wb_path))
+    ws = wb["History"]
+    ws.delete_rows(1, max(ws.max_row, 1))   # clear existing content
+
+    cusips_saved = []
+    for block_idx, (cusip, start, end) in enumerate(cusip_ranges):
+        row = block_idx * _BDH_BLOCK_ROWS + 1
+        ticker = str(cusip) + ticker_suffix
+
+        ws.cell(row=row, column=1).value = ticker
+        ws.cell(row=row, column=1).font = Font(bold=True)
+        ws.cell(row=row, column=2).value = start.strftime("%Y%m%d")
+        ws.cell(row=row, column=3).value = end.strftime("%Y%m%d")
+
+        ws.cell(row=row + 1, column=1).value = "Date"
+        ws.cell(row=row + 1, column=2).value = "PX_LAST"
+
+        ws.cell(row=row + 2, column=1).value = (
+            f'=BDH(A{row},"PX_LAST",B{row},C{row},"Fill","0","Dates","1")'
+        )
+        cusips_saved.append(str(cusip))
+
+    wb.save(str(wb_path))
+
+    prev = _load_backfill_state()
+    _save_backfill_state({
+        "pending_start": str(min(s for _, s, _ in cusip_ranges)),
+        "pending_end": str(max(e for _, _, e in cusip_ranges)),
+        "cusips": cusips_saved,
+        "prepared_at": datetime.now().isoformat(),
+        "last_date": prev.get("last_date"),
+        "last_run": prev.get("last_run"),
+    })
+
+    return wb_path
+
+
+def read_history_from_template(wb_path: Path = TEMPLATE_PATH) -> pd.DataFrame:
+    """Read BDH blocks from the History sheet saved after manual Bloomberg refresh.
+
+    Returns a DataFrame (date, cusip, px_last). Appends to price_history.csv
+    and updates backfill_state.json with the latest date successfully imported.
+    """
+    from openpyxl import load_workbook
+
+    state = _load_backfill_state()
+    cusips = state.get("cusips", [])
+    if not cusips:
+        return pd.DataFrame(columns=["date", "cusip", "px_last"])
+
+    wb = load_workbook(str(wb_path), data_only=True)
+    ws = wb["History"]
+
+    records = []
+    for block_idx, cusip in enumerate(cusips):
+        data_start = block_idx * _BDH_BLOCK_ROWS + 3   # row n+2 (0-indexed +2 = row 3)
+
+        for r in range(data_start, data_start + _BDH_BLOCK_ROWS - 2):
+            date_val = ws.cell(row=r, column=1).value
+            price_val = ws.cell(row=r, column=2).value
+            if not date_val:
+                break
+            # openpyxl returns Bloomberg dates as Python datetime objects
+            if hasattr(date_val, "date"):
+                d = date_val.date()
+            else:
+                try:
+                    d = datetime.strptime(str(int(float(str(date_val)))), "%Y%m%d").date()
+                except (ValueError, TypeError):
+                    break
+            if isinstance(price_val, (int, float)) and not math.isnan(float(price_val)):
+                records.append({
+                    "date": d.isoformat(),
+                    "cusip": str(cusip),
+                    "px_last": float(price_val),
+                })
+
+    if not records:
+        return pd.DataFrame(columns=["date", "cusip", "px_last"])
+
+    df = pd.DataFrame(records)
+    _append_df_to_price_history(df)
+
+    state["last_date"] = df["date"].max()
+    state["last_run"] = datetime.now().isoformat()
+    _save_backfill_state(state)
+
+    return df
+
+
 # ── manual fallbacks ──────────────────────────────────────────────────────────
 
 def _load_manual_prices(cusips: list[str]) -> dict[str, float]:

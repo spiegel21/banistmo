@@ -35,6 +35,7 @@ from mtm import mark_to_market
 from bloomberg import (
     get_prices, load_latest_prices,
     prepare_template, read_prices_from_template,
+    prepare_history_template, read_history_from_template, last_priced_date,
 )
 from history import (
     compute_daily_pnl, load_pnl_history,
@@ -230,10 +231,70 @@ if st.sidebar.button("② Import prices from template"):
             "waited for Bloomberg to load, and saved the file."
         )
 
-# ── sidebar: history ──────────────────────────────────────────────────────────
+# ── sidebar: price history backfill ──────────────────────────────────────────
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("History")
+st.sidebar.subheader("Price History")
+
+_last_px_date = last_priced_date()
+if _last_px_date:
+    st.sidebar.caption(f"Price history through: {_last_px_date}")
+    # Next business day after last priced date
+    _next_biz = _last_px_date + timedelta(days=1)
+    while _next_biz.weekday() >= 5:
+        _next_biz += timedelta(days=1)
+    _default_hist_prep = _next_biz
+else:
+    st.sidebar.caption("No price history yet.")
+    _default_hist_prep = min_date
+
+hist_prep_start = st.sidebar.date_input(
+    "Backfill from", value=_default_hist_prep, key="hist_prep_start"
+)
+
+st.sidebar.markdown("**Historical prices — 2 steps:**")
+
+if st.sidebar.button("① Write history template"):
+    if all_trades.empty:
+        st.sidebar.warning("No trades found.")
+    else:
+        _today = date.today()
+        _cusip_ranges = []
+        for _cusip, _grp in all_trades.groupby("cusip"):
+            _first = max(_grp["trade_date"].min().date(), hist_prep_start)
+            _net = _grp["nominal"].sum()
+            _last = _today if abs(_net) > 1 else _grp["trade_date"].max().date()
+            if _first <= _last:
+                _cusip_ranges.append((_cusip, _first, _last))
+
+        if _cusip_ranges:
+            _path = prepare_history_template(_cusip_ranges, TEMPLATE_PATH)
+            st.sidebar.success(
+                f"Template ready — {len(_cusip_ranges)} CUSIP(s).\n\n"
+                f"Open **{_path.name}** in Excel, wait for all Bloomberg blocks "
+                "to populate, then save and close."
+            )
+        else:
+            st.sidebar.warning("No CUSIP date ranges to fetch.")
+
+if st.sidebar.button("② Import history from template"):
+    _hist_df = read_history_from_template(TEMPLATE_PATH)
+    if not _hist_df.empty:
+        st.sidebar.success(
+            f"Imported {len(_hist_df)} price records "
+            f"through {_hist_df['date'].max()}."
+        )
+        st.rerun()
+    else:
+        st.sidebar.warning(
+            "No prices found. Ensure Bloomberg populated the template "
+            "and you saved before importing."
+        )
+
+# ── sidebar: P&L history ──────────────────────────────────────────────────────
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("P&L History")
 
 hist_start = st.sidebar.date_input("History from", value=min_date)
 
