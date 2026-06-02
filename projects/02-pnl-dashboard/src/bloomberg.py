@@ -369,31 +369,132 @@ def last_priced_date() -> date | None:
         return None
 
 
+def find_price_gaps(
+    all_trades: pd.DataFrame,
+    end_date: date | None = None,
+) -> list[tuple[str, date, date]]:
+    """Return (cusip, gap_start, gap_end) ranges needed for MTM but absent from price_history.csv.
+
+    Algorithm:
+      1. Walk each CUSIP's signed-nominal trade stream to find every hold interval
+         (date range where net_nominal != 0).  A CUSIP re-bought after a full close
+         produces two separate intervals.
+      2. Compare every business day in each interval against price_history.csv.
+      3. Collapse each run of missing business days into a single (start, end) range.
+
+    Callers pass this directly to prepare_history_template() — no manual date
+    picking needed even after backdated trade edits or new CUSIPs are added.
+    """
+    if all_trades.empty:
+        return []
+
+    if end_date is None:
+        end_date = date.today()
+
+    # ── step 1: compute hold intervals per CUSIP ─────────────────────────────
+    hold_intervals: dict[str, list[tuple[date, date]]] = {}
+
+    for cusip, group in all_trades.groupby("cusip"):
+        group = group.sort_values("trade_date").reset_index(drop=True)
+        cusip = str(cusip)
+        running = 0.0
+        interval_start: date | None = None
+        intervals: list[tuple[date, date]] = []
+
+        for _, row in group.iterrows():
+            was_flat = abs(running) < 0.01
+            running += float(row["nominal"])   # signed: +buy, –sell
+            is_flat = abs(running) < 0.01
+            trade_dt: date = (
+                row["trade_date"].date()
+                if hasattr(row["trade_date"], "date")
+                else row["trade_date"]
+            )
+
+            if was_flat and not is_flat:
+                interval_start = trade_dt
+            elif not was_flat and is_flat and interval_start is not None:
+                intervals.append((interval_start, trade_dt))
+                interval_start = None
+
+        if interval_start is not None:
+            intervals.append((interval_start, end_date))
+
+        if intervals:
+            hold_intervals[cusip] = intervals
+
+    # ── step 2: load what we already have ────────────────────────────────────
+    have: set[tuple[str, str]] = set()
+    if PRICE_HISTORY_PATH.exists() and PRICE_HISTORY_PATH.stat().st_size > 0:
+        try:
+            hist = pd.read_csv(PRICE_HISTORY_PATH, dtype={"cusip": str})
+            have = set(zip(hist["cusip"].astype(str), hist["date"].astype(str)))
+        except Exception:
+            pass
+
+    # ── step 3: find gaps (missing business days) per interval ───────────────
+    result: list[tuple[str, date, date]] = []
+
+    for cusip, intervals in hold_intervals.items():
+        for (ivl_start, ivl_end) in intervals:
+            bdays = [
+                d.date()
+                for d in pd.bdate_range(start=ivl_start, end=min(ivl_end, end_date))
+            ]
+            missing = [d for d in bdays if (cusip, d.isoformat()) not in have]
+            if not missing:
+                continue
+
+            # Collapse consecutive missing business days into contiguous ranges.
+            # Two adjacent elements of `missing` are consecutive business days
+            # iff there is no business day between them — equivalently, they
+            # were neighbours in the original `bdays` list.
+            bday_set = set(bdays)
+            gap_start = missing[0]
+            prev = missing[0]
+            for d in missing[1:]:
+                # Check whether prev and d are adjacent in the full bday sequence.
+                # They are NOT adjacent if there is at least one bday between them
+                # (i.e. a date we already have in price_history).
+                nxt = prev + timedelta(days=1)
+                while nxt not in bday_set and nxt < d:
+                    nxt += timedelta(days=1)
+                if nxt != d:
+                    # Gap interrupted — emit the completed range and start a new one
+                    result.append((cusip, gap_start, prev))
+                    gap_start = d
+                prev = d
+            result.append((cusip, gap_start, prev))
+
+    return result
+
+
 def prepare_history_template(
     cusip_ranges: list[tuple[str, date, date]],
     wb_path: Path = TEMPLATE_PATH,
     ticker_suffix: str = _TICKER_SUFFIX,
 ) -> Path:
-    """Write one BDH block per CUSIP into the History sheet of the template.
+    """Write one BDH block per entry in cusip_ranges into the History sheet.
 
-    Each block (offset by _BDH_BLOCK_ROWS rows per CUSIP):
+    Each block (offset _BDH_BLOCK_ROWS rows apart):
       Row n  : [ticker, start_YYYYMMDD, end_YYYYMMDD]   ← BDH parameters
       Row n+1: ["Date", "PX_LAST"]                       ← column labels
       Row n+2: =BDH formula (Bloomberg fills downward)
 
+    cusip_ranges may contain the same CUSIP more than once (different date
+    spans for re-bought positions — each gets its own block).
+
     After this call the user opens the file in Excel, waits for Bloomberg to
     populate every block, saves and closes. Then call read_history_from_template().
-
-    cusip_ranges: list of (cusip, start_date, end_date) — one entry per security.
     """
     from openpyxl import load_workbook
     from openpyxl.styles import Font
 
     wb = load_workbook(str(wb_path))
     ws = wb["History"]
-    ws.delete_rows(1, max(ws.max_row, 1))   # clear existing content
+    ws.delete_rows(1, max(ws.max_row, 1))
 
-    cusips_saved = []
+    pending_ranges: list[dict] = []
     for block_idx, (cusip, start, end) in enumerate(cusip_ranges):
         row = block_idx * _BDH_BLOCK_ROWS + 1
         ticker = str(cusip) + ticker_suffix
@@ -409,15 +510,17 @@ def prepare_history_template(
         ws.cell(row=row + 2, column=1).value = (
             f'=BDH(A{row},"PX_LAST",B{row},C{row},"Fill","0","Dates","1")'
         )
-        cusips_saved.append(str(cusip))
+        pending_ranges.append({
+            "cusip": str(cusip),
+            "start": start.isoformat(),
+            "end": end.isoformat(),
+        })
 
     wb.save(str(wb_path))
 
     prev = _load_backfill_state()
     _save_backfill_state({
-        "pending_start": str(min(s for _, s, _ in cusip_ranges)),
-        "pending_end": str(max(e for _, _, e in cusip_ranges)),
-        "cusips": cusips_saved,
+        "pending_ranges": pending_ranges,
         "prepared_at": datetime.now().isoformat(),
         "last_date": prev.get("last_date"),
         "last_run": prev.get("last_run"),
@@ -435,23 +538,23 @@ def read_history_from_template(wb_path: Path = TEMPLATE_PATH) -> pd.DataFrame:
     from openpyxl import load_workbook
 
     state = _load_backfill_state()
-    cusips = state.get("cusips", [])
-    if not cusips:
+    pending_ranges: list[dict] = state.get("pending_ranges", [])
+    if not pending_ranges:
         return pd.DataFrame(columns=["date", "cusip", "px_last"])
 
     wb = load_workbook(str(wb_path), data_only=True)
     ws = wb["History"]
 
     records = []
-    for block_idx, cusip in enumerate(cusips):
-        data_start = block_idx * _BDH_BLOCK_ROWS + 3   # row n+2 (0-indexed +2 = row 3)
+    for block_idx, rng in enumerate(pending_ranges):
+        cusip = rng["cusip"]
+        data_start = block_idx * _BDH_BLOCK_ROWS + 3   # row n+2
 
         for r in range(data_start, data_start + _BDH_BLOCK_ROWS - 2):
             date_val = ws.cell(row=r, column=1).value
             price_val = ws.cell(row=r, column=2).value
             if not date_val:
                 break
-            # openpyxl returns Bloomberg dates as Python datetime objects
             if hasattr(date_val, "date"):
                 d = date_val.date()
             else:
@@ -462,7 +565,7 @@ def read_history_from_template(wb_path: Path = TEMPLATE_PATH) -> pd.DataFrame:
             if isinstance(price_val, (int, float)) and not math.isnan(float(price_val)):
                 records.append({
                     "date": d.isoformat(),
-                    "cusip": str(cusip),
+                    "cusip": cusip,
                     "px_last": float(price_val),
                 })
 
