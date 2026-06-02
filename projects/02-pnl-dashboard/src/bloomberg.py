@@ -306,6 +306,7 @@ def load_price_history(path: Path = PRICE_HISTORY_PATH) -> pd.DataFrame:
         return pd.DataFrame(columns=["date", "cusip", "px_last"])
     df = pd.read_csv(path, dtype={"cusip": str})
     df["date"] = pd.to_datetime(df["date"])
+    df["px_last"] = pd.to_numeric(df["px_last"], errors="coerce")
     return df
 
 

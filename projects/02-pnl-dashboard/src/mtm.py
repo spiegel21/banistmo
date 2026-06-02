@@ -59,7 +59,7 @@ def mark_to_market(
 
         bond = bonds_static.get(cusip)
         accrued_pct = accrued_interest(100, bond, as_of) if bond else 0.0
-        dirty_px = clean_px + accrued_pct
+        dirty_px = float(clean_px) + accrued_pct
         mtm_value = pos.net_nominal * dirty_px / 100
         mtm_gain = mtm_value + pos.book_value           # total unrealized (price + carry)
         accrued_pnl = pos.net_nominal * accrued_pct / 100

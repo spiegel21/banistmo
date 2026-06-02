@@ -392,13 +392,13 @@ with tab_mtm:
             view[[c for c in ordered if c in view.columns]],
             ["Price MTM", "Accrued", "MTM Gain", "Realized"],
         )
-        st.dataframe(styled_mtm, use_container_width=True, hide_index=True)
+        st.dataframe(styled_mtm, width="stretch", hide_index=True)
 
         with st.expander("Accrual detail"):
             acc_detail_mtm = accrual_breakdown(positions, bonds_static, as_of)
             if not acc_detail_mtm.empty:
                 acc_view_mtm = _enrich(acc_detail_mtm, bs_df, ["name", "country", "currency"])
-                st.dataframe(acc_view_mtm, use_container_width=True, hide_index=True)
+                st.dataframe(acc_view_mtm, width="stretch", hide_index=True)
             else:
                 st.info("No accruing positions.")
 
@@ -443,7 +443,7 @@ with tab_positions_date:
         edited_pos = st.data_editor(
             pos_display,
             num_rows="fixed",
-            use_container_width=True,
+            width="stretch",
             key="ed_pos_by_date",
             column_config={
                 "cusip":       st.column_config.TextColumn("CUSIP", disabled=True),
@@ -511,7 +511,7 @@ with tab_trades_date:
     edited_day = st.data_editor(
         day_trades,
         num_rows="dynamic",
-        use_container_width=True,
+        width="stretch",
         key="ed_trades_by_date",
         column_config={
             "trade_date":   st.column_config.TextColumn("Trade Date"),
@@ -616,7 +616,7 @@ with tab_attribution:
                 styled_snap = _color_pnl_df(
                     snap_view, ["Price P&L", "Accrued P&L", "MTM Gain", "Realized"]
                 )
-                st.dataframe(styled_snap, use_container_width=True, hide_index=True)
+                st.dataframe(styled_snap, width="stretch", hide_index=True)
                 st.caption(
                     "Price P&L = clean price change × nominal.  "
                     "Accrued P&L = daily accrual.  "
@@ -644,7 +644,7 @@ with tab_attribution:
                 pivot.index = pd.to_datetime(pivot.index).date
                 pivot_reset = pivot.reset_index().rename(columns={"date": "Date"})
                 styled_pivot = _color_pnl_df(pivot_reset, list(pivot.columns))
-                st.dataframe(styled_pivot, use_container_width=True, hide_index=True, height=420)
+                st.dataframe(styled_pivot, width="stretch", hide_index=True, height=420)
                 st.caption("Daily total P&L per bond. Each column = bond name (CUSIP).")
 
     # ── Rollup ───────────────────────────────────────────────────────────────
@@ -700,7 +700,7 @@ with tab_attribution:
             styled_rollup = _color_pnl_df(
                 agg, ["Price P&L", "Accrued P&L", "Realized", "Total P&L"]
             )
-            st.dataframe(styled_rollup, use_container_width=True, hide_index=True)
+            st.dataframe(styled_rollup, width="stretch", hide_index=True)
             st.caption(
                 f"Aggregated P&L grouped by {label.lower()} over "
                 f"{hist_start} → {as_of}. Values are cumulative sums."
@@ -731,7 +731,7 @@ with tab_attribution:
                 "note": "Note",
             })
             styled_acc = _color_pnl_df(acc_full, ["Accrued Total"])
-            st.dataframe(styled_acc, use_container_width=True, hide_index=True)
+            st.dataframe(styled_acc, width="stretch", hide_index=True)
             total_accrued_attr = (
                 _nansum(acc_detail_attr["accrued_total"])
                 if "accrued_total" in acc_detail_attr.columns else 0.0
@@ -769,7 +769,7 @@ with tab_attribution:
                 "accrued_pnl": "Accrued P&L",
             })
             styled_ts = _color_pnl_df(ts_display, ["Price P&L", "Accrued P&L"])
-            st.dataframe(styled_ts, use_container_width=True, hide_index=True, height=500)
+            st.dataframe(styled_ts, width="stretch", hide_index=True, height=500)
             st.download_button(
                 "Download CSV",
                 ts_display.to_csv(index=False).encode(),
