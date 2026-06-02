@@ -110,18 +110,23 @@ def _refresh_and_read_bdp(wb, cusips: list[str]) -> dict[str, dict]:
 
 
 def prepare_template(cusips: list[str], wb_path: Path = TEMPLATE_PATH) -> Path:
-    """Write CUSIPs into Sheet1 col A and save the template.
+    """Write CUSIPs into Sheet1 col A and Static col A, then save the template.
 
-    After calling this, the user opens the file in Excel, waits for Bloomberg
-    BDP formulas to populate, saves and closes. Then call read_prices_from_template().
+    After calling this the user opens the file in Excel, waits for Bloomberg
+    BDP formulas to populate all sheets, saves and closes. Then call
+    read_prices_from_template() for current prices and/or
+    read_static_from_template() for bond reference data.
     """
     from openpyxl import load_workbook
     wb = load_workbook(str(wb_path))
-    ws = wb["Sheet1"]
-    for row in range(2, 52):           # clear up to 50 rows
-        ws.cell(row=row, column=1).value = None
-    for i, cusip in enumerate(cusips):
-        ws.cell(row=i + 2, column=1).value = str(cusip)
+    for sheet_name in ("Sheet1", "Static"):
+        if sheet_name not in wb.sheetnames:
+            continue
+        ws = wb[sheet_name]
+        for row in range(2, 52):
+            ws.cell(row=row, column=1).value = None
+        for i, cusip in enumerate(cusips):
+            ws.cell(row=i + 2, column=1).value = str(cusip)
     wb.save(str(wb_path))
     return wb_path
 
@@ -581,6 +586,132 @@ def read_history_from_template(wb_path: Path = TEMPLATE_PATH) -> pd.DataFrame:
     _save_backfill_state(state)
 
     return df
+
+
+# ── bond static template (BDP reference data) ────────────────────────────────
+
+# Map Bloomberg DAY_CNT_DES strings to our canonical day-count set.
+_DAYCOUNT_MAP: dict[str, str] = {
+    "ACT/360": "Act/360",
+    "ACTUAL/360": "Act/360",
+    "A/360": "Act/360",
+    "ACT/365": "Act/365",
+    "ACTUAL/365": "Act/365",
+    "A/365": "Act/365",
+    "30/360": "30/360",
+    "30/360 BOND": "30/360",
+    "30/360 ISDA": "30/360",
+    "ISMA-30/360": "30/360",
+    "30E/360": "30/360",
+    "BOND BASIS": "30/360",
+}
+
+
+def _normalize_day_count(raw) -> str | None:
+    if raw is None:
+        return None
+    upper = str(raw).strip().upper()
+    result = _DAYCOUNT_MAP.get(upper)
+    if result is None:
+        log.warning("Unknown Bloomberg day count %r — leaving blank", raw)
+    return result
+
+
+def read_static_from_template(wb_path: Path = TEMPLATE_PATH) -> pd.DataFrame:
+    """Read bond reference data from the Static sheet of a Bloomberg-populated template.
+
+    Column order matches bonds_static.csv exactly:
+      cusip, name, currency, country, coupon_rate, coupon_frequency,
+      day_count_convention, maturity_date, first_coupon_date
+
+    The formula in the template already divides CPN by 100, so coupon_rate
+    arrives as a decimal (e.g. 0.055 for 5.5%).
+    Bloomberg dates come back as Python datetime objects; stored as ISO strings.
+    Day-count strings are normalised to {Act/360, Act/365, 30/360}.
+    """
+    from openpyxl import load_workbook
+    from data_io import BONDS_COLUMNS
+
+    wb = load_workbook(str(wb_path), data_only=True)
+    if "Static" not in wb.sheetnames:
+        return pd.DataFrame(columns=BONDS_COLUMNS)
+
+    ws = wb["Static"]
+    headers = [ws.cell(row=1, column=c).value for c in range(1, 10)]
+
+    records = []
+    for row in range(2, 52):
+        cusip_val = ws.cell(row=row, column=1).value
+        if not cusip_val:
+            continue
+
+        rec: dict = {"cusip": str(cusip_val).strip()}
+        for col_idx, field in enumerate(headers[1:], 2):
+            if not field:
+                continue
+            val = ws.cell(row=row, column=col_idx).value
+
+            if field == "day_count_convention":
+                val = _normalize_day_count(val)
+            elif field in ("maturity_date", "first_coupon_date"):
+                if hasattr(val, "date"):
+                    val = val.date().isoformat()
+                elif val is not None:
+                    val = str(val)
+            elif field == "coupon_rate":
+                val = float(val) if val is not None else None
+            elif field == "coupon_frequency":
+                val = int(round(float(val))) if val is not None else None
+
+            rec[field] = val
+        records.append(rec)
+
+    if not records:
+        return pd.DataFrame(columns=BONDS_COLUMNS)
+
+    return pd.DataFrame(records).reindex(columns=BONDS_COLUMNS)
+
+
+def merge_bonds_static(fetched_df: pd.DataFrame) -> tuple[int, int]:
+    """Fill gaps in bonds_static.csv using Bloomberg-fetched reference data.
+
+    Existing values are preserved — only NaN / blank cells are filled.
+    CUSIPs not yet in bonds_static.csv are added entirely.
+
+    Returns (n_new_cusips, n_fields_filled).
+    Raises ValueError (propagated from save_bonds_static) if any merged row
+    still fails BondStatic validation after the merge.
+    """
+    from data_io import save_bonds_static, BONDS_COLUMNS
+
+    if fetched_df.empty:
+        return (0, 0)
+
+    if BONDS_STATIC_PATH.exists() and BONDS_STATIC_PATH.stat().st_size > 0:
+        existing = pd.read_csv(BONDS_STATIC_PATH, dtype={"cusip": str})
+    else:
+        existing = pd.DataFrame(columns=BONDS_COLUMNS)
+
+    existing["cusip"] = existing["cusip"].astype(str)
+    fetched = fetched_df.reindex(columns=BONDS_COLUMNS).copy()
+    fetched["cusip"] = fetched["cusip"].astype(str)
+
+    new_cusips = set(fetched["cusip"]) - set(existing["cusip"])
+
+    # combine_first: existing values win; gaps filled from fetched
+    merged = (
+        existing.set_index("cusip")
+        .combine_first(fetched.set_index("cusip"))
+        .reset_index()
+    )
+
+    # Count cells that were NaN before but are now filled
+    pre = existing.set_index("cusip").reindex(merged.set_index("cusip").index)
+    post = merged.set_index("cusip")
+    fields_filled = int((post.notna() & pre.isna()).sum().sum())
+
+    save_bonds_static(merged)
+    return (len(new_cusips), fields_filled)
 
 
 # ── manual fallbacks ──────────────────────────────────────────────────────────

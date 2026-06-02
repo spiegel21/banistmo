@@ -37,6 +37,7 @@ from bloomberg import (
     prepare_template, read_prices_from_template,
     prepare_history_template, read_history_from_template,
     last_priced_date, find_price_gaps,
+    read_static_from_template, merge_bonds_static,
 )
 from history import (
     compute_daily_pnl, load_pnl_history,
@@ -231,6 +232,26 @@ if st.sidebar.button("② Import prices from template"):
             "No prices found. Make sure you opened the template in Excel, "
             "waited for Bloomberg to load, and saved the file."
         )
+
+if st.sidebar.button("③ Import bond static from template"):
+    _fetched_static = read_static_from_template(TEMPLATE_PATH)
+    if _fetched_static.empty or _fetched_static["cusip"].isna().all():
+        st.sidebar.warning(
+            "No bond static data found in the Static sheet. "
+            "Make sure Bloomberg populated it after you wrote CUSIPs (step ①)."
+        )
+    else:
+        try:
+            _n_new, _n_filled = merge_bonds_static(_fetched_static)
+            st.sidebar.success(
+                f"Bond static updated: {_n_new} new CUSIP(s), {_n_filled} field(s) filled."
+            )
+            st.rerun()
+        except ValueError as _exc:
+            st.sidebar.error(
+                f"Bond static import failed validation — fix the highlighted rows "
+                f"in Data Editor → Bond Static.\n\n{_exc}"
+            )
 
 # ── sidebar: price history backfill ──────────────────────────────────────────
 
