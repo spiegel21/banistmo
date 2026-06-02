@@ -237,31 +237,30 @@ if st.sidebar.button("② Import prices from template"):
 st.sidebar.markdown("---")
 st.sidebar.subheader("Price History")
 
-_last_px_date = last_priced_date()
-if _last_px_date:
-    st.sidebar.caption(f"Price history through: {_last_px_date}")
+# Gap detection runs on every render: picks up trade edits and new CUSIPs
+# without any user action.
+_price_gaps = find_price_gaps(all_trades) if not all_trades.empty else []
+
+if _price_gaps:
+    _n_cusips_gap = len({c for c, _, _ in _price_gaps})
+    st.sidebar.warning(
+        f"Missing prices: {len(_price_gaps)} range(s) across {_n_cusips_gap} CUSIP(s)."
+    )
+    if st.sidebar.button("Prepare Bloomberg template"):
+        _path = prepare_history_template(_price_gaps, TEMPLATE_PATH)
+        st.sidebar.success(
+            f"Template ready — {len(_price_gaps)} block(s).\n\n"
+            f"Open **{_path.name}** in Excel, wait for all Bloomberg blocks "
+            "to populate, then save and close."
+        )
 else:
-    st.sidebar.caption("No price history yet.")
-
-st.sidebar.markdown("**Historical prices — 2 steps:**")
-
-if st.sidebar.button("① Write history template"):
-    if all_trades.empty:
-        st.sidebar.warning("No trades found.")
+    _last_px_date = last_priced_date()
+    if _last_px_date:
+        st.sidebar.caption(f"Price history complete through {_last_px_date}.")
     else:
-        _gaps = find_price_gaps(all_trades)
-        if not _gaps:
-            st.sidebar.info("Price history is complete — no gaps detected.")
-        else:
-            _unique = len({c for c, _, _ in _gaps})
-            _path = prepare_history_template(_gaps, TEMPLATE_PATH)
-            st.sidebar.success(
-                f"Template ready — {len(_gaps)} gap range(s) across {_unique} CUSIP(s).\n\n"
-                f"Open **{_path.name}** in Excel, wait for all Bloomberg blocks "
-                "to populate, then save and close."
-            )
+        st.sidebar.caption("No price history yet.")
 
-if st.sidebar.button("② Import history from template"):
+if st.sidebar.button("Import history from template"):
     _hist_df = read_history_from_template(TEMPLATE_PATH)
     if not _hist_df.empty:
         st.sidebar.success(
