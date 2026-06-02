@@ -1,5 +1,5 @@
 """
-Run once to create bloomberg_prices.xlsx with BDP and BDH sheets.
+Run once to create bloomberg_prices.xlsx with BDP, Static, and BDH sheets.
 
 Usage:  python templates/create_bloomberg_template.py
 """
@@ -13,7 +13,7 @@ OUTPUT = Path(__file__).parent / "bloomberg_prices.xlsx"
 HEADER_FILL = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
 HEADER_FONT = Font(color="FFFFFF", bold=True)
 TICKER_SUFFIX = " Corp"   # change to " Govt" or " Mtge" if needed
-N_ROWS = 50               # max number of securities on BDP sheet
+N_ROWS = 50               # max number of securities on BDP / Static sheets
 
 
 def _header(ws, col, text):
@@ -40,6 +40,51 @@ def create_bdp_sheet(wb: Workbook) -> None:
     ws.column_dimensions["A"].width = 16
     for col in range(2, 5):
         ws.column_dimensions[get_column_letter(col)].width = 22
+
+
+def create_static_sheet(wb: Workbook) -> None:
+    """Static sheet — bond reference data via BDP reference fields.
+
+    Columns mirror bonds_static.csv exactly so the values can be imported
+    directly. CUSIPs are written into column A (by the dashboard / a prepare
+    step); every other column is a BDP formula keyed off A{row}.
+
+    Notes on field mapping:
+      - coupon_rate: Bloomberg CPN is a percent (e.g. 5.5); we divide by 100
+        in the formula so the cell holds 0.055 (the decimal bonds_static wants).
+      - day_count_convention: DAY_CNT_DES returns Bloomberg's raw string
+        (e.g. "ACT/360", "30/360", "ISMA-30/360"); the importer normalises it
+        to one of {Act/360, Act/365, 30/360}.
+      - maturity_date / first_coupon_date: returned as Excel dates.
+    """
+    ws = wb.create_sheet("Static")
+
+    # (header, BDP field expression keyed off A{row}, or None for the CUSIP col)
+    columns = [
+        ("cusip", None),
+        ("name", 'BDP(A{r}&"{sfx}","SECURITY_DES")'),
+        ("currency", 'BDP(A{r}&"{sfx}","CRNCY")'),
+        ("country", 'BDP(A{r}&"{sfx}","CNTRY_OF_RISK")'),
+        ("coupon_rate", 'BDP(A{r}&"{sfx}","CPN")/100'),
+        ("coupon_frequency", 'BDP(A{r}&"{sfx}","CPN_FREQ")'),
+        ("day_count_convention", 'BDP(A{r}&"{sfx}","DAY_CNT_DES")'),
+        ("maturity_date", 'BDP(A{r}&"{sfx}","MATURITY")'),
+        ("first_coupon_date", 'BDP(A{r}&"{sfx}","FIRST_CPN_DT")'),
+    ]
+
+    for col, (header, _) in enumerate(columns, 1):
+        _header(ws, col, header)
+
+    for row in range(2, N_ROWS + 2):
+        for col, (_, expr) in enumerate(columns, 1):
+            if expr is None:
+                continue   # column A holds the CUSIP, written by the caller
+            ws.cell(row=row, column=col,
+                    value="=" + expr.format(r=row, sfx=TICKER_SUFFIX))
+
+    ws.column_dimensions["A"].width = 16
+    for col in range(2, len(columns) + 1):
+        ws.column_dimensions[get_column_letter(col)].width = 20
 
 
 def create_history_sheet(wb: Workbook) -> None:
@@ -70,10 +115,12 @@ def create_history_sheet(wb: Workbook) -> None:
 def main():
     wb = Workbook()
     create_bdp_sheet(wb)
+    create_static_sheet(wb)
     create_history_sheet(wb)
     wb.save(OUTPUT)
     print(f"Template saved → {OUTPUT}")
     print("Sheet1: BDP current prices (run Refresh Bloomberg Prices in dashboard)")
+    print("Static:  BDP bond reference data (coupon, frequency, dates, day count)")
     print("History: BDH time-series (used by backfill_prices.py)")
 
 
