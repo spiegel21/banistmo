@@ -535,7 +535,11 @@ with tab_trades_date:
         day_trades = pd.DataFrame(columns=data_io.TRADES_COLUMNS)
         day_mask = pd.Series(dtype=bool)
     else:
-        raw_trade_dates = pd.to_datetime(full_raw_df["trade_date"], errors="coerce").dt.date
+        _td = pd.to_datetime(full_raw_df["trade_date"], format="%m/%d/%y", errors="coerce")
+        _unresolved = _td.isna() & full_raw_df["trade_date"].notna()
+        if _unresolved.any():
+            _td[_unresolved] = pd.to_datetime(full_raw_df.loc[_unresolved, "trade_date"], errors="coerce")
+        raw_trade_dates = _td.dt.date
         day_mask = raw_trade_dates == trades_date
         day_trades = full_raw_df[day_mask].copy()
 
