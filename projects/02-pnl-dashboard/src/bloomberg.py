@@ -715,6 +715,29 @@ def merge_bonds_static(fetched_df: pd.DataFrame) -> tuple[int, int]:
     return (len(new_cusips), fields_filled)
 
 
+def open_in_excel(path: Path) -> bool:
+    """Best-effort: open a file in Excel/the system's default spreadsheet app.
+
+    Works on Windows (os.startfile), macOS (open), and Linux (xdg-open).
+    Returns True if the launch succeeded, False if it failed or the platform
+    couldn't be detected — caller should fall back to showing the file path.
+    """
+    import sys
+    import subprocess
+    try:
+        if sys.platform == "win32":
+            import os
+            os.startfile(str(path))
+        elif sys.platform == "darwin":
+            subprocess.Popen(["open", str(path)])
+        else:
+            subprocess.Popen(["xdg-open", str(path)])
+        return True
+    except Exception as exc:
+        log.warning("Could not open %s in Excel: %s", path, exc)
+        return False
+
+
 # ── manual fallbacks ──────────────────────────────────────────────────────────
 
 def _load_manual_prices(cusips: list[str]) -> dict[str, float]:
