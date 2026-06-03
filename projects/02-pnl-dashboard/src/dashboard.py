@@ -85,14 +85,19 @@ def _bonds_static_df(bonds_static: dict) -> pd.DataFrame:
 
 
 def _enrich(df: pd.DataFrame, bs_df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
-    """Left-join df with bs_df on cusip; insert enrichment cols right after cusip."""
+    """Left-join df with bs_df on cusip; insert enrichment cols right after cusip.
+
+    Skips any column already present in df to avoid _x/_y merge conflicts.
+    """
     if df.empty or bs_df.empty:
         return df
-    available = [c for c in cols if c in bs_df.columns]
-    merged = df.merge(bs_df[["cusip"] + available], on="cusip", how="left")
-    # reorder: cusip, enrichment cols, then remaining original cols (preserving order)
+    need = [c for c in cols if c in bs_df.columns and c not in df.columns]
+    if not need:
+        return df
+    merged = df.merge(bs_df[["cusip"] + need], on="cusip", how="left")
+    # reorder: cusip, enrichment cols, then remaining original cols
     others = [c for c in df.columns if c != "cusip"]
-    ordered = ["cusip"] + available + others
+    ordered = ["cusip"] + need + others
     return merged[[c for c in ordered if c in merged.columns]]
 
 
@@ -825,6 +830,7 @@ with tab_ledger:
     if acc.empty:
         st.info("No accruing positions on this day.")
     else:
+        acc = _enrich(acc, bs_df, ["name"])
         st.dataframe(acc, width='stretch', hide_index=True)
 
     cL, cR = st.columns(2)
@@ -837,7 +843,8 @@ with tab_ledger:
         if booked.empty:
             st.info("No trades booked.")
         else:
-            cols = ["cusip", "side", "nominal", "price", "net", "accrued", "trader", "portfolio"]
+            cols = ["cusip", "name", "side", "nominal", "price", "net", "accrued", "trader", "portfolio"]
+            booked = _enrich(booked, bs_df, ["name"])
             st.dataframe(booked[[c for c in cols if c in booked.columns]],
                          width='stretch', hide_index=True)
 
@@ -849,6 +856,7 @@ with tab_ledger:
         if rl is None or rl.empty:
             st.info("No positions closed.")
         else:
+            rl = _enrich(rl, bs_df, ["name"])
             st.dataframe(rl, width='stretch', hide_index=True)
 
 # ── Tab 7: Time Series ────────────────────────────────────────────────────────
