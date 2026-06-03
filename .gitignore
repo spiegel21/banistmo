@@ -1,0 +1,57 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Data files with real trade / price data (not committed)
+projects/02-pnl-dashboard/data/trades.csv
+projects/02-pnl-dashboard/data/portfolio.csv
+projects/02-pnl-dashboard/data/price_history.csv
+projects/02-pnl-dashboard/data/pnl_history.csv
+projects/02-pnl-dashboard/data/prices/
+projects/02-pnl-dashboard/data/backups/
+
+# initial_positions.csv and bonds_static.csv contain no market data — committed
+# (they are static reference data entered once by the user)
+
+# Bloomberg Excel outputs (contain market data, not committed)
+*.xlsm
+# But DO commit the template
+!projects/02-pnl-dashboard/templates/bloomberg_prices.xlsx
+
+# Secrets / credentials
+*.env
+.env
+secrets.py
+credentials.json
+config_local.py
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Logs
+*.log
