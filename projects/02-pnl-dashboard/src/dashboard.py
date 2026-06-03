@@ -217,7 +217,7 @@ cusip_list = list(positions.keys())
 
 if st.sidebar.button("① Prepare & open template", key="btn_prepare_prices"):
     if cusip_list:
-        _path = prepare_template(cusip_list, TEMPLATE_PATH)
+        _path = prepare_template(cusip_list, TEMPLATE_PATH, bonds_static=bonds_static)
         if open_in_excel(_path):
             st.sidebar.success(
                 f"Opened **{_path.name}** in Excel — wait for Bloomberg to "
@@ -274,7 +274,7 @@ if _price_gaps:
         f"Missing prices: {len(_price_gaps)} range(s) across {_n_cusips_gap} CUSIP(s)."
     )
     if st.sidebar.button("① Prepare & open history template", key="btn_prepare_hist"):
-        _path = prepare_history_template(_price_gaps, TEMPLATE_PATH)
+        _path = prepare_history_template(_price_gaps, TEMPLATE_PATH, bonds_static=bonds_static)
         if open_in_excel(_path):
             st.sidebar.success(
                 f"Opened **{_path.name}** in Excel — wait for all {len(_price_gaps)} "

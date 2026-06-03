@@ -44,6 +44,7 @@ def load_bonds_static(path: Path | None = None) -> dict[str, BondStatic]:
                 day_count_convention=str(row["day_count_convention"]),
                 maturity_date=row["maturity_date"].date(),
                 first_coupon_date=row["first_coupon_date"].date(),
+                bbg_ticker="" if pd.isna(row.get("bbg_ticker")) else str(row.get("bbg_ticker", "")),
             )
         except (ValueError, KeyError, TypeError) as exc:
             log.warning("Skipping invalid bonds_static row for %s: %s", cusip, exc)

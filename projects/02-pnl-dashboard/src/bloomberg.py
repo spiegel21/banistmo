@@ -40,6 +40,37 @@ _BDP_TIMEOUT = 30   # seconds
 _BDH_TIMEOUT = 60   # seconds (BDH is slower)
 _POLL_INTERVAL = 2
 
+# Bloomberg ticker suffixes by asset class.
+_DEFAULT_TICKER_SUFFIX = " Corp"
+_KNOWN_SUFFIXES = (" Corp", " Govt", " Mtge", " Muni", " MMkt", " Index")
+_BDP_SHEET = "Live MTM"   # renamed from Sheet1
+
+
+def _ticker_for(cusip: str, bonds_static: dict | None = None) -> str:
+    """Return full Bloomberg ticker for a CUSIP.
+
+    Uses BondStatic.bbg_ticker if set, otherwise appends _DEFAULT_TICKER_SUFFIX.
+    """
+    if bonds_static:
+        b = bonds_static.get(str(cusip))
+        if b and b.bbg_ticker:
+            return b.bbg_ticker
+    return str(cusip) + _DEFAULT_TICKER_SUFFIX
+
+
+def _cusip_from_ticker(ticker: str) -> str:
+    """Strip Bloomberg ticker suffix to recover the bare CUSIP.
+
+    Works for any suffix in _KNOWN_SUFFIXES; if no match the full string is
+    returned as-is (handles plain CUSIPs written by older template versions).
+    """
+    t = str(ticker).strip()
+    upper = t.upper()
+    for sfx in _KNOWN_SUFFIXES:
+        if upper.endswith(sfx.upper()):
+            return t[: len(t) - len(sfx)].strip()
+    return t
+
 
 def _try_xlwings_import():
     try:
@@ -52,8 +83,8 @@ def _try_xlwings_import():
 # ── BDP (current prices) ─────────────────────────────────────────────────────
 
 def _write_cusips(cusips: list[str], wb) -> None:
-    """Write CUSIPs into Sheet1 column A starting at row 2, forcing text format."""
-    sheet = wb.sheets["Sheet1"]
+    """Write CUSIPs into Live MTM column A starting at row 2, forcing text format."""
+    sheet = wb.sheets[_BDP_SHEET]
     last_row = sheet.range("A2").end("down").row
     if last_row >= 2:
         sheet.range(f"A2:A{max(last_row, len(cusips) + 1)}").clear_contents()
@@ -69,7 +100,7 @@ def _is_real_price(v) -> bool:
 
 
 def _all_prices_filled(sheet, n: int) -> bool:
-    """Return True only when all price cells contain finite numeric values."""
+    """Return True only when all price cells (col B) contain finite numeric values."""
     values = sheet.range(f"B2:B{n + 1}").value
     if values is None:
         return False
@@ -82,7 +113,7 @@ def _refresh_and_read_bdp(wb, cusips: list[str]) -> dict[str, dict]:
     """Trigger BDP refresh and poll until all prices are numeric, then return results.
     Uses the original cusips list as keys to avoid Excel stripping leading zeros."""
     n_cusips = len(cusips)
-    sheet = wb.sheets["Sheet1"]
+    sheet = wb.sheets[_BDP_SHEET]
     wb.app.calculate()
 
     elapsed = 0
@@ -110,24 +141,36 @@ def _refresh_and_read_bdp(wb, cusips: list[str]) -> dict[str, dict]:
     return result
 
 
-def prepare_template(cusips: list[str], wb_path: Path = TEMPLATE_PATH) -> Path:
-    """Write CUSIPs into Sheet1 col A and Static col A, then save the template.
+def prepare_template(
+    cusips: list[str],
+    wb_path: Path = TEMPLATE_PATH,
+    bonds_static: dict | None = None,
+) -> Path:
+    """Write Bloomberg tickers into Live MTM col A and Static col A, then save.
 
-    After calling this the user opens the file in Excel, waits for Bloomberg
-    BDP formulas to populate all sheets, saves and closes. Then call
-    read_prices_from_template() for current prices and/or
-    read_static_from_template() for bond reference data.
+    Live MTM and Static col A receive the full Bloomberg ticker (e.g.
+    "912828Z78 Govt") built from BondStatic.bbg_ticker; bare CUSIPs that have
+    no bbg_ticker entry default to cusip + " Corp".
+
+    The BDP/BDH formulas in the template reference A{row} directly (no suffix
+    appended in-formula), so correct pricing depends on having the right ticker
+    in col A.
+
+    After calling this the user opens the file in Excel, waits for Bloomberg to
+    populate both sheets, saves and closes. Then call read_prices_from_template()
+    and/or read_static_from_template().
     """
     from openpyxl import load_workbook
     wb = load_workbook(str(wb_path))
-    for sheet_name in ("Sheet1", "Static"):
+    for sheet_name in (_BDP_SHEET, "Static"):
         if sheet_name not in wb.sheetnames:
             continue
         ws = wb[sheet_name]
         for row in range(2, 52):
             ws.cell(row=row, column=1).value = None
         for i, cusip in enumerate(cusips):
-            ws.cell(row=i + 2, column=1).value = str(cusip)
+            ticker = _ticker_for(cusip, bonds_static)
+            ws.cell(row=i + 2, column=1).value = ticker
     wb.save(str(wb_path))
     return wb_path
 
@@ -135,21 +178,26 @@ def prepare_template(cusips: list[str], wb_path: Path = TEMPLATE_PATH) -> Path:
 def read_prices_from_template(wb_path: Path = TEMPLATE_PATH) -> dict[str, float]:
     """Read cached Bloomberg prices from a template saved after a manual Excel refresh.
 
+    Col A contains the full Bloomberg ticker (e.g. "912828Z78 Govt"); the CUSIP
+    is recovered via _cusip_from_ticker().  Col B contains PX_LAST.
+
     openpyxl data_only=True reads the last-calculated cell values (not formulas),
     so this only works after the user has opened the file in Excel and saved it
     with Bloomberg prices populated.
     """
     from openpyxl import load_workbook
     wb = load_workbook(str(wb_path), data_only=True)
-    ws = wb["Sheet1"]
+    sheet_name = _BDP_SHEET if _BDP_SHEET in wb.sheetnames else "Sheet1"
+    ws = wb[sheet_name]
     prices = {}
     for row in range(2, 52):
-        cusip = ws.cell(row=row, column=1).value
+        raw = ws.cell(row=row, column=1).value
         price = ws.cell(row=row, column=2).value
-        if not cusip:
+        if not raw:
             continue
+        cusip = _cusip_from_ticker(str(raw))
         if isinstance(price, (int, float)) and not math.isnan(float(price)):
-            prices[str(cusip)] = float(price)
+            prices[cusip] = float(price)
     if prices:
         _save_price_snapshot(prices)
         _append_to_price_history(prices, date.today())
@@ -224,10 +272,10 @@ def get_historical_prices_bdh(
     return _load_manual_price_history(cusips, start_date, end_date)
 
 
-def _fetch_bdh_via_excel(cusips, start_date, end_date, wb_path, xw) -> list[dict]:
+def _fetch_bdh_via_excel(cusips, start_date, end_date, wb_path, xw,
+                         bonds_static=None) -> list[dict]:
     start_str = start_date.strftime("%Y%m%d")
     end_str = end_date.strftime("%Y%m%d")
-    ticker_suffix = " Corp"
 
     app = xw.App(visible=False, add_book=False)
     records = []
@@ -238,8 +286,8 @@ def _fetch_bdh_via_excel(cusips, start_date, end_date, wb_path, xw) -> list[dict
         for cusip in cusips:
             sheet.clear_contents()
 
-            # Write parameters
-            sheet["A1"].value = cusip + ticker_suffix
+            # Write parameters — use per-bond ticker if available
+            sheet["A1"].value = _ticker_for(cusip, bonds_static)
             sheet["B1"].value = start_str
             sheet["C1"].value = end_str
 
@@ -346,7 +394,6 @@ def load_latest_prices() -> dict[str, float]:
 # ── history template (manual two-step BDH workflow) ──────────────────────────
 
 _BACKFILL_STATE_PATH = PRICES_DIR / "backfill_state.json"
-_TICKER_SUFFIX = " Corp"
 _BDH_BLOCK_ROWS = 510   # rows reserved per CUSIP block (ample for ~500 business days)
 
 
@@ -479,7 +526,7 @@ def find_price_gaps(
 def prepare_history_template(
     cusip_ranges: list[tuple[str, date, date]],
     wb_path: Path = TEMPLATE_PATH,
-    ticker_suffix: str = _TICKER_SUFFIX,
+    bonds_static: dict | None = None,
 ) -> Path:
     """Write one BDH block per entry in cusip_ranges into the History sheet.
 
@@ -504,12 +551,13 @@ def prepare_history_template(
     pending_ranges: list[dict] = []
     for block_idx, (cusip, start, end) in enumerate(cusip_ranges):
         row = block_idx * _BDH_BLOCK_ROWS + 1
-        ticker = str(cusip) + ticker_suffix
+        ticker = _ticker_for(cusip, bonds_static)
 
         ws.cell(row=row, column=1).value = ticker
         ws.cell(row=row, column=1).font = Font(bold=True)
-        ws.cell(row=row, column=2).value = start.strftime("%Y%m%d")
-        ws.cell(row=row, column=3).value = end.strftime("%Y%m%d")
+        # Store dates as integers (YYYYMMDD) so Bloomberg reads them unambiguously.
+        ws.cell(row=row, column=2).value = int(start.strftime("%Y%m%d"))
+        ws.cell(row=row, column=3).value = int(end.strftime("%Y%m%d"))
 
         ws.cell(row=row + 1, column=1).value = "Date"
         ws.cell(row=row + 1, column=2).value = "PX_LAST"
@@ -642,11 +690,13 @@ def read_static_from_template(wb_path: Path = TEMPLATE_PATH) -> pd.DataFrame:
 
     records = []
     for row in range(2, 52):
-        cusip_val = ws.cell(row=row, column=1).value
-        if not cusip_val:
+        raw_a = ws.cell(row=row, column=1).value
+        if not raw_a:
             continue
 
-        rec: dict = {"cusip": str(cusip_val).strip()}
+        # Col A may hold a full ticker ("912828Z78 Govt") or a bare CUSIP from
+        # older templates — _cusip_from_ticker handles both.
+        rec: dict = {"cusip": _cusip_from_ticker(str(raw_a))}
         for col_idx, field in enumerate(headers[1:], 2):
             if not field:
                 continue
