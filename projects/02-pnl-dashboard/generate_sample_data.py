@@ -8,35 +8,29 @@ Run from anywhere inside the project:
 Or from the project root:
     cd projects/02-pnl-dashboard && python generate_sample_data.py
 
-Writes (or overwrites) CSV files under data/ so the Streamlit dashboard
-can be explored before Bloomberg static data is imported.
+Writes (or overwrites) CSV files under data/:
+  bonds_static.csv       — CUSIPs only; static fields populated via Bloomberg
+  initial_positions.csv  — inception holdings as of 2025-04-30
+  trades.csv             — 15 sample trade confirmations
+
+Price history is NOT generated here. Use the dashboard Bloomberg workflow:
+  1. streamlit run src/dashboard.py
+  2. Sidebar → Today's Prices: ① Prepare & open template → Bloomberg → ③ Import prices & static
+  3. Sidebar → Price History:  ① Prepare & open history template → Bloomberg → ③ Import history
+     (P&L recomputes automatically after import)
 
 Portfolio design
 ----------------
   HY  25714PFB9  (bond static data comes from Bloomberg)
   HY  195325ER2  (bond static data comes from Bloomberg)
   IG  25714PEF1  (bond static data comes from Bloomberg)
-
-bonds_static.csv is intentionally written with only the CUSIP column.
-Run the dashboard Bloomberg workflow (Prepare → Excel → Import prices & static)
-to populate coupon, maturity, day-count, etc.
-
-Timeline
---------
-  Inception mark (initial_positions.csv) : 2025-04-30
-  Trades                                 : 2025-05-05 → 2026-05-15
-  Price history                          : 2025-04-30 → 2026-05-29
-
-The random walk uses a fixed seed (42) so every run produces identical files.
 """
 from __future__ import annotations
 
-import sys
 from datetime import date, timedelta
 from pathlib import Path
 from typing import NamedTuple
 
-import numpy as np
 import pandas as pd
 
 # ── paths ─────────────────────────────────────────────────────────────────────
@@ -46,15 +40,12 @@ DATA_DIR = PROJECT_ROOT / "data"
 PRICES_DIR = DATA_DIR / "prices"
 
 INCEPTION_DATE = date(2025, 4, 30)   # end-of-month mark that seeds positions
-END_DATE       = date(2026, 5, 29)   # last business day of price history
-
-RNG = np.random.default_rng(42)      # reproducible
 
 
 # ── bond definitions (internal only — NOT written to bonds_static.csv) ────────
-# Bloomberg will supply the real coupon/maturity/day-count via Static sheet.
-# These placeholder values are only used to compute sample accrued interest
-# and net cash in the generated trades.csv.
+# Bloomberg supplies the real coupon/maturity/day-count via the Static sheet.
+# These placeholder values are used only to compute accrued interest and net
+# cash in the generated trade confirmations.
 
 class _Bond(NamedTuple):
     cusip: str
@@ -74,6 +65,14 @@ BONDS: list[_Bond] = [
 ]
 
 _BOND_BY_CUSIP: dict[str, _Bond] = {b.cusip: b for b in BONDS}
+
+# Representative clean prices (% of par) used for trade confirmation figures.
+# These are fixed; real market prices come from Bloomberg via the import flow.
+_SPOT_PRICES: dict[str, float] = {
+    "25714PFB9": 97.50,
+    "195325ER2": 95.25,
+    "25714PEF1": 98.75,
+}
 
 
 # ── accruals helpers (mirrors accruals.py — standalone, no src/ import) ───────
@@ -129,15 +128,6 @@ def _accrued_pct(bond: _Bond, as_of: date) -> float:
 
 # ── calendar ──────────────────────────────────────────────────────────────────
 
-def business_days(start: date, end: date) -> list[date]:
-    out, d = [], start
-    while d <= end:
-        if d.weekday() < 5:
-            out.append(d)
-        d += timedelta(days=1)
-    return out
-
-
 def _t2_settle(trade_date: date) -> date:
     d = trade_date + timedelta(days=2)
     while d.weekday() >= 5:
@@ -145,39 +135,9 @@ def _t2_settle(trade_date: date) -> date:
     return d
 
 
-# ── price simulation ──────────────────────────────────────────────────────────
-
-_PRICE_PARAMS: dict[str, tuple[float, float]] = {
-    "25714PFB9": (97.50, 0.18),
-    "195325ER2": (95.25, 0.16),
-    "25714PEF1": (98.75, 0.07),
-}
-
-
-def generate_price_history(days: list[date]) -> pd.DataFrame:
-    """Random walk for each CUSIP; clipped to [82, 108] to stay plausible."""
-    n = len(days)
-    rows: list[dict] = []
-    for cusip, (start, vol) in _PRICE_PARAMS.items():
-        shocks = RNG.normal(0.0, vol, n)
-        prices = [start]
-        for s in shocks[1:]:
-            prices.append(max(82.0, min(108.0, prices[-1] + s)))
-        for d, px in zip(days, prices):
-            rows.append({"date": d.isoformat(), "cusip": cusip, "px_last": round(px, 4)})
-    return pd.DataFrame(rows)
-
-
-def _px(prices_df: pd.DataFrame, cusip: str, as_of: date) -> float:
-    sub = prices_df[(prices_df["cusip"] == cusip) & (prices_df["date"] <= as_of.isoformat())]
-    if sub.empty:
-        return _PRICE_PARAMS[cusip][0]
-    return float(sub.iloc[-1]["px_last"])
-
-
 # ── bonds_static ──────────────────────────────────────────────────────────────
 # Only the CUSIP column is written. All other fields (name, coupon, maturity,
-# day-count, etc.) are left blank and must be populated via Bloomberg.
+# day-count, etc.) are left blank and populated via Bloomberg Static sheet.
 
 def build_bonds_static() -> pd.DataFrame:
     return pd.DataFrame([
@@ -201,10 +161,10 @@ _INCEPTION_SPECS = [
 ]
 
 
-def build_initial_positions(prices_df: pd.DataFrame) -> pd.DataFrame:
+def build_initial_positions() -> pd.DataFrame:
     rows = []
     for portfolio, cusip, nominal in _INCEPTION_SPECS:
-        px = _px(prices_df, cusip, INCEPTION_DATE)
+        px = _SPOT_PRICES[cusip]
         book_value = round(-(nominal * px / 100), 2)
         rows.append({
             "portfolio": portfolio,
@@ -249,11 +209,11 @@ _YTM = {
 }
 
 
-def build_trades(prices_df: pd.DataFrame) -> pd.DataFrame:
+def build_trades() -> pd.DataFrame:
     rows = []
     for portfolio, cusip, trader, side, nominal, trade_date in _TRADE_SPECS:
         bond = _BOND_BY_CUSIP[cusip]
-        px = _px(prices_df, cusip, trade_date)
+        px = _SPOT_PRICES[cusip]
 
         acc_dollar = round(nominal * _accrued_pct(bond, trade_date), 2)
         principal  = round(nominal * px / 100, 2)
@@ -289,38 +249,18 @@ def main() -> None:
     DATA_DIR.mkdir(parents=True, exist_ok=True)
     PRICES_DIR.mkdir(parents=True, exist_ok=True)
 
-    days = business_days(INCEPTION_DATE, END_DATE)
-    prices_df = generate_price_history(days)
-    prices_df = prices_df.sort_values(["cusip", "date"]).reset_index(drop=True)
-
     # bonds_static.csv — CUSIPs only; static data populated via Bloomberg
     bonds_df = build_bonds_static()
     bonds_df.to_csv(DATA_DIR / "bonds_static.csv", index=False)
     print(f"  bonds_static.csv      {len(bonds_df)} CUSIPs (static fields blank — use Bloomberg to populate)")
 
     # initial_positions.csv
-    init_df = build_initial_positions(prices_df)
+    init_df = build_initial_positions()
     init_df.to_csv(DATA_DIR / "initial_positions.csv", index=False)
     print(f"  initial_positions.csv {len(init_df)} positions as of {INCEPTION_DATE}")
 
-    # price_history.csv  (gitignored — market data)
-    prices_df.to_csv(DATA_DIR / "price_history.csv", index=False)
-    n_days = len(days)
-    print(f"  price_history.csv     {len(prices_df)} rows  "
-          f"({n_days} business days × {len(BONDS)} CUSIPs)")
-
-    # prices/manual_prices.csv
-    latest = prices_df["date"].max()
-    manual = (
-        prices_df[prices_df["date"] == latest][["cusip", "px_last"]]
-        .assign(date=latest)
-        .reset_index(drop=True)
-    )
-    manual.to_csv(PRICES_DIR / "manual_prices.csv", index=False)
-    print(f"  manual_prices.csv     current snapshot as of {latest}")
-
     # trades.csv  (gitignored — real trade data)
-    trades_df = build_trades(prices_df)
+    trades_df = build_trades()
     trades_df.to_csv(DATA_DIR / "trades.csv", index=False)
     print(f"  trades.csv            {len(trades_df)} trades  "
           f"({trades_df['portfolio'].nunique()} portfolios, "
@@ -330,12 +270,13 @@ def main() -> None:
     print(f"All files written to {DATA_DIR.resolve()}")
     print()
     print("Next steps:")
-    print("  1. Use the dashboard '① Prepare & open template' to write tickers to Excel")
-    print("  2. Bloomberg populates Static sheet → Save & Close Excel")
-    print("  3. Click '③ Import prices & static' to fill bonds_static.csv from Bloomberg")
-    print("  4. streamlit run src/dashboard.py")
+    print("  1. streamlit run src/dashboard.py")
+    print("  2. Sidebar → Today's Prices:")
+    print("       ① Prepare & open template → Bloomberg populates → ③ Import prices & static")
+    print("  3. Sidebar → Price History:")
+    print("       ① Prepare & open history template → Bloomberg populates → ③ Import history")
+    print("       (P&L recomputes automatically after import)")
 
 
 if __name__ == "__main__":
     main()
-

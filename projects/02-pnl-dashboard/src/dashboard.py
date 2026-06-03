@@ -296,9 +296,11 @@ else:
 if st.sidebar.button("③ Import history", key="btn_import_hist"):
     _hist_df = read_history_from_template(TEMPLATE_PATH)
     if not _hist_df.empty:
+        with st.spinner("Recomputing P&L history..."):
+            compute_daily_pnl(min_date, as_of, portfolio=None)
         st.sidebar.success(
             f"Imported {len(_hist_df)} price records "
-            f"through {_hist_df['date'].max()}."
+            f"through {_hist_df['date'].max()} · P&L recomputed."
         )
         st.rerun()
     else:

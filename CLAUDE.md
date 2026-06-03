@@ -40,14 +40,12 @@ python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-Bloomberg integration requires Windows + an active Bloomberg Terminal with the xlwings add-in. Without it, the fallback CSV paths are used automatically.
-
 ### Running
 
 ```bash
 streamlit run src/dashboard.py                            # web UI on localhost:8501
 python src/backfill_prices.py --start 2025-01-01          # bulk-import historical Bloomberg prices
-python generate_sample_data.py                            # generate demo CSVs (no real data needed)
+python generate_sample_data.py                            # generate demo trades + positions (no prices)
 python templates/create_bloomberg_template.py             # regenerate bloomberg_prices.xlsx
 ```
 
@@ -61,6 +59,31 @@ python -m pytest tests/test_pnl.py::test_name   # single test
 ```
 
 `tests/conftest.py` creates an isolated temp data directory and patches `config.py` paths for every test — no real data files are needed to run the suite.
+
+### First-run workflow
+
+```
+python generate_sample_data.py
+  └─ writes: trades.csv, initial_positions.csv, bonds_static.csv (cusip-only, no prices)
+
+streamlit run src/dashboard.py
+  → positions visible; P&L shows "—" until Bloomberg data is imported
+
+Sidebar → Today's Prices
+  ① Prepare & open template     → writes tickers to Live MTM + Static sheets
+  [Bloomberg populates → Save & Close Excel]
+  ③ Import prices & static      → bonds_static.csv filled; current prices loaded
+
+Sidebar → Price History
+  [gap detection runs automatically via find_price_gaps(all_trades)]
+  ① Prepare & open history template → writes BDH blocks for all hold intervals
+  [Bloomberg populates → Save & Close Excel]
+  ③ Import history              → price_history.csv appended;
+                                   P&L recomputed automatically (full history, all portfolios)
+                                   → pnl_history.csv written; dashboard refreshes
+```
+
+`generate_sample_data.py` produces only reality inputs (trades + positions). `price_history.csv` is written **only** by the Bloomberg import step — never by the generator. For offline/no-Bloomberg use, populate `data/prices/manual_price_history.csv` (`date, cusip, px_last`) and `data/prices/manual_prices.csv` (`cusip, px_last, date`) manually; the import step falls back to these automatically.
 
 ### Architecture
 
@@ -83,6 +106,7 @@ Email parser (external) → data/trades.csv
 - `src/config.py` is the single source of all file paths; override the data directory with `PNL_DATA_DIR` env var.
 - `src/models.py` defines the three dataclasses (`Trade`, `Position`, `BondStatic`) that flow through the whole system.
 - `src/data_io.py` owns all CSV read/write and backup logic; nothing else touches disk directly except `history.py` for price caching.
+- `bloomberg.find_price_gaps(all_trades)` walks the signed-trade stream per CUSIP to compute hold intervals (position-by-date), then diffs against `price_history.csv` to return only the missing business-day ranges — the exact input for `prepare_history_template()`. Called on every dashboard render so gap detection is always current.
 
 ### Data model
 
@@ -130,11 +154,15 @@ Position fields computed by `position_manager.py`:
 
 ### Bloomberg bridge
 
+Bloomberg integration requires Windows + an active Bloomberg Terminal with the xlwings add-in.
+
 - BDP (current prices): `bloomberg.get_prices()` — uses the "Live MTM" sheet of the Excel template
 - BDH (historical prices): `bloomberg.get_historical_prices_bdh()` — uses the "History" sheet
+- Static data: "Static" sheet BDP formulas populate `bonds_static.csv` (name, coupon, maturity, day-count, etc.)
 - Template: `templates/bloomberg_prices.xlsx` — regenerate with `templates/create_bloomberg_template.py`
-- Fallback for current prices: `data/prices/manual_prices.csv` (`cusip, px_last, date`)
-- Fallback for history: `data/prices/manual_price_history.csv` (`date, cusip, px_last`)
+- `price_history.csv` is written **only** by the dashboard import step, never directly by any generator script
+- Fallback for current prices (no Bloomberg): `data/prices/manual_prices.csv` (`cusip, px_last, date`)
+- Fallback for history (no Bloomberg): `data/prices/manual_price_history.csv` (`date, cusip, px_last`)
 
 ### File layout
 
