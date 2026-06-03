@@ -8,15 +8,18 @@ Run from anywhere inside the project:
 Or from the project root:
     cd projects/02-pnl-dashboard && python generate_sample_data.py
 
-Writes (or overwrites) all CSV files under data/ so the Streamlit dashboard
-can be explored on a machine with no real trades and no Bloomberg access.
+Writes (or overwrites) CSV files under data/ so the Streamlit dashboard
+can be explored before Bloomberg static data is imported.
 
 Portfolio design
 ----------------
-  HY  CHARTER COMM OPS  5.50% 2027  CUSIP 23312NAC1
-  HY  FORD MOTOR CREDIT 6.10% 2032  CUSIP 34540XAB1
-  IG  APPLE INC         5.00% 2030  CUSIP 037833100
-  IG  US TREASURY       4.50% 2033  CUSIP 912828Z78
+  HY  25714PFB9  (bond static data comes from Bloomberg)
+  HY  195325ER2  (bond static data comes from Bloomberg)
+  IG  25714PEF1  (bond static data comes from Bloomberg)
+
+bonds_static.csv is intentionally written with only the CUSIP column.
+Run the dashboard Bloomberg workflow (Prepare → Excel → Import prices & static)
+to populate coupon, maturity, day-count, etc.
 
 Timeline
 --------
@@ -48,11 +51,13 @@ END_DATE       = date(2026, 5, 29)   # last business day of price history
 RNG = np.random.default_rng(42)      # reproducible
 
 
-# ── bond definitions (mirrors BondStatic; no src/ import needed) ──────────────
+# ── bond definitions (internal only — NOT written to bonds_static.csv) ────────
+# Bloomberg will supply the real coupon/maturity/day-count via Static sheet.
+# These placeholder values are only used to compute sample accrued interest
+# and net cash in the generated trades.csv.
 
 class _Bond(NamedTuple):
     cusip: str
-    name: str
     currency: str
     country: str
     coupon_rate: float
@@ -63,14 +68,9 @@ class _Bond(NamedTuple):
 
 
 BONDS: list[_Bond] = [
-    _Bond("23312NAC1", "CHARTER COMM OPS 5.5% 2027",  "USD", "US",
-          0.055, 2, "30/360",  date(2027, 10, 30), date(2024, 10, 30)),
-    _Bond("34540XAB1", "FORD MOTOR CREDIT 6.1% 2032", "USD", "US",
-          0.061, 2, "30/360",  date(2032, 8,  15), date(2024, 8,  15)),
-    _Bond("037833100", "APPLE INC 5.0% 2030",          "USD", "US",
-          0.050, 2, "30/360",  date(2030, 6,  15), date(2024, 6,  15)),
-    _Bond("912828Z78", "US TREASURY 4.5% 2033",        "USD", "US",
-          0.045, 2, "Act/360", date(2033, 2,  15), date(2024, 2,  15)),
+    _Bond("25714PFB9", "USD", "US", 0.055, 2, "30/360", date(2028, 4, 15), date(2025, 4, 15)),
+    _Bond("195325ER2", "USD", "US", 0.060, 2, "30/360", date(2031, 7, 30), date(2025, 7, 30)),
+    _Bond("25714PEF1", "USD", "US", 0.050, 2, "30/360", date(2030, 1, 15), date(2025, 1, 15)),
 ]
 
 _BOND_BY_CUSIP: dict[str, _Bond] = {b.cusip: b for b in BONDS}
@@ -85,7 +85,6 @@ def _days_in_month(year: int, month: int) -> int:
 
 
 def _coupon_dates(bond: _Bond) -> list[date]:
-    """All coupon dates from first_coupon_date to maturity (inclusive)."""
     months = 12 // bond.coupon_frequency
     dates: list[date] = []
     d = bond.first_coupon_date
@@ -119,12 +118,11 @@ def _days_30_360(start: date, end: date) -> int:
 
 
 def _accrued_pct(bond: _Bond, as_of: date) -> float:
-    """Accrued interest per 100 par, matching the day-count convention."""
     lcd = _last_coupon_date(bond, as_of)
     if bond.day_count_convention == "30/360":
         days = _days_30_360(lcd, as_of)
     else:
-        days = (as_of - lcd).days          # actual days for Act/360 and Act/365
+        days = (as_of - lcd).days
     basis = 365.0 if bond.day_count_convention == "Act/365" else 360.0
     return bond.coupon_rate * days / basis
 
@@ -149,12 +147,10 @@ def _t2_settle(trade_date: date) -> date:
 
 # ── price simulation ──────────────────────────────────────────────────────────
 
-# (start_price, daily_vol_price_points)
 _PRICE_PARAMS: dict[str, tuple[float, float]] = {
-    "23312NAC1": (97.50, 0.18),   # HY Charter: moderate vol
-    "34540XAB1": (95.25, 0.16),   # HY Ford: moderate vol
-    "037833100": (98.75, 0.07),   # IG Apple: low vol
-    "912828Z78": (96.00, 0.10),   # UST: low vol, longer duration
+    "25714PFB9": (97.50, 0.18),
+    "195325ER2": (95.25, 0.16),
+    "25714PEF1": (98.75, 0.07),
 }
 
 
@@ -173,24 +169,24 @@ def generate_price_history(days: list[date]) -> pd.DataFrame:
 
 
 def _px(prices_df: pd.DataFrame, cusip: str, as_of: date) -> float:
-    """Latest price on or before as_of."""
     sub = prices_df[(prices_df["cusip"] == cusip) & (prices_df["date"] <= as_of.isoformat())]
     if sub.empty:
         return _PRICE_PARAMS[cusip][0]
     return float(sub.iloc[-1]["px_last"])
 
 
-# ── bonds_static ─────────────────────────────────────────────────────────────
+# ── bonds_static ──────────────────────────────────────────────────────────────
+# Only the CUSIP column is written. All other fields (name, coupon, maturity,
+# day-count, etc.) are left blank and must be populated via Bloomberg.
 
 def build_bonds_static() -> pd.DataFrame:
     return pd.DataFrame([
         {
-            "cusip": b.cusip, "name": b.name, "currency": b.currency,
-            "country": b.country, "coupon_rate": b.coupon_rate,
-            "coupon_frequency": b.coupon_frequency,
-            "day_count_convention": b.day_count_convention,
-            "maturity_date": b.maturity_date.isoformat(),
-            "first_coupon_date": b.first_coupon_date.isoformat(),
+            "cusip": b.cusip,
+            "name": "", "currency": "", "country": "",
+            "coupon_rate": "", "coupon_frequency": "",
+            "day_count_convention": "", "maturity_date": "",
+            "first_coupon_date": "", "bbg_ticker": "",
         }
         for b in BONDS
     ])
@@ -198,12 +194,10 @@ def build_bonds_static() -> pd.DataFrame:
 
 # ── initial positions ─────────────────────────────────────────────────────────
 
-# (portfolio, cusip, nominal) as of INCEPTION_DATE
 _INCEPTION_SPECS = [
-    ("HY", "23312NAC1", 5_000_000),
-    ("HY", "34540XAB1", 3_000_000),
-    ("IG", "037833100", 10_000_000),
-    ("IG", "912828Z78",  8_000_000),
+    ("HY", "25714PFB9", 5_000_000),
+    ("HY", "195325ER2", 3_000_000),
+    ("IG", "25714PEF1", 10_000_000),
 ]
 
 
@@ -225,46 +219,33 @@ def build_initial_positions(prices_df: pd.DataFrame) -> pd.DataFrame:
 
 # ── trades ────────────────────────────────────────────────────────────────────
 
-# (portfolio, cusip, trader, side, nominal, trade_date)
 _TRADE_SPECS: list[tuple] = [
-    # ── HY: Charter 5.5% 2027 ─────────────────────────────────────────────────
-    # Inception: 5M long as of Apr-30. Buy more on May 5, then reduce position.
-    ("HY", "23312NAC1", "ALICE", "buy",  2_000_000, date(2025,  5,  5)),
-    ("HY", "23312NAC1", "ALICE", "buy",  1_000_000, date(2025,  7, 15)),
-    ("HY", "23312NAC1", "BOB",   "sell", 4_000_000, date(2025,  9, 10)),  # partial close → realized
-    ("HY", "23312NAC1", "ALICE", "buy",  2_500_000, date(2025, 11, 20)),
-    ("HY", "23312NAC1", "BOB",   "sell", 1_500_000, date(2026,  2, 10)),  # another partial close
-    ("HY", "23312NAC1", "ALICE", "buy",    500_000, date(2026,  4, 22)),
+    # ── HY: 25714PFB9 ─────────────────────────────────────────────────────────
+    ("HY", "25714PFB9", "ALICE", "buy",  2_000_000, date(2025,  5,  5)),
+    ("HY", "25714PFB9", "ALICE", "buy",  1_000_000, date(2025,  7, 15)),
+    ("HY", "25714PFB9", "BOB",   "sell", 4_000_000, date(2025,  9, 10)),
+    ("HY", "25714PFB9", "ALICE", "buy",  2_500_000, date(2025, 11, 20)),
+    ("HY", "25714PFB9", "BOB",   "sell", 1_500_000, date(2026,  2, 10)),
+    ("HY", "25714PFB9", "ALICE", "buy",    500_000, date(2026,  4, 22)),
 
-    # ── HY: Ford 6.1% 2032 ────────────────────────────────────────────────────
-    # Inception: 3M long. Add, trim, rebuild.
-    ("HY", "34540XAB1", "BOB",   "buy",  1_500_000, date(2025,  5, 20)),
-    ("HY", "34540XAB1", "BOB",   "sell", 2_000_000, date(2025,  8,  5)),  # partial close → realized
-    ("HY", "34540XAB1", "ALICE", "buy",  2_000_000, date(2025, 10, 15)),
-    ("HY", "34540XAB1", "BOB",   "sell",   500_000, date(2026,  3,  5)),
-    ("HY", "34540XAB1", "ALICE", "buy",    500_000, date(2026,  5, 12)),
+    # ── HY: 195325ER2 ─────────────────────────────────────────────────────────
+    ("HY", "195325ER2", "BOB",   "buy",  1_500_000, date(2025,  5, 20)),
+    ("HY", "195325ER2", "BOB",   "sell", 2_000_000, date(2025,  8,  5)),
+    ("HY", "195325ER2", "ALICE", "buy",  2_000_000, date(2025, 10, 15)),
+    ("HY", "195325ER2", "BOB",   "sell",   500_000, date(2026,  3,  5)),
+    ("HY", "195325ER2", "ALICE", "buy",    500_000, date(2026,  5, 12)),
 
-    # ── IG: Apple 5% 2030 ─────────────────────────────────────────────────────
-    # Inception: 10M long. Add then reduce.
-    ("IG", "037833100", "CAROL", "buy",  5_000_000, date(2025,  5, 12)),
-    ("IG", "037833100", "CAROL", "buy",  2_000_000, date(2025,  8, 18)),
-    ("IG", "037833100", "CAROL", "sell", 6_000_000, date(2025, 11,  5)),  # large close → realized
-    ("IG", "037833100", "CAROL", "buy",  3_000_000, date(2026,  1, 20)),
-
-    # ── IG: US Treasury 4.5% 2033 ─────────────────────────────────────────────
-    # Inception: 8M long. Trim on rate rally, rebuild when rates back up.
-    ("IG", "912828Z78", "CAROL", "buy",  4_000_000, date(2025,  5, 28)),
-    ("IG", "912828Z78", "CAROL", "sell", 3_000_000, date(2025,  9, 22)),  # rate rally → sell
-    ("IG", "912828Z78", "CAROL", "buy",  2_500_000, date(2025, 12, 15)),
-    ("IG", "912828Z78", "CAROL", "sell", 1_000_000, date(2026,  4,  1)),
+    # ── IG: 25714PEF1 ─────────────────────────────────────────────────────────
+    ("IG", "25714PEF1", "CAROL", "buy",  5_000_000, date(2025,  5, 12)),
+    ("IG", "25714PEF1", "CAROL", "buy",  2_000_000, date(2025,  8, 18)),
+    ("IG", "25714PEF1", "CAROL", "sell", 6_000_000, date(2025, 11,  5)),
+    ("IG", "25714PEF1", "CAROL", "buy",  3_000_000, date(2026,  1, 20)),
 ]
 
-# Approximate yield-to-maturity by portfolio / cusip (informational only)
 _YTM = {
-    "23312NAC1": 5.75,
-    "34540XAB1": 6.20,
-    "037833100": 5.05,
-    "912828Z78": 4.52,
+    "25714PFB9": 5.75,
+    "195325ER2": 6.20,
+    "25714PEF1": 5.05,
 }
 
 
@@ -274,7 +255,6 @@ def build_trades(prices_df: pd.DataFrame) -> pd.DataFrame:
         bond = _BOND_BY_CUSIP[cusip]
         px = _px(prices_df, cusip, trade_date)
 
-        # accrued interest in dollar terms (paid by buyer, received by seller)
         acc_dollar = round(nominal * _accrued_pct(bond, trade_date), 2)
         principal  = round(nominal * px / 100, 2)
 
@@ -289,13 +269,13 @@ def build_trades(prices_df: pd.DataFrame) -> pd.DataFrame:
             "Timestamp":    f"{trade_date.isoformat()}T09:00:00",
             "cusip":        cusip,
             "side":         side,
-            "nominal":      nominal,             # always positive in CSV
+            "nominal":      nominal,
             "principal":    principal,
             "net":          net,
             "accrued":      acc_dollar,
             "price":        round(px, 4),
             "yield_closed": _YTM.get(cusip, ""),
-            "trade_date":   trade_date.strftime("%m/%d/%y"),   # mm/dd/yy
+            "trade_date":   trade_date.strftime("%m/%d/%y"),
             "settle_date":  settle.strftime("%m/%d/%y"),
             "trader":       trader,
             "portfolio":    portfolio,
@@ -311,15 +291,14 @@ def main() -> None:
 
     days = business_days(INCEPTION_DATE, END_DATE)
     prices_df = generate_price_history(days)
-    # sort for deterministic lookup
     prices_df = prices_df.sort_values(["cusip", "date"]).reset_index(drop=True)
 
-    # bonds_static.csv  (static reference — safe to commit)
+    # bonds_static.csv — CUSIPs only; static data populated via Bloomberg
     bonds_df = build_bonds_static()
     bonds_df.to_csv(DATA_DIR / "bonds_static.csv", index=False)
-    print(f"  bonds_static.csv      {len(bonds_df)} bonds")
+    print(f"  bonds_static.csv      {len(bonds_df)} CUSIPs (static fields blank — use Bloomberg to populate)")
 
-    # initial_positions.csv  (inception mark — safe to commit)
+    # initial_positions.csv
     init_df = build_initial_positions(prices_df)
     init_df.to_csv(DATA_DIR / "initial_positions.csv", index=False)
     print(f"  initial_positions.csv {len(init_df)} positions as of {INCEPTION_DATE}")
@@ -330,7 +309,7 @@ def main() -> None:
     print(f"  price_history.csv     {len(prices_df)} rows  "
           f"({n_days} business days × {len(BONDS)} CUSIPs)")
 
-    # prices/manual_prices.csv  (current snapshot = last date in history)
+    # prices/manual_prices.csv
     latest = prices_df["date"].max()
     manual = (
         prices_df[prices_df["date"] == latest][["cusip", "px_last"]]
@@ -351,17 +330,12 @@ def main() -> None:
     print(f"All files written to {DATA_DIR.resolve()}")
     print()
     print("Next steps:")
-    print("  1. cd projects/02-pnl-dashboard")
-    print("  2. pip install -r requirements.txt")
-    print("  3. streamlit run src/dashboard.py")
-    print()
-    print("Portfolio summary:")
-    for portfolio, group in trades_df.groupby("portfolio"):
-        buys  = group[group["side"] == "buy"]["nominal"].sum()
-        sells = group[group["side"] == "sell"]["nominal"].sum()
-        print(f"  {portfolio}: {len(group)} trades, "
-              f"{buys:,.0f} bought, {sells:,.0f} sold")
+    print("  1. Use the dashboard '① Prepare & open template' to write tickers to Excel")
+    print("  2. Bloomberg populates Static sheet → Save & Close Excel")
+    print("  3. Click '③ Import prices & static' to fill bonds_static.csv from Bloomberg")
+    print("  4. streamlit run src/dashboard.py")
 
 
 if __name__ == "__main__":
     main()
+

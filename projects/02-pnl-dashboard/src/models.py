@@ -43,6 +43,7 @@ class BondStatic:
     day_count_convention: str   # "Act/360", "Act/365", "30/360"
     maturity_date: date
     first_coupon_date: date
+    bbg_ticker: str = ""        # full Bloomberg ticker e.g. "912828Z78 Govt"; blank → cusip + " Corp"
 
     def __post_init__(self):
         if self.coupon_frequency not in VALID_FREQUENCIES:

@@ -26,9 +26,16 @@ def load_bonds_static(path: Path | None = None) -> dict[str, BondStatic]:
     df = pd.read_csv(path, dtype={"cusip": str}, parse_dates=["maturity_date", "first_coupon_date"])
     result: dict[str, BondStatic] = {}
     for _, row in df.iterrows():
+        cusip = str(row.get("cusip", ""))
+        missing = [f for f in ("coupon_frequency", "coupon_rate", "maturity_date", "first_coupon_date")
+                   if pd.isna(row.get(f))]
+        if missing:
+            log.warning("bonds_static row for %s missing required field(s) %s — row skipped",
+                        cusip, missing)
+            continue
         try:
             bond = BondStatic(
-                cusip=str(row["cusip"]),
+                cusip=cusip,
                 name=row.get("name", ""),
                 currency=row.get("currency", ""),
                 country=row.get("country", "") if pd.notna(row.get("country", "")) else "",
@@ -37,9 +44,10 @@ def load_bonds_static(path: Path | None = None) -> dict[str, BondStatic]:
                 day_count_convention=str(row["day_count_convention"]),
                 maturity_date=row["maturity_date"].date(),
                 first_coupon_date=row["first_coupon_date"].date(),
+                bbg_ticker="" if pd.isna(row.get("bbg_ticker")) else str(row.get("bbg_ticker", "")),
             )
         except (ValueError, KeyError, TypeError) as exc:
-            log.warning("Skipping invalid bonds_static row for %s: %s", row.get("cusip"), exc)
+            log.warning("Skipping invalid bonds_static row for %s: %s", cusip, exc)
             continue
         result[bond.cusip] = bond
     return result

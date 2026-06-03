@@ -8,14 +8,17 @@ exclusive (Price MTM and Accrued together make up total unrealized), so they
 sum to the headline figure with no double counting.
 
 Tabs:
-  Overview        — headline KPIs, attribution, cumulative P&L curve
-  Positions & MTM — full per-position mark-to-market (clean AND dirty price)
-  Daily Ledger    — single-day drill-down: positions, accruals, trades, realized
-  Time Series     — every position, every business day (downloadable)
-  Data Editor     — add / modify / remove trades, bonds, initial positions, prices
+  Overview          — headline KPIs, attribution, cumulative P&L curve
+  Positions & MTM   — full per-position mark-to-market (clean AND dirty price)
+  Positions by Date — editable positions snapshot; saves as adjustment trades
+  Trades by Date    — editable single-day trade blotter with save + recalculate
+  MTM Attribution   — per-bond / rollup transparency views, color-coded
+  Daily Ledger      — single-day drill-down: positions, accruals, trades, realized
+  Time Series       — every position, every business day (downloadable)
+  Data Editor       — add / modify / remove trades, bonds, initial positions, prices
 """
 import sys
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -29,7 +32,14 @@ from position_manager import load_all_trades, compute_positions, get_positions_a
 from accruals import load_bonds_static, total_portfolio_accruals
 from trading_gains import total_realized_pnl, realized_pnl
 from mtm import mark_to_market
-from bloomberg import get_prices, load_latest_prices
+from bloomberg import (
+    load_latest_prices,
+    prepare_template, read_prices_from_template,
+    prepare_history_template, read_history_from_template,
+    last_priced_date, find_price_gaps,
+    read_static_from_template, merge_bonds_static,
+    open_in_excel,
+)
 from history import (
     compute_daily_pnl, load_pnl_history,
     daily_snapshot, position_timeseries, accrual_breakdown,
@@ -57,6 +67,93 @@ def _raw_csv(path: Path, columns: list[str]) -> pd.DataFrame:
     return pd.DataFrame({c: pd.Series(dtype="object") for c in columns})
 
 
+def _bonds_static_df(bonds_static: dict) -> pd.DataFrame:
+    """Flatten BondStatic dict to a join-ready DataFrame."""
+    if not bonds_static:
+        return pd.DataFrame(columns=["cusip", "name", "country", "currency",
+                                     "coupon_rate", "day_count_convention", "maturity_date"])
+    rows = [{
+        "cusip": b.cusip,
+        "name": b.name,
+        "country": b.country,
+        "currency": b.currency,
+        "coupon_rate": b.coupon_rate,
+        "day_count_convention": b.day_count_convention,
+        "maturity_date": b.maturity_date,
+    } for b in bonds_static.values()]
+    return pd.DataFrame(rows)
+
+
+def _enrich(df: pd.DataFrame, bs_df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
+    """Left-join df with bs_df on cusip; insert enrichment cols right after cusip.
+
+    Skips any column already present in df to avoid _x/_y merge conflicts.
+    """
+    if df.empty or bs_df.empty:
+        return df
+    need = [c for c in cols if c in bs_df.columns and c not in df.columns]
+    if not need:
+        return df
+    merged = df.merge(bs_df[["cusip"] + need], on="cusip", how="left")
+    # reorder: cusip, enrichment cols, then remaining original cols
+    others = [c for c in df.columns if c != "cusip"]
+    ordered = ["cusip"] + need + others
+    return merged[[c for c in ordered if c in merged.columns]]
+
+
+def _color_pnl_df(df: pd.DataFrame, pnl_cols: list[str]) -> pd.DataFrame:
+    """Return df unchanged (color formatting disabled for pandas compatibility)."""
+    return df
+
+
+def _make_adjustment_trades(
+    baseline_positions: dict,
+    edited_df: pd.DataFrame,
+    selected_date: date,
+    portfolio: str | None,
+) -> pd.DataFrame:
+    """
+    Diff edited positions against baseline; emit synthetic adjustment trade rows.
+    Returns a DataFrame shaped to data_io.TRADES_COLUMNS (empty if no changes).
+    """
+    rows = []
+    for _, row in edited_df.iterrows():
+        cusip = str(row.get("cusip", ""))
+        baseline = baseline_positions.get(cusip)
+        base_nominal = baseline.net_nominal if baseline else 0.0
+        base_price = baseline.wavg_price if baseline else 0.0
+
+        edited_nominal = float(row.get("net_nominal", base_nominal))
+        edited_price = float(row.get("wavg_price", base_price))
+
+        delta = edited_nominal - base_nominal
+        if abs(delta) < 1e-6 and abs(edited_price - base_price) < 1e-6:
+            continue
+
+        px = edited_price if edited_price > 0 else base_price
+        side = "buy" if delta > 0 else "sell"
+        abs_delta = abs(delta)
+        principal = round(abs_delta * px / 100, 2)
+        net = round(-principal if side == "buy" else principal, 2)
+
+        rows.append({
+            "Timestamp": datetime.now().isoformat(),
+            "cusip": cusip,
+            "side": side,
+            "nominal": abs_delta,
+            "principal": principal,
+            "net": net,
+            "accrued": 0.0,
+            "price": round(px, 6),
+            "yield_closed": float("nan"),
+            "trade_date": selected_date.strftime("%m/%d/%y"),
+            "settle_date": selected_date.strftime("%m/%d/%y"),
+            "trader": "adjustment",
+            "portfolio": portfolio or config.DEFAULT_PORTFOLIO,
+        })
+    return pd.DataFrame(rows, columns=data_io.TRADES_COLUMNS) if rows else pd.DataFrame(columns=data_io.TRADES_COLUMNS)
+
+
 # ── page + data ───────────────────────────────────────────────────────────────
 
 st.set_page_config(page_title="P&L Dashboard", page_icon="📊", layout="wide")
@@ -64,6 +161,7 @@ st.title("Fixed-Income P&L Dashboard")
 
 all_trades = load_all_trades()
 bonds_static = load_bonds_static()
+bs_df = _bonds_static_df(bonds_static)
 
 # ── sidebar: filters ──────────────────────────────────────────────────────────
 
@@ -102,33 +200,117 @@ positions = compute_positions(trades_df, as_of=as_of)
 # single-portfolio scope used by per-portfolio views/history
 hist_portfolio = sel_portfolios[0] if len(sel_portfolios) == 1 else None
 
-# ── sidebar: pricing ──────────────────────────────────────────────────────────
+# ── sidebar: today's prices ───────────────────────────────────────────────────
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("Pricing")
+st.sidebar.subheader("Today's Prices")
 
 prices = load_latest_prices()
 snapshots = sorted(PRICES_DIR.glob("prices_*.csv"))
 if snapshots:
-    ts = snapshots[-1].stem.replace("prices_", "").replace("_", " ")
-    st.sidebar.caption(f"Last priced: {ts}")
+    _ts = snapshots[-1].stem.replace("prices_", "").replace("_", " ")
+    st.sidebar.caption(f"Last priced: {_ts}")
 else:
     st.sidebar.caption("No price snapshot yet")
 
-if st.sidebar.button("Refresh Bloomberg Prices"):
-    cusip_list = list(positions.keys())
+cusip_list = list(positions.keys())
+
+if st.sidebar.button("① Prepare & open template", key="btn_prepare_prices"):
     if cusip_list:
-        with st.spinner("Fetching Bloomberg prices..."):
-            prices = get_prices(cusip_list, TEMPLATE_PATH)
-        st.sidebar.success(f"Updated {len(prices)} CUSIPs")
+        _path = prepare_template(cusip_list, TEMPLATE_PATH, bonds_static=bonds_static)
+        if open_in_excel(_path):
+            st.sidebar.success(
+                f"Opened **{_path.name}** in Excel — wait for Bloomberg to "
+                "finish populating, then save and close."
+            )
+        else:
+            st.sidebar.success(
+                f"Template ready ({len(cusip_list)} CUSIP(s)) — open "
+                f"**{_path}** in Excel, wait for Bloomberg, then save and close."
+            )
+    else:
+        st.sidebar.warning("No positions to price.")
+
+st.sidebar.caption("② Bloomberg populates → Save → Close Excel")
+
+if st.sidebar.button("③ Import prices & static", key="btn_import_prices"):
+    _imported = read_prices_from_template(TEMPLATE_PATH)
+    _fetched_static = read_static_from_template(TEMPLATE_PATH)
+    _msg_parts = []
+
+    if _imported:
+        prices = _imported
+        _msg_parts.append(f"{len(_imported)} price(s) imported")
+    else:
+        _msg_parts.append("no prices found (open template in Excel first)")
+
+    if not _fetched_static.empty and not _fetched_static["cusip"].isna().all():
+        try:
+            _n_new, _n_filled = merge_bonds_static(_fetched_static)
+            if _n_new or _n_filled:
+                _msg_parts.append(f"bond static: {_n_new} new CUSIP(s), {_n_filled} field(s) filled")
+        except ValueError as _exc:
+            st.sidebar.error(
+                f"Bond static validation failed — fix rows in Data Editor → Bond Static.\n\n{_exc}"
+            )
+
+    if _imported:
+        st.sidebar.success(" · ".join(_msg_parts))
         st.rerun()
     else:
-        st.sidebar.warning("No positions to price")
+        st.sidebar.warning(" · ".join(_msg_parts))
 
-# ── sidebar: history ──────────────────────────────────────────────────────────
+# ── sidebar: price history backfill ──────────────────────────────────────────
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("History")
+st.sidebar.subheader("Price History")
+
+# Gap detection runs on every render: picks up trade edits and new CUSIPs.
+_price_gaps = find_price_gaps(all_trades) if not all_trades.empty else []
+
+if _price_gaps:
+    _n_cusips_gap = len({c for c, _, _ in _price_gaps})
+    st.sidebar.warning(
+        f"Missing prices: {len(_price_gaps)} range(s) across {_n_cusips_gap} CUSIP(s)."
+    )
+    if st.sidebar.button("① Prepare & open history template", key="btn_prepare_hist"):
+        _path = prepare_history_template(_price_gaps, TEMPLATE_PATH, bonds_static=bonds_static)
+        if open_in_excel(_path):
+            st.sidebar.success(
+                f"Opened **{_path.name}** in Excel — wait for all {len(_price_gaps)} "
+                "BDH block(s) to populate, then save and close."
+            )
+        else:
+            st.sidebar.success(
+                f"Template ready ({len(_price_gaps)} block(s)) — open "
+                f"**{_path}** in Excel, wait for Bloomberg, then save and close."
+            )
+    st.sidebar.caption("② Bloomberg populates all blocks → Save → Close Excel")
+else:
+    _last_px_date = last_priced_date()
+    if _last_px_date:
+        st.sidebar.caption(f"Price history complete through {_last_px_date}.")
+    else:
+        st.sidebar.caption("No price history yet.")
+
+if st.sidebar.button("③ Import history", key="btn_import_hist"):
+    _hist_df = read_history_from_template(TEMPLATE_PATH)
+    if not _hist_df.empty:
+        st.sidebar.success(
+            f"Imported {len(_hist_df)} price records "
+            f"through {_hist_df['date'].max()}."
+        )
+        st.rerun()
+    else:
+        st.sidebar.warning(
+            "No prices found — open the template in Excel, wait for Bloomberg "
+            "to populate all blocks, save, then import."
+        )
+
+# ── sidebar: P&L history ──────────────────────────────────────────────────────
+
+st.sidebar.markdown("---")
+st.sidebar.subheader("P&L History")
 
 hist_start = st.sidebar.date_input("History from", value=min_date)
 
@@ -151,9 +333,17 @@ total_pnl = total_realized + total_price + total_accrued
 
 # ── tabs ────────────────────────────────────────────────────────────────────
 
-tab_overview, tab_mtm, tab_ledger, tab_ts, tab_edit = st.tabs(
-    ["Overview", "Positions & MTM", "Daily Ledger", "Time Series", "Data Editor"]
-)
+(tab_overview, tab_mtm, tab_positions_date, tab_trades_date,
+ tab_attribution, tab_ledger, tab_ts, tab_edit) = st.tabs([
+    "Overview",
+    "Positions & MTM",
+    "Positions by Date",
+    "Trades by Date",
+    "MTM Attribution",
+    "Daily Ledger",
+    "Time Series",
+    "Data Editor",
+])
 
 # ── Tab 1: Overview ───────────────────────────────────────────────────────────
 
@@ -213,23 +403,37 @@ with tab_mtm:
         else:
             st.info("No prices loaded. Add prices in **Data Editor → Manual Prices** or click **Refresh Bloomberg Prices**.")
     else:
-        names = {c: b.name for c, b in bonds_static.items()}
         realized_lookup = (
             realized_df.set_index("cusip")["realized_gain"].to_dict() if not realized_df.empty else {}
         )
         view = mtm_df.copy()
-        view.insert(1, "name", view["cusip"].map(names).fillna(""))
+        view = _enrich(view, bs_df, ["name", "country", "currency"])
         view["realized"] = view["cusip"].map(realized_lookup).fillna(0.0)
         view = view.rename(columns={
-            "cusip": "CUSIP", "name": "Name", "net_nominal": "Nominal",
-            "clean_px": "Clean Px", "accrued_today_pct": "Accrued %", "dirty_px": "Dirty Px",
+            "cusip": "CUSIP", "name": "Name", "country": "Country", "currency": "CCY",
+            "net_nominal": "Nominal", "clean_px": "Clean Px",
+            "accrued_today_pct": "Accrued %", "dirty_px": "Dirty Px",
             "mtm_value": "MTM Value", "book_value": "Book Value", "mtm_gain": "MTM Gain",
             "accrued_pnl": "Accrued", "price_pnl": "Price MTM", "realized": "Realized",
             "note": "Note",
         })
-        ordered = ["CUSIP", "Name", "Nominal", "Clean Px", "Accrued %", "Dirty Px",
-                   "MTM Value", "Book Value", "Price MTM", "Accrued", "MTM Gain", "Realized", "Note"]
-        st.dataframe(view[ordered], width='stretch', hide_index=True)
+        ordered = ["CUSIP", "Name", "Country", "CCY", "Nominal",
+                   "Clean Px", "Accrued %", "Dirty Px",
+                   "MTM Value", "Book Value", "Price MTM", "Accrued", "MTM Gain",
+                   "Realized", "Note"]
+        styled_mtm = _color_pnl_df(
+            view[[c for c in ordered if c in view.columns]],
+            ["Price MTM", "Accrued", "MTM Gain", "Realized"],
+        )
+        st.dataframe(styled_mtm, width="stretch", hide_index=True)
+
+        with st.expander("Accrual detail"):
+            acc_detail_mtm = accrual_breakdown(positions, bonds_static, as_of)
+            if not acc_detail_mtm.empty:
+                acc_view_mtm = _enrich(acc_detail_mtm, bs_df, ["name", "country", "currency"])
+                st.dataframe(acc_view_mtm, width="stretch", hide_index=True)
+            else:
+                st.info("No accruing positions.")
 
         st.markdown("**Portfolio totals**")
         t1, t2, t3, t4, t5 = st.columns(5)
@@ -241,7 +445,376 @@ with tab_mtm:
         st.caption("Dirty Px = Clean Px + Accrued %.  MTM Value = Nominal × Dirty Px / 100.  "
                    "MTM Gain = MTM Value + Book Value = Price MTM + Accrued.")
 
-# ── Tab 3: Daily Ledger ───────────────────────────────────────────────────────
+# ── Tab 3: Positions by Date ──────────────────────────────────────────────────
+
+with tab_positions_date:
+    st.subheader("Positions by Date — editable")
+    st.caption(
+        "Edit **Net Nominal** or **WAVG Price** then click **Save as Adjustment Trade**. "
+        "A synthetic trade is appended to `trades.csv` so the full history stays reconcilable."
+    )
+    pos_date = st.date_input("Positions as of", value=as_of, key="pos_date")
+
+    baseline_pos = compute_positions(all_trades, as_of=pos_date, portfolio=hist_portfolio)
+
+    if not baseline_pos:
+        st.info("No positions on this date with the current filters.")
+    else:
+        pos_rows = [{
+            "cusip": p.cusip,
+            "net_nominal": p.net_nominal,
+            "wavg_price": round(p.wavg_price, 6),
+            "book_value": round(p.book_value, 2),
+            "last_settle": p.last_settle,
+        } for p in baseline_pos.values()]
+        pos_base_df = pd.DataFrame(pos_rows)
+        pos_display = _enrich(pos_base_df, bs_df, ["name", "country", "currency"])
+        display_cols = ["cusip", "name", "country", "currency",
+                        "net_nominal", "wavg_price", "book_value", "last_settle"]
+        pos_display = pos_display[[c for c in display_cols if c in pos_display.columns]]
+
+        edited_pos = st.data_editor(
+            pos_display,
+            num_rows="fixed",
+            width="stretch",
+            key="ed_pos_by_date",
+            column_config={
+                "cusip":       st.column_config.TextColumn("CUSIP", disabled=True),
+                "name":        st.column_config.TextColumn("Name", disabled=True),
+                "country":     st.column_config.TextColumn("Country", disabled=True),
+                "currency":    st.column_config.TextColumn("CCY", disabled=True),
+                "net_nominal": st.column_config.NumberColumn("Net Nominal", format="%.0f"),
+                "wavg_price":  st.column_config.NumberColumn("WAVG Price", format="%.4f"),
+                "book_value":  st.column_config.NumberColumn("Book Value", disabled=True, format="%.2f"),
+                "last_settle": st.column_config.DateColumn("Last Settle", disabled=True),
+            },
+        )
+
+        col_save_pos, col_recalc_pos = st.columns(2)
+        with col_save_pos:
+            if st.button("Save as Adjustment Trade", key="save_pos_adj"):
+                adj_trades = _make_adjustment_trades(
+                    baseline_pos, edited_pos, pos_date, hist_portfolio
+                )
+                if adj_trades.empty:
+                    st.info("No changes detected — nothing to save.")
+                else:
+                    full_raw = _raw_csv(config.TRADES_PATH, data_io.TRADES_COLUMNS)
+                    combined = pd.concat([full_raw, adj_trades], ignore_index=True)
+                    try:
+                        backup = data_io.save_trades(combined)
+                        msg = f"Saved {len(adj_trades)} adjustment trade(s)."
+                        if backup:
+                            msg += f"  Backup: {Path(backup).name}"
+                        st.success(msg)
+                        st.rerun()
+                    except ValueError as exc:
+                        st.error(str(exc))
+
+        with col_recalc_pos:
+            if st.button("Recalculate P&L", key="recalc_pos_date"):
+                with st.spinner("Recomputing P&L history..."):
+                    compute_daily_pnl(hist_start, as_of, portfolio=hist_portfolio)
+                st.success("P&L history updated.")
+                st.rerun()
+
+# ── Tab 4: Trades by Date ─────────────────────────────────────────────────────
+
+with tab_trades_date:
+    st.subheader("Trades by Date — editable")
+    st.caption(
+        "Add, modify, or delete trades for a single day. "
+        "A timestamped backup is always created before writing. "
+        "**Nominal must be unsigned** (sign is stored in the Side column)."
+    )
+    trades_date = st.date_input("Trade date", value=as_of, key="trades_date_sel")
+
+    full_raw_df = _raw_csv(config.TRADES_PATH, data_io.TRADES_COLUMNS)
+
+    if full_raw_df.empty:
+        day_trades = pd.DataFrame(columns=data_io.TRADES_COLUMNS)
+        day_mask = pd.Series(dtype=bool)
+    else:
+        _td = pd.to_datetime(full_raw_df["trade_date"], format="%m/%d/%y", errors="coerce")
+        _unresolved = _td.isna() & full_raw_df["trade_date"].notna()
+        if _unresolved.any():
+            _td[_unresolved] = pd.to_datetime(full_raw_df.loc[_unresolved, "trade_date"], errors="coerce")
+        raw_trade_dates = _td.dt.date
+        day_mask = raw_trade_dates == trades_date
+        day_trades = full_raw_df[day_mask].copy()
+
+    st.caption(f"{len(day_trades)} trade(s) on {trades_date}.")
+
+    edited_day = st.data_editor(
+        day_trades,
+        num_rows="dynamic",
+        width="stretch",
+        key="ed_trades_by_date",
+        column_config={
+            "trade_date":   st.column_config.TextColumn("Trade Date"),
+            "settle_date":  st.column_config.TextColumn("Settle Date"),
+            "side":         st.column_config.SelectboxColumn("Side", options=["buy", "sell"]),
+            "nominal":      st.column_config.NumberColumn("Nominal (unsigned)", format="%.0f"),
+            "price":        st.column_config.NumberColumn("Price", format="%.4f"),
+            "principal":    st.column_config.NumberColumn("Principal", format="%.2f"),
+            "net":          st.column_config.NumberColumn("Net", format="%.2f"),
+            "accrued":      st.column_config.NumberColumn("Accrued", format="%.2f"),
+            "yield_closed": st.column_config.NumberColumn("Yield", format="%.4f"),
+        },
+    )
+
+    # Backfill dates for newly added rows
+    fmt = "%m/%d/%y"
+    date_str = trades_date.strftime(fmt)
+    if not edited_day.empty:
+        edited_day["trade_date"] = edited_day["trade_date"].fillna(date_str)
+        edited_day["settle_date"] = edited_day["settle_date"].fillna(date_str)
+
+    col_save_td, col_recalc_td = st.columns(2)
+    with col_save_td:
+        if st.button("Save Trades", key="save_trades_by_date"):
+            if not full_raw_df.empty and day_mask.any():
+                other_days = full_raw_df[~day_mask].copy()
+            else:
+                other_days = full_raw_df.copy()
+            reconstructed = pd.concat([other_days, edited_day], ignore_index=True)
+            try:
+                backup = data_io.save_trades(reconstructed)
+                msg = "Trades saved."
+                if backup:
+                    msg += f"  Backup: {Path(backup).name}"
+                st.success(msg)
+                st.rerun()
+            except ValueError as exc:
+                st.error(str(exc))
+
+    with col_recalc_td:
+        if st.button("Recalculate P&L", key="recalc_trades_date"):
+            with st.spinner("Recomputing P&L history..."):
+                compute_daily_pnl(hist_start, as_of, portfolio=hist_portfolio)
+            st.success("P&L history updated.")
+            st.rerun()
+
+# ── Tab 5: MTM Attribution ────────────────────────────────────────────────────
+
+with tab_attribution:
+    st.subheader("MTM Attribution & Transparency")
+    attr_view = st.selectbox(
+        "View",
+        ["Bond Detail", "Rollup", "Accrual Detail", "Price History Table"],
+        key="attr_view_sel",
+    )
+
+    # ── Bond Detail ──────────────────────────────────────────────────────────
+    if attr_view == "Bond Detail":
+        snap_tab, range_tab = st.tabs(["Current Snapshot", "Date Range"])
+
+        with snap_tab:
+            if mtm_df.empty:
+                st.info("No MTM data. Ensure prices are loaded.")
+            else:
+                snap_view = _enrich(
+                    mtm_df.copy(), bs_df,
+                    ["name", "country", "currency", "coupon_rate",
+                     "day_count_convention", "maturity_date"],
+                )
+                acc_bk = accrual_breakdown(positions, bonds_static, as_of)
+                if not acc_bk.empty:
+                    snap_view = snap_view.merge(
+                        acc_bk[["cusip", "last_coupon_date", "days_accrued"]],
+                        on="cusip", how="left",
+                    )
+                realized_lookup2 = (
+                    realized_df.set_index("cusip")["realized_gain"].to_dict()
+                    if not realized_df.empty else {}
+                )
+                snap_view["realized"] = snap_view["cusip"].map(realized_lookup2).fillna(0.0)
+
+                snap_cols = [
+                    "name", "cusip", "country", "currency",
+                    "net_nominal", "clean_px", "accrued_today_pct", "dirty_px",
+                    "mtm_value", "book_value", "mtm_gain",
+                    "price_pnl", "accrued_pnl", "realized",
+                    "last_coupon_date", "days_accrued",
+                    "coupon_rate", "day_count_convention", "maturity_date",
+                ]
+                snap_view = snap_view[[c for c in snap_cols if c in snap_view.columns]]
+                snap_view = snap_view.rename(columns={
+                    "name": "Name", "cusip": "CUSIP", "country": "Country", "currency": "CCY",
+                    "net_nominal": "Nominal", "clean_px": "Clean Px",
+                    "accrued_today_pct": "Accrued %", "dirty_px": "Dirty Px",
+                    "mtm_value": "MTM Value", "book_value": "Book Value",
+                    "mtm_gain": "MTM Gain", "price_pnl": "Price P&L",
+                    "accrued_pnl": "Accrued P&L", "realized": "Realized",
+                    "last_coupon_date": "Last Coupon", "days_accrued": "Days Accrued",
+                    "coupon_rate": "Coupon Rate", "day_count_convention": "Day Count",
+                    "maturity_date": "Maturity",
+                })
+                styled_snap = _color_pnl_df(
+                    snap_view, ["Price P&L", "Accrued P&L", "MTM Gain", "Realized"]
+                )
+                st.dataframe(styled_snap, width="stretch", hide_index=True)
+                st.caption(
+                    "Price P&L = clean price change × nominal.  "
+                    "Accrued P&L = daily accrual.  "
+                    "MTM Gain = Price P&L + Accrued P&L."
+                )
+
+        with range_tab:
+            pnl_hist_attr = load_pnl_history(
+                portfolio=hist_portfolio, start_date=hist_start, end_date=as_of
+            )
+            if pnl_hist_attr.empty:
+                st.info("No history. Click **Recompute P&L History** in the sidebar first.")
+            else:
+                enriched_hist = pnl_hist_attr.merge(
+                    bs_df[["cusip", "name"]].drop_duplicates("cusip"),
+                    on="cusip", how="left",
+                )
+                enriched_hist["label"] = (
+                    enriched_hist["name"].fillna("").str.strip()
+                    + " (" + enriched_hist["cusip"] + ")"
+                )
+                pivot = enriched_hist.pivot_table(
+                    index="date", columns="label", values="total_pnl", aggfunc="sum"
+                ).fillna(0.0)
+                pivot.index = pd.to_datetime(pivot.index).date
+                pivot_reset = pivot.reset_index().rename(columns={"date": "Date"})
+                styled_pivot = _color_pnl_df(pivot_reset, list(pivot.columns))
+                st.dataframe(styled_pivot, width="stretch", hide_index=True, height=420)
+                st.caption("Daily total P&L per bond. Each column = bond name (CUSIP).")
+
+    # ── Rollup ───────────────────────────────────────────────────────────────
+    elif attr_view == "Rollup":
+        group_by = st.selectbox(
+            "Group by",
+            ["Issuer (6-digit CUSIP)", "Country", "Currency", "Portfolio"],
+            key="rollup_group",
+        )
+        pnl_hist_roll = load_pnl_history(
+            portfolio=hist_portfolio, start_date=hist_start, end_date=as_of
+        )
+        if pnl_hist_roll.empty:
+            st.info("No history. Click **Recompute P&L History** in the sidebar first.")
+        else:
+            rollup = pnl_hist_roll.merge(
+                bs_df[["cusip", "country", "currency"]].drop_duplicates("cusip"),
+                on="cusip", how="left",
+            )
+            if group_by == "Issuer (6-digit CUSIP)":
+                rollup["group_key"] = rollup["cusip"].str[:6]
+                label = "Issuer"
+            elif group_by == "Country":
+                rollup["group_key"] = rollup["country"].fillna("Unknown")
+                label = "Country"
+            elif group_by == "Currency":
+                rollup["group_key"] = rollup["currency"].fillna("Unknown")
+                label = "Currency"
+            else:
+                rollup["group_key"] = rollup["portfolio"]
+                label = "Portfolio"
+
+            agg = (
+                rollup.groupby("group_key")
+                .agg(
+                    price_pnl=("price_pnl", "sum"),
+                    accrued=("accrued", "sum"),
+                    realized_gain=("realized_gain", "sum"),
+                    total_pnl=("total_pnl", "sum"),
+                    net_nominal=("net_nominal", "sum"),
+                )
+                .reset_index()
+                .rename(columns={
+                    "group_key": label,
+                    "price_pnl": "Price P&L",
+                    "accrued": "Accrued P&L",
+                    "realized_gain": "Realized",
+                    "total_pnl": "Total P&L",
+                    "net_nominal": "Net Nominal",
+                })
+                .sort_values("Total P&L", ascending=False)
+            )
+            styled_rollup = _color_pnl_df(
+                agg, ["Price P&L", "Accrued P&L", "Realized", "Total P&L"]
+            )
+            st.dataframe(styled_rollup, width="stretch", hide_index=True)
+            st.caption(
+                f"Aggregated P&L grouped by {label.lower()} over "
+                f"{hist_start} → {as_of}. Values are cumulative sums."
+            )
+
+    # ── Accrual Detail ───────────────────────────────────────────────────────
+    elif attr_view == "Accrual Detail":
+        acc_detail_attr = accrual_breakdown(positions, bonds_static, as_of)
+        if acc_detail_attr.empty:
+            st.info("No accruing positions.")
+        else:
+            acc_full = _enrich(
+                acc_detail_attr, bs_df,
+                ["name", "country", "currency", "coupon_rate", "day_count_convention"],
+            )
+            acc_display_cols = [
+                "name", "cusip", "country", "currency",
+                "coupon_rate", "day_count_convention",
+                "last_coupon_date", "days_accrued",
+                "accrued_per_100", "accrued_total", "note",
+            ]
+            acc_full = acc_full[[c for c in acc_display_cols if c in acc_full.columns]]
+            acc_full = acc_full.rename(columns={
+                "name": "Name", "cusip": "CUSIP", "country": "Country", "currency": "CCY",
+                "coupon_rate": "Coupon Rate", "day_count_convention": "Day Count",
+                "last_coupon_date": "Last Coupon", "days_accrued": "Days Accrued",
+                "accrued_per_100": "Accrued/100", "accrued_total": "Accrued Total",
+                "note": "Note",
+            })
+            styled_acc = _color_pnl_df(acc_full, ["Accrued Total"])
+            st.dataframe(styled_acc, width="stretch", hide_index=True)
+            total_accrued_attr = (
+                _nansum(acc_detail_attr["accrued_total"])
+                if "accrued_total" in acc_detail_attr.columns else 0.0
+            )
+            st.metric("Total Portfolio Accrued", _fmt(total_accrued_attr))
+            st.caption(
+                "Accrued/100 = accrued interest per 100 par (using bond's day-count convention).  "
+                "Accrued Total = Accrued/100 × Net Nominal / 100."
+            )
+
+    # ── Price History Table ──────────────────────────────────────────────────
+    else:
+        st.caption(
+            f"Position time series {hist_start} → {as_of}"
+            + (f"  ·  portfolio: {hist_portfolio}" if hist_portfolio else "  ·  all portfolios")
+        )
+        with st.spinner("Building price history table..."):
+            ts_attr = position_timeseries(hist_start, as_of, portfolio=hist_portfolio)
+        if ts_attr.empty:
+            st.info("No data. Populate `price_history.csv` for this date range.")
+        else:
+            ts_enriched = _enrich(ts_attr, bs_df, ["name", "country", "currency"])
+            px_cols = [
+                "date", "cusip", "name", "country", "currency",
+                "net_nominal", "clean_px", "accrued_pct", "dirty_px",
+                "mtm_value", "price_pnl", "accrued_pnl",
+            ]
+            ts_display = ts_enriched[[c for c in px_cols if c in ts_enriched.columns]]
+            ts_display = ts_display.rename(columns={
+                "date": "Date", "cusip": "CUSIP", "name": "Name",
+                "country": "Country", "currency": "CCY",
+                "net_nominal": "Nominal", "clean_px": "Clean Px",
+                "accrued_pct": "Accrued %", "dirty_px": "Dirty Px",
+                "mtm_value": "MTM Value", "price_pnl": "Price P&L",
+                "accrued_pnl": "Accrued P&L",
+            })
+            styled_ts = _color_pnl_df(ts_display, ["Price P&L", "Accrued P&L"])
+            st.dataframe(styled_ts, width="stretch", hide_index=True, height=500)
+            st.download_button(
+                "Download CSV",
+                ts_display.to_csv(index=False).encode(),
+                file_name=f"price_history_{hist_start}_{as_of}.csv",
+                mime="text/csv",
+            )
+
+# ── Tab 6: Daily Ledger ───────────────────────────────────────────────────────
 
 with tab_ledger:
     ledger_day = st.date_input("Ledger day", value=as_of, key="ledger_day")
@@ -261,6 +834,7 @@ with tab_ledger:
     if acc.empty:
         st.info("No accruing positions on this day.")
     else:
+        acc = _enrich(acc, bs_df, ["name"])
         st.dataframe(acc, width='stretch', hide_index=True)
 
     cL, cR = st.columns(2)
@@ -273,7 +847,8 @@ with tab_ledger:
         if booked.empty:
             st.info("No trades booked.")
         else:
-            cols = ["cusip", "side", "nominal", "price", "net", "accrued", "trader", "portfolio"]
+            cols = ["cusip", "name", "side", "nominal", "price", "net", "accrued", "trader", "portfolio"]
+            booked = _enrich(booked, bs_df, ["name"])
             st.dataframe(booked[[c for c in cols if c in booked.columns]],
                          width='stretch', hide_index=True)
 
@@ -285,9 +860,10 @@ with tab_ledger:
         if rl is None or rl.empty:
             st.info("No positions closed.")
         else:
+            rl = _enrich(rl, bs_df, ["name"])
             st.dataframe(rl, width='stretch', hide_index=True)
 
-# ── Tab 4: Time Series ────────────────────────────────────────────────────────
+# ── Tab 7: Time Series ────────────────────────────────────────────────────────
 
 with tab_ts:
     st.subheader("Position time series (every business day)")
@@ -304,7 +880,7 @@ with tab_ts:
             file_name=f"position_timeseries_{hist_start}_{as_of}.csv", mime="text/csv",
         )
 
-# ── Tab 5: Data Editor ────────────────────────────────────────────────────────
+# ── Tab 8: Data Editor ────────────────────────────────────────────────────────
 
 with tab_edit:
     st.subheader("Edit underlying data")

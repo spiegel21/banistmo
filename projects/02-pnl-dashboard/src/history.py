@@ -213,7 +213,7 @@ def load_pnl_history(
 # ── daily transparency views ──────────────────────────────────────────────────
 
 _SNAPSHOT_COLUMNS = [
-    "cusip", "net_nominal", "clean_px", "accrued_pct", "dirty_px",
+    "cusip", "name", "net_nominal", "clean_px", "accrued_pct", "dirty_px",
     "mtm_value", "book_value", "price_pnl", "accrued_pnl", "note",
 ]
 
@@ -239,6 +239,8 @@ def daily_snapshot(day: date, portfolio: str | None = None) -> pd.DataFrame:
     if mtm.empty:
         return pd.DataFrame(columns=_SNAPSHOT_COLUMNS)
 
+    name_map = {c: b.name for c, b in bonds_static.items() if b.name}
+    mtm["name"] = mtm["cusip"].map(name_map)
     out = mtm.rename(columns={"accrued_today_pct": "accrued_pct"})
     return out[_SNAPSHOT_COLUMNS].reset_index(drop=True)
 
