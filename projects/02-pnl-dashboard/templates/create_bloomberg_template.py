@@ -95,23 +95,30 @@ def create_static_sheet(wb: Workbook) -> None:
 
 
 def create_history_sheet(wb: Workbook) -> None:
-    """History sheet — time-series prices via BDH (one block per CUSIP range).
+    """History sheet — time-series prices via BDH (column-pair layout).
 
-    Populated by prepare_history_template() in bloomberg.py.  This placeholder
-    gives the sheet a name and column widths; the actual BDH blocks are written
-    at runtime by the dashboard.
+    Populated at runtime by prepare_history_template() in bloomberg.py.
+    Layout (one column pair per bond):
+
+      Row 1:  A1=Ticker1  B1=StartDate1  C1=Ticker2  (empty)  E1=Ticker3  ...
+      Row 2:  A2=EndDate  B2=PX_LAST     (empty)     D2=Start2 (empty)   F2=Start3 ...
+      Row 3:  =@BDH(...)  [prices↓]      =@BDH(...)  [prices↓] ...
+      Row 4+: date/price data filled by Bloomberg
+
+    Dates are mm/dd/yyyy.  A2 (end date = today−1) is shared by all formulas.
+    B2 ("PX_LAST") is the shared field label referenced by every BDH formula.
     """
     ws = wb.create_sheet("History")
 
     ws["A1"] = "BBG Ticker"
-    ws["B1"] = "Start (YYYYMMDD)"
-    ws["C1"] = "End (YYYYMMDD)"
-    for cell in (ws["A1"], ws["B1"], ws["C1"]):
+    ws["A2"] = "End Date (mm/dd/yyyy)"
+    ws["B2"] = "PX_LAST"
+    for cell in (ws["A1"], ws["A2"], ws["B2"]):
         cell.font = Font(bold=True)
 
-    ws.column_dimensions["A"].width = 22
-    ws.column_dimensions["B"].width = 18
-    ws.column_dimensions["C"].width = 18
+    for i in range(10):   # placeholder widths for up to 10 bonds
+        ws.column_dimensions[get_column_letter(2 * i + 1)].width = 22
+        ws.column_dimensions[get_column_letter(2 * i + 2)].width = 14
 
 
 def main():

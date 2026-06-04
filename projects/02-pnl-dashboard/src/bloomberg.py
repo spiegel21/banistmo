@@ -274,8 +274,9 @@ def get_historical_prices_bdh(
 
 def _fetch_bdh_via_excel(cusips, start_date, end_date, wb_path, xw,
                          bonds_static=None) -> list[dict]:
-    start_str = start_date.strftime("%Y%m%d")
-    end_str = end_date.strftime("%Y%m%d")
+    # Dates as mm/dd/yyyy — consistent with the History sheet template layout.
+    start_str = start_date.strftime("%m/%d/%Y")
+    end_str   = end_date.strftime("%m/%d/%Y")
 
     app = xw.App(visible=False, add_book=False)
     records = []
@@ -286,17 +287,15 @@ def _fetch_bdh_via_excel(cusips, start_date, end_date, wb_path, xw,
         for cusip in cusips:
             sheet.clear_contents()
 
-            # Write parameters — use per-bond ticker if available
+            # Write parameters for single-CUSIP live call (A1/B1/C1 layout).
             sheet["A1"].value = _ticker_for(cusip, bonds_static)
             sheet["B1"].value = start_str
             sheet["C1"].value = end_str
 
-            # BDH formula: returns dates in col A, prices in col B, starting row 3
-            sheet["A3"].value = (
-                f'=BDH(A1,"PX_LAST",B1,C1,"Fill","0","Dates","1")'
-            )
+            # @BDH formula: dates fill col A from row 3, prices fill col B.
+            sheet["A3"].value = '=@BDH(A1,"PX_LAST",B1,C1,"fill=p","days=a")'
 
-            # Trigger and wait
+            # Trigger and wait for Bloomberg to populate.
             app.calculate()
             elapsed = 0
             while elapsed < _BDH_TIMEOUT:
@@ -307,11 +306,11 @@ def _fetch_bdh_via_excel(cusips, start_date, end_date, wb_path, xw,
                 app.calculate()
                 elapsed += _POLL_INTERVAL
 
-            # Read returned time series
+            # Read returned time series.
             data_range = sheet.range("A3").expand().value
             if data_range is None:
                 continue
-            # Single-row result comes back as a flat list, not a list of lists
+            # Single-row result comes back as a flat list, not a list of lists.
             if not isinstance(data_range[0], list):
                 data_range = [data_range]
 
@@ -528,54 +527,77 @@ def prepare_history_template(
     wb_path: Path = TEMPLATE_PATH,
     bonds_static: dict | None = None,
 ) -> Path:
-    """Write one BDH block per entry in cusip_ranges into the History sheet.
+    """Write the History sheet with one column pair per CUSIP using @BDH formulas.
 
-    Each block (offset _BDH_BLOCK_ROWS rows apart):
-      Row n  : [ticker, start_YYYYMMDD, end_YYYYMMDD]   ← BDH parameters
-      Row n+1: ["Date", "PX_LAST"]                       ← column labels
-      Row n+2: =BDH formula (Bloomberg fills downward)
+    Layout:
+      Row 1:  odd cols  = tickers  (A1, C1, E1, …)
+              bond-0 even col = start date  (B1)
+      Row 2:  A2 = shared end date (today−1, mm/dd/yyyy)
+              B2 = "PX_LAST"  (shared field label)
+              bond-1+ even cols = start dates  (D2, F2, …)
+      Row 3:  odd cols = @BDH formulas — Bloomberg fills dates (odd) and
+              prices (even) downward from row 4
 
-    cusip_ranges may contain the same CUSIP more than once (different date
-    spans for re-bought positions — each gets its own block).
+    Multiple gap ranges for the same CUSIP are collapsed: the earliest start
+    date is used (find_price_gaps already returns only missing ranges, so
+    min(start) = the earliest date not yet in price_history.csv).
 
     After this call the user opens the file in Excel, waits for Bloomberg to
-    populate every block, saves and closes. Then call read_history_from_template().
+    populate every formula, saves and closes. Then call read_history_from_template().
     """
     from openpyxl import load_workbook
     from openpyxl.styles import Font
+    from openpyxl.utils import get_column_letter
+
+    # Collapse multiple ranges per CUSIP: keep earliest start date.
+    cusip_starts: dict[str, date] = {}
+    for cusip, start, _end in cusip_ranges:
+        cusip = str(cusip)
+        if cusip not in cusip_starts or start < cusip_starts[cusip]:
+            cusip_starts[cusip] = start
+
+    end_date = date.today() - timedelta(days=1)
+    end_str  = end_date.strftime("%m/%d/%Y")
 
     wb = load_workbook(str(wb_path))
     ws = wb["History"]
     ws.delete_rows(1, max(ws.max_row, 1))
 
-    pending_ranges: list[dict] = []
-    for block_idx, (cusip, start, end) in enumerate(cusip_ranges):
-        row = block_idx * _BDH_BLOCK_ROWS + 1
-        ticker = _ticker_for(cusip, bonds_static)
+    # Shared cells — written once, referenced by all BDH formulas.
+    ws["A2"] = end_str
+    ws["B2"] = "PX_LAST"
 
-        ws.cell(row=row, column=1).value = ticker
-        ws.cell(row=row, column=1).font = Font(bold=True)
-        # Store dates as integers (YYYYMMDD) so Bloomberg reads them unambiguously.
-        ws.cell(row=row, column=2).value = int(start.strftime("%Y%m%d"))
-        ws.cell(row=row, column=3).value = int(end.strftime("%Y%m%d"))
+    ordered_cusips = list(cusip_starts.keys())
+    for i, cusip in enumerate(ordered_cusips):
+        col_data   = 2 * i + 1                   # A=1, C=3, E=5, …
+        col_param  = 2 * i + 2                   # B=2, D=4, F=6, …
+        col_letter = get_column_letter(col_data)
+        start_str  = cusip_starts[cusip].strftime("%m/%d/%Y")
+        ticker     = _ticker_for(cusip, bonds_static)
 
-        ws.cell(row=row + 1, column=1).value = "Date"
-        ws.cell(row=row + 1, column=2).value = "PX_LAST"
+        # Ticker — row 1, odd column.
+        cell = ws.cell(row=1, column=col_data, value=ticker)
+        cell.font = Font(bold=True)
 
-        ws.cell(row=row + 2, column=1).value = (
-            f'=BDH(A{row},"PX_LAST",B{row},C{row},"Fill","0","Dates","1")'
-        )
-        pending_ranges.append({
-            "cusip": str(cusip),
-            "start": start.isoformat(),
-            "end": end.isoformat(),
-        })
+        # Start date: B1 for bond 0; D2, F2, … for subsequent bonds.
+        if i == 0:
+            ws.cell(row=1, column=col_param, value=start_str)   # B1
+            start_ref = "B1"
+        else:
+            ws.cell(row=2, column=col_param, value=start_str)   # D2, F2, …
+            start_ref = f"{get_column_letter(col_param)}2"
+
+        # @BDH formula — Bloomberg fills dates into col_data and prices into
+        # col_param starting at row 4 (row 3 is the formula cell itself).
+        formula = f'=@BDH({col_letter}1,B2,{start_ref},A2,"fill=p","days=a")'
+        ws.cell(row=3, column=col_data, value=formula)
 
     wb.save(str(wb_path))
 
     prev = _load_backfill_state()
     _save_backfill_state({
-        "pending_ranges": pending_ranges,
+        "ordered_cusips": ordered_cusips,
+        "end_date": end_str,
         "prepared_at": datetime.now().isoformat(),
         "last_date": prev.get("last_date"),
         "last_run": prev.get("last_run"),
@@ -585,7 +607,11 @@ def prepare_history_template(
 
 
 def read_history_from_template(wb_path: Path = TEMPLATE_PATH) -> pd.DataFrame:
-    """Read BDH blocks from the History sheet saved after manual Bloomberg refresh.
+    """Read column-pair BDH data from the History sheet after Bloomberg has populated it.
+
+    Each CUSIP occupies two columns (dates in odd, prices in even), data from row 4
+    downward (row 3 is the @BDH formula cell).  The ordered CUSIP list stored in
+    backfill_state.json maps column positions back to CUSIPs.
 
     Returns a DataFrame (date, cusip, px_last). Appends to price_history.csv
     and updates backfill_state.json with the latest date successfully imported.
@@ -593,30 +619,35 @@ def read_history_from_template(wb_path: Path = TEMPLATE_PATH) -> pd.DataFrame:
     from openpyxl import load_workbook
 
     state = _load_backfill_state()
-    pending_ranges: list[dict] = state.get("pending_ranges", [])
-    if not pending_ranges:
+    ordered_cusips: list[str] = state.get("ordered_cusips", [])
+    if not ordered_cusips:
         return pd.DataFrame(columns=["date", "cusip", "px_last"])
 
     wb = load_workbook(str(wb_path), data_only=True)
     ws = wb["History"]
+    max_row = ws.max_row or 3
 
     records = []
-    for block_idx, rng in enumerate(pending_ranges):
-        cusip = rng["cusip"]
-        data_start = block_idx * _BDH_BLOCK_ROWS + 3   # row n+2
+    for i, cusip in enumerate(ordered_cusips):
+        col_data  = 2 * i + 1   # odd column: dates
+        col_price = 2 * i + 2   # even column: prices
 
-        for r in range(data_start, data_start + _BDH_BLOCK_ROWS - 2):
-            date_val = ws.cell(row=r, column=1).value
-            price_val = ws.cell(row=r, column=2).value
+        for r in range(4, max_row + 1):   # row 3 is the formula; data starts at 4
+            date_val  = ws.cell(row=r, column=col_data).value
+            price_val = ws.cell(row=r, column=col_price).value
             if not date_val:
                 break
             if hasattr(date_val, "date"):
                 d = date_val.date()
             else:
+                # Fallback: Bloomberg may return mm/dd/yyyy string
                 try:
-                    d = datetime.strptime(str(int(float(str(date_val)))), "%Y%m%d").date()
-                except (ValueError, TypeError):
-                    break
+                    d = datetime.strptime(str(date_val), "%m/%d/%Y").date()
+                except ValueError:
+                    try:
+                        d = datetime.strptime(str(int(float(str(date_val)))), "%Y%m%d").date()
+                    except (ValueError, TypeError):
+                        break
             if isinstance(price_val, (int, float)) and not math.isnan(float(price_val)):
                 records.append({
                     "date": d.isoformat(),
