@@ -10,8 +10,8 @@ Or from the project root:
 
 Writes (or overwrites) CSV files under data/:
   bonds_static.csv       — CUSIPs only; static fields populated via Bloomberg
-  initial_positions.csv  — inception holdings as of 2025-04-30
-  trades.csv             — 15 sample trade confirmations
+  initial_positions.csv  — inception holdings as of 2026-01-01
+  trades.csv             — 1 sample trade confirmation
 
 Price history is NOT generated here. Use the dashboard Bloomberg workflow:
   1. streamlit run src/dashboard.py
@@ -39,7 +39,7 @@ PROJECT_ROOT = Path(__file__).resolve().parent
 DATA_DIR = PROJECT_ROOT / "data"
 PRICES_DIR = DATA_DIR / "prices"
 
-INCEPTION_DATE = date(2025, 4, 30)   # end-of-month mark that seeds positions
+INCEPTION_DATE = date(2026, 1, 1)   # inception mark that seeds positions
 
 
 # ── bond definitions (internal only — NOT written to bonds_static.csv) ────────
@@ -66,8 +66,8 @@ BONDS: list[_Bond] = [
 
 _BOND_BY_CUSIP: dict[str, _Bond] = {b.cusip: b for b in BONDS}
 
-# Representative clean prices (% of par) used for trade confirmation figures.
-# These are fixed; real market prices come from Bloomberg via the import flow.
+# Representative clean prices (% of par) used for inception position book values.
+# Real market prices come from Bloomberg via the import flow.
 _SPOT_PRICES: dict[str, float] = {
     "25714PFB9": 97.50,
     "195325ER2": 95.25,
@@ -155,9 +155,9 @@ def build_bonds_static() -> pd.DataFrame:
 # ── initial positions ─────────────────────────────────────────────────────────
 
 _INCEPTION_SPECS = [
-    ("HY", "25714PFB9", 5_000_000),
-    ("HY", "195325ER2", 3_000_000),
-    ("IG", "25714PEF1", 10_000_000),
+    ("HY", "25714PFB9", 1_000_000),
+    ("HY", "195325ER2", 1_000_000),
+    ("IG", "25714PEF1", 1_000_000),
 ]
 
 
@@ -178,28 +178,11 @@ def build_initial_positions() -> pd.DataFrame:
 
 
 # ── trades ────────────────────────────────────────────────────────────────────
+# Tuple format: (portfolio, cusip, trader, side, nominal, trade_date[, price])
+# Optional 7th element overrides _SPOT_PRICES for the trade confirmation price.
 
 _TRADE_SPECS: list[tuple] = [
-    # ── HY: 25714PFB9 ─────────────────────────────────────────────────────────
-    ("HY", "25714PFB9", "ALICE", "buy",  2_000_000, date(2025,  5,  5)),
-    ("HY", "25714PFB9", "ALICE", "buy",  1_000_000, date(2025,  7, 15)),
-    ("HY", "25714PFB9", "BOB",   "sell", 4_000_000, date(2025,  9, 10)),
-    ("HY", "25714PFB9", "ALICE", "buy",  2_500_000, date(2025, 11, 20)),
-    ("HY", "25714PFB9", "BOB",   "sell", 1_500_000, date(2026,  2, 10)),
-    ("HY", "25714PFB9", "ALICE", "buy",    500_000, date(2026,  4, 22)),
-
-    # ── HY: 195325ER2 ─────────────────────────────────────────────────────────
-    ("HY", "195325ER2", "BOB",   "buy",  1_500_000, date(2025,  5, 20)),
-    ("HY", "195325ER2", "BOB",   "sell", 2_000_000, date(2025,  8,  5)),
-    ("HY", "195325ER2", "ALICE", "buy",  2_000_000, date(2025, 10, 15)),
-    ("HY", "195325ER2", "BOB",   "sell",   500_000, date(2026,  3,  5)),
-    ("HY", "195325ER2", "ALICE", "buy",    500_000, date(2026,  5, 12)),
-
-    # ── IG: 25714PEF1 ─────────────────────────────────────────────────────────
-    ("IG", "25714PEF1", "CAROL", "buy",  5_000_000, date(2025,  5, 12)),
-    ("IG", "25714PEF1", "CAROL", "buy",  2_000_000, date(2025,  8, 18)),
-    ("IG", "25714PEF1", "CAROL", "sell", 6_000_000, date(2025, 11,  5)),
-    ("IG", "25714PEF1", "CAROL", "buy",  3_000_000, date(2026,  1, 20)),
+    ("HY", "25714PFB9", "ALICE", "buy", 1_000_000, date(2026, 5, 5), 104.42),
 ]
 
 _YTM = {
@@ -211,9 +194,10 @@ _YTM = {
 
 def build_trades() -> pd.DataFrame:
     rows = []
-    for portfolio, cusip, trader, side, nominal, trade_date in _TRADE_SPECS:
+    for spec in _TRADE_SPECS:
+        portfolio, cusip, trader, side, nominal, trade_date = spec[:6]
+        px = spec[6] if len(spec) > 6 else _SPOT_PRICES[cusip]
         bond = _BOND_BY_CUSIP[cusip]
-        px = _SPOT_PRICES[cusip]
 
         acc_dollar = round(nominal * _accrued_pct(bond, trade_date), 2)
         principal  = round(nominal * px / 100, 2)
@@ -262,9 +246,9 @@ def main() -> None:
     # trades.csv  (gitignored — real trade data)
     trades_df = build_trades()
     trades_df.to_csv(DATA_DIR / "trades.csv", index=False)
-    print(f"  trades.csv            {len(trades_df)} trades  "
-          f"({trades_df['portfolio'].nunique()} portfolios, "
-          f"{trades_df['cusip'].nunique()} CUSIPs)")
+    print(f"  trades.csv            {len(trades_df)} trade(s)  "
+          f"({trades_df['portfolio'].nunique()} portfolio(s), "
+          f"{trades_df['cusip'].nunique()} CUSIP(s))")
 
     print()
     print(f"All files written to {DATA_DIR.resolve()}")
