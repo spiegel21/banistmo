@@ -182,7 +182,9 @@ def build_initial_positions() -> pd.DataFrame:
 # Optional 7th element overrides _SPOT_PRICES for the trade confirmation price.
 
 _TRADE_SPECS: list[tuple] = [
-    ("HY", "25714PFB9", "ALICE", "buy", 1_000_000, date(2026, 5, 5), 104.42),
+    ("HY", "25714PFB9", "ALICE", "buy", 1_000_000, date(2026, 5, 5), 107.53),
+    ("HY", "195325ER2", "ALICE", "buy", 1_000_000, date(2026, 5, 5), 105.62),
+    ("IG", "25714PEF1", "ALICE", "buy", 1_000_000, date(2026, 5, 5),  96.36),
 ]
 
 _YTM = {

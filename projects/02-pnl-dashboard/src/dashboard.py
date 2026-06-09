@@ -106,6 +106,21 @@ def _color_pnl_df(df: pd.DataFrame, pnl_cols: list[str]) -> pd.DataFrame:
     return df
 
 
+def _filtered_dataframe(df: pd.DataFrame, key: str, **kwargs) -> None:
+    """Render a text filter then display the (filtered) dataframe."""
+    filt = st.text_input(
+        "Filter", key=f"filt_{key}",
+        placeholder="search any column…",
+        label_visibility="collapsed",
+    )
+    if filt.strip():
+        mask = df.apply(
+            lambda col: col.astype(str).str.contains(filt.strip(), case=False, na=False)
+        ).any(axis=1)
+        df = df[mask]
+    st.dataframe(df, **kwargs)
+
+
 def _make_adjustment_trades(
     baseline_positions: dict,
     edited_df: pd.DataFrame,
@@ -427,13 +442,13 @@ with tab_mtm:
             view[[c for c in ordered if c in view.columns]],
             ["Price MTM", "Accrued", "MTM Gain", "Realized"],
         )
-        st.dataframe(styled_mtm, width="stretch", hide_index=True)
+        _filtered_dataframe(styled_mtm, "mtm", width="stretch", hide_index=True)
 
         with st.expander("Accrual detail"):
             acc_detail_mtm = accrual_breakdown(positions, bonds_static, as_of)
             if not acc_detail_mtm.empty:
                 acc_view_mtm = _enrich(acc_detail_mtm, bs_df, ["name", "country", "currency"])
-                st.dataframe(acc_view_mtm, width="stretch", hide_index=True)
+                _filtered_dataframe(acc_view_mtm, "mtm_acc", width="stretch", hide_index=True)
             else:
                 st.info("No accruing positions.")
 
@@ -485,9 +500,9 @@ with tab_positions_date:
                 "name":        st.column_config.TextColumn("Name", disabled=True),
                 "country":     st.column_config.TextColumn("Country", disabled=True),
                 "currency":    st.column_config.TextColumn("CCY", disabled=True),
-                "net_nominal": st.column_config.NumberColumn("Net Nominal", format="%.0f"),
-                "wavg_price":  st.column_config.NumberColumn("WAVG Price", format="%.4f"),
-                "book_value":  st.column_config.NumberColumn("Book Value", disabled=True, format="%.2f"),
+                "net_nominal": st.column_config.NumberColumn("Net Nominal", format="%,.0f"),
+                "wavg_price":  st.column_config.NumberColumn("WAVG Price", format="%.2f"),
+                "book_value":  st.column_config.NumberColumn("Book Value", disabled=True, format="%,.2f"),
                 "last_settle": st.column_config.DateColumn("Last Settle", disabled=True),
             },
         )
@@ -529,7 +544,15 @@ with tab_trades_date:
         "A timestamped backup is always created before writing. "
         "**Nominal must be unsigned** (sign is stored in the Side column)."
     )
-    trades_date = st.date_input("Trade date", value=as_of, key="trades_date_sel")
+    _date_range = st.date_input(
+        "Trade date range",
+        value=(min_date, as_of),
+        key="trades_date_range",
+    )
+    if isinstance(_date_range, (list, tuple)) and len(_date_range) == 2:
+        trades_start, trades_end = _date_range
+    else:
+        trades_start = trades_end = _date_range[0] if _date_range else as_of
 
     full_raw_df = _raw_csv(config.TRADES_PATH, data_io.TRADES_COLUMNS)
 
@@ -542,10 +565,10 @@ with tab_trades_date:
         if _unresolved.any():
             _td[_unresolved] = pd.to_datetime(full_raw_df.loc[_unresolved, "trade_date"], errors="coerce")
         raw_trade_dates = _td.dt.date
-        day_mask = raw_trade_dates == trades_date
+        day_mask = (raw_trade_dates >= trades_start) & (raw_trade_dates <= trades_end)
         day_trades = full_raw_df[day_mask].copy()
 
-    st.caption(f"{len(day_trades)} trade(s) on {trades_date}.")
+    st.caption(f"{len(day_trades)} trade(s) from {trades_start} to {trades_end}.")
 
     edited_day = st.data_editor(
         day_trades,
@@ -556,18 +579,18 @@ with tab_trades_date:
             "trade_date":   st.column_config.TextColumn("Trade Date"),
             "settle_date":  st.column_config.TextColumn("Settle Date"),
             "side":         st.column_config.SelectboxColumn("Side", options=["buy", "sell"]),
-            "nominal":      st.column_config.NumberColumn("Nominal (unsigned)", format="%.0f"),
-            "price":        st.column_config.NumberColumn("Price", format="%.4f"),
-            "principal":    st.column_config.NumberColumn("Principal", format="%.2f"),
-            "net":          st.column_config.NumberColumn("Net", format="%.2f"),
-            "accrued":      st.column_config.NumberColumn("Accrued", format="%.2f"),
+            "nominal":      st.column_config.NumberColumn("Nominal (unsigned)", format="%,.0f"),
+            "price":        st.column_config.NumberColumn("Price", format="%.2f"),
+            "principal":    st.column_config.NumberColumn("Principal", format="%,.2f"),
+            "net":          st.column_config.NumberColumn("Net", format="%,.2f"),
+            "accrued":      st.column_config.NumberColumn("Accrued", format="%,.2f"),
             "yield_closed": st.column_config.NumberColumn("Yield", format="%.4f"),
         },
     )
 
-    # Backfill dates for newly added rows
+    # Backfill dates for newly added rows (default to range end date)
     fmt = "%m/%d/%y"
-    date_str = trades_date.strftime(fmt)
+    date_str = trades_end.strftime(fmt)
     if not edited_day.empty:
         edited_day["trade_date"] = edited_day["trade_date"].fillna(date_str)
         edited_day["settle_date"] = edited_day["settle_date"].fillna(date_str)
@@ -655,7 +678,7 @@ with tab_attribution:
                 styled_snap = _color_pnl_df(
                     snap_view, ["Price P&L", "Accrued P&L", "MTM Gain", "Realized"]
                 )
-                st.dataframe(styled_snap, width="stretch", hide_index=True)
+                _filtered_dataframe(styled_snap, "attr_snap", width="stretch", hide_index=True)
                 st.caption(
                     "Price P&L = clean price change × nominal.  "
                     "Accrued P&L = daily accrual.  "
@@ -683,7 +706,7 @@ with tab_attribution:
                 pivot.index = pd.to_datetime(pivot.index).date
                 pivot_reset = pivot.reset_index().rename(columns={"date": "Date"})
                 styled_pivot = _color_pnl_df(pivot_reset, list(pivot.columns))
-                st.dataframe(styled_pivot, width="stretch", hide_index=True, height=420)
+                _filtered_dataframe(styled_pivot, "attr_pivot", width="stretch", hide_index=True, height=420)
                 st.caption("Daily total P&L per bond. Each column = bond name (CUSIP).")
 
     # ── Rollup ───────────────────────────────────────────────────────────────
@@ -739,7 +762,7 @@ with tab_attribution:
             styled_rollup = _color_pnl_df(
                 agg, ["Price P&L", "Accrued P&L", "Realized", "Total P&L"]
             )
-            st.dataframe(styled_rollup, width="stretch", hide_index=True)
+            _filtered_dataframe(styled_rollup, "attr_rollup", width="stretch", hide_index=True)
             st.caption(
                 f"Aggregated P&L grouped by {label.lower()} over "
                 f"{hist_start} → {as_of}. Values are cumulative sums."
@@ -770,7 +793,7 @@ with tab_attribution:
                 "note": "Note",
             })
             styled_acc = _color_pnl_df(acc_full, ["Accrued Total"])
-            st.dataframe(styled_acc, width="stretch", hide_index=True)
+            _filtered_dataframe(styled_acc, "attr_acc", width="stretch", hide_index=True)
             total_accrued_attr = (
                 _nansum(acc_detail_attr["accrued_total"])
                 if "accrued_total" in acc_detail_attr.columns else 0.0
@@ -808,7 +831,7 @@ with tab_attribution:
                 "accrued_pnl": "Accrued P&L",
             })
             styled_ts = _color_pnl_df(ts_display, ["Price P&L", "Accrued P&L"])
-            st.dataframe(styled_ts, width="stretch", hide_index=True, height=500)
+            _filtered_dataframe(styled_ts, "attr_ts", width="stretch", hide_index=True, height=500)
             st.download_button(
                 "Download CSV",
                 ts_display.to_csv(index=False).encode(),
@@ -828,7 +851,7 @@ with tab_ledger:
     if snap.empty:
         st.info("No positions held on this day (or no price available).")
     else:
-        st.dataframe(snap, width='stretch', hide_index=True)
+        _filtered_dataframe(snap, "ledger_snap", width='stretch', hide_index=True)
 
     st.markdown("##### Accrual detail")
     pos_day = get_positions_as_of(ledger_day, hist_portfolio)
@@ -837,7 +860,7 @@ with tab_ledger:
         st.info("No accruing positions on this day.")
     else:
         acc = _enrich(acc, bs_df, ["name"])
-        st.dataframe(acc, width='stretch', hide_index=True)
+        _filtered_dataframe(acc, "ledger_acc", width='stretch', hide_index=True)
 
     cL, cR = st.columns(2)
     with cL:
@@ -851,8 +874,10 @@ with tab_ledger:
         else:
             cols = ["cusip", "name", "side", "nominal", "price", "net", "accrued", "trader", "portfolio"]
             booked = _enrich(booked, bs_df, ["name"])
-            st.dataframe(booked[[c for c in cols if c in booked.columns]],
-                         width='stretch', hide_index=True)
+            _filtered_dataframe(
+                booked[[c for c in cols if c in booked.columns]],
+                "ledger_trades", width='stretch', hide_index=True,
+            )
 
     with cR:
         st.markdown("##### Realized closes this day")
@@ -863,7 +888,7 @@ with tab_ledger:
             st.info("No positions closed.")
         else:
             rl = _enrich(rl, bs_df, ["name"])
-            st.dataframe(rl, width='stretch', hide_index=True)
+            _filtered_dataframe(rl, "ledger_rl", width='stretch', hide_index=True)
 
 # ── Tab 7: Time Series ────────────────────────────────────────────────────────
 
@@ -876,7 +901,7 @@ with tab_ts:
     if ts.empty:
         st.info("No data. Ensure positions exist and `price_history.csv` is populated for the range.")
     else:
-        st.dataframe(ts, width='stretch', hide_index=True, height=500)
+        _filtered_dataframe(ts, "ts_main", width='stretch', hide_index=True, height=500)
         st.download_button(
             "Download CSV", ts.to_csv(index=False).encode(),
             file_name=f"position_timeseries_{hist_start}_{as_of}.csv", mime="text/csv",
