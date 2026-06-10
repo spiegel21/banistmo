@@ -195,7 +195,16 @@ def read_prices_from_template(wb_path: Path = TEMPLATE_PATH) -> dict[str, float]
         price = ws.cell(row=row, column=2).value
         if not raw:
             continue
-        cusip = _cusip_from_ticker(str(raw))
+        # #N/A in the ticker cell itself → Bloomberg couldn't identify the bond
+        raw_str = str(raw).strip()
+        if raw_str in ("#N/A", "N/A"):
+            log.debug("Live MTM row %d: ticker returned #N/A — skipped", row)
+            continue
+        cusip = _cusip_from_ticker(raw_str)
+        # #N/A in any price field → bond has matured; Bloomberg no longer prices it
+        if price is None or (isinstance(price, str) and price.strip() in ("#N/A", "N/A")):
+            log.info("Live MTM: %s returned #N/A for PX_LAST — bond likely matured, skipped", cusip)
+            continue
         if isinstance(price, (int, float)) and not math.isnan(float(price)):
             prices[cusip] = float(price)
     if prices:
@@ -678,10 +687,18 @@ _DAYCOUNT_MAP: dict[str, str] = {
     "ACT/365": "Act/365",
     "ACTUAL/365": "Act/365",
     "A/365": "Act/365",
+    "ACT/ACT": "Act/Act",
+    "ACTUAL/ACTUAL": "Act/Act",
+    "A/A": "Act/Act",
+    "ACT/ACT (ISMA)": "Act/Act",
+    "ACT/ACT (ICMA)": "Act/Act",
+    "ACTUAL/ACTUAL (ISMA)": "Act/Act",
     "30/360": "30/360",
     "30/360 BOND": "30/360",
     "30/360 ISDA": "30/360",
     "ISMA-30/360": "30/360",
+    "ISMA-30/360 NONEOM": "30/360",
+    "ISMA 30/360": "30/360",
     "30E/360": "30/360",
     "BOND BASIS": "30/360",
 }
@@ -735,15 +752,32 @@ def read_static_from_template(wb_path: Path = TEMPLATE_PATH) -> pd.DataFrame:
 
             if field == "day_count_convention":
                 val = _normalize_day_count(val)
-            elif field in ("maturity_date", "first_coupon_date"):
+            elif field == "maturity_date":
                 if hasattr(val, "date"):
                     val = val.date().isoformat()
                 elif val is not None:
                     val = str(val)
+            elif field == "first_coupon_date":
+                # Bloomberg returns #N/A (None from xlwings, or a string) when
+                # a bond has no distinct first coupon (zero-coupon / bullet).
+                # Sentinel None here; merge_bonds_static will fill it with maturity.
+                if hasattr(val, "date"):
+                    val = val.date().isoformat()
+                elif val is not None and str(val).strip() not in ("#N/A", "N/A", ""):
+                    val = str(val)
+                else:
+                    val = None  # will be filled with maturity_date in merge step
             elif field == "coupon_rate":
                 val = float(val) if val is not None else None
             elif field == "coupon_frequency":
-                val = int(round(float(val))) if val is not None else None
+                # Bloomberg returns #N/A (None) for non-coupon-bearing bonds → 0
+                if val is None or (isinstance(val, str) and val.strip() in ("#N/A", "N/A", "")):
+                    val = 0
+                else:
+                    try:
+                        val = int(round(float(val)))
+                    except (ValueError, TypeError):
+                        val = 0
 
             rec[field] = val
         records.append(rec)
@@ -786,6 +820,11 @@ def merge_bonds_static(fetched_df: pd.DataFrame) -> tuple[int, int]:
         .combine_first(fetched.set_index("cusip"))
         .reset_index()
     )
+
+    # first_coupon_date sentinel (None) from Bloomberg #N/A → use maturity_date
+    if "first_coupon_date" in merged.columns and "maturity_date" in merged.columns:
+        mask = merged["first_coupon_date"].isna()
+        merged.loc[mask, "first_coupon_date"] = merged.loc[mask, "maturity_date"]
 
     # Count cells that were NaN before but are now filled
     pre = existing.set_index("cusip").reindex(merged.set_index("cusip").index)

@@ -12,7 +12,7 @@ import pandas as pd
 
 import config
 from config import get_logger
-from models import Position, BondStatic
+from models import Position, BondStatic, normalise_day_count
 
 log = get_logger(__name__)
 
@@ -34,16 +34,33 @@ def load_bonds_static(path: Path | None = None) -> dict[str, BondStatic]:
                         cusip, missing)
             continue
         try:
+            # coupon_frequency: Bloomberg can return "#N/A" for non-coupon bonds → 0
+            raw_freq = row["coupon_frequency"]
+            try:
+                coupon_freq = int(round(float(raw_freq)))
+            except (ValueError, TypeError):
+                coupon_freq = 0
+
+            maturity = row["maturity_date"].date()
+
+            # first_coupon_date: Bloomberg returns "#N/A" for zero-coupon / bullet
+            # → fall back to maturity_date so accrual calculations are consistent.
+            raw_fcd = row.get("first_coupon_date")
+            if pd.isna(raw_fcd) if not isinstance(raw_fcd, str) else str(raw_fcd).strip() in ("#N/A", "N/A", ""):
+                first_coupon = maturity
+            else:
+                first_coupon = pd.to_datetime(raw_fcd).date() if not hasattr(raw_fcd, "date") else raw_fcd.date()
+
             bond = BondStatic(
                 cusip=cusip,
                 name=row.get("name", ""),
                 currency=row.get("currency", ""),
                 country=row.get("country", "") if pd.notna(row.get("country", "")) else "",
                 coupon_rate=float(row["coupon_rate"]),
-                coupon_frequency=int(row["coupon_frequency"]),
-                day_count_convention=str(row["day_count_convention"]),
-                maturity_date=row["maturity_date"].date(),
-                first_coupon_date=row["first_coupon_date"].date(),
+                coupon_frequency=coupon_freq,
+                day_count_convention=normalise_day_count(str(row["day_count_convention"])),
+                maturity_date=maturity,
+                first_coupon_date=first_coupon,
                 bbg_ticker="" if pd.isna(row.get("bbg_ticker")) else str(row.get("bbg_ticker", "")),
                 instrument_type="" if pd.isna(row.get("instrument_type")) else str(row.get("instrument_type", "")),
             )
@@ -56,6 +73,8 @@ def load_bonds_static(path: Path | None = None) -> dict[str, BondStatic]:
 
 def _coupon_dates(bond: BondStatic) -> list[date]:
     """Generate all coupon dates from first_coupon_date up to and including maturity."""
+    if bond.coupon_frequency == 0:
+        return []
     months_per_period = 12 // bond.coupon_frequency
     dates: list[date] = []
     d = bond.first_coupon_date
@@ -105,10 +124,12 @@ def _days_30_360(start: date, end: date) -> int:
 
 def days_accrued(bond: BondStatic, as_of: date) -> int:
     """Days since last coupon using the bond's day-count convention."""
+    if bond.coupon_frequency == 0:
+        return 0
     lcd = last_coupon_date(bond, as_of)
     if bond.day_count_convention == "30/360":
         return _days_30_360(lcd, as_of)
-    return (as_of - lcd).days  # actual days for Act/360 and Act/365
+    return (as_of - lcd).days  # actual days for Act/360, Act/365, Act/Act
 
 
 def accrued_interest(nominal: float, bond: BondStatic, as_of: date) -> float:
@@ -116,13 +137,16 @@ def accrued_interest(nominal: float, bond: BondStatic, as_of: date) -> float:
     Accrued interest in currency units, per the bond's day-count convention.
 
     Act/360, Act/365: annual_coupon * days / basis
+    Act/Act:          annual_coupon * days / 365 (365-day approximation)
     30/360:           annual_coupon * days_30_360 / 360
     """
+    if bond.coupon_frequency == 0:
+        return 0.0
     days = days_accrued(bond, as_of)
     annual_coupon = nominal * bond.coupon_rate
     if bond.day_count_convention == "Act/360":
         return annual_coupon * days / 360
-    if bond.day_count_convention == "Act/365":
+    if bond.day_count_convention in ("Act/365", "Act/Act"):
         return annual_coupon * days / 365
     # 30/360
     return annual_coupon * days / 360

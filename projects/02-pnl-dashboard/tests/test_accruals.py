@@ -59,7 +59,7 @@ def test_load_skips_invalid_rows(tmp_path):
              coupon_frequency=2, day_count_convention="Act/360",
              maturity_date="2030-01-01", first_coupon_date="2024-01-01"),
         dict(cusip="BAD", name="b", currency="USD", country="US", coupon_rate=0.04,
-             coupon_frequency=0, day_count_convention="Act/360",   # freq 0 → invalid
+             coupon_frequency=3, day_count_convention="Act/360",   # freq 3 → not in {0,1,2,4,12}
              maturity_date="2030-01-01", first_coupon_date="2024-01-01"),
     ]).to_csv(p, index=False)
     bonds = load_bonds_static(p)

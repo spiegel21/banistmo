@@ -20,7 +20,7 @@ import pandas as pd
 
 import config
 from config import get_logger
-from models import BondStatic
+from models import BondStatic, normalise_day_count
 
 log = get_logger(__name__)
 
@@ -105,16 +105,33 @@ def _validate_bonds(df: pd.DataFrame) -> list[str]:
     for i, row in df.iterrows():
         n = i + 1
         try:
+            # coupon_frequency: "#N/A" from Bloomberg → 0 (non-coupon bearing)
+            raw_freq = row.get("coupon_frequency")
+            try:
+                coupon_freq = int(round(float(raw_freq)))
+            except (ValueError, TypeError):
+                coupon_freq = 0
+
+            maturity = _one(row["maturity_date"]).date()
+
+            # first_coupon_date: "#N/A" from Bloomberg → use maturity_date
+            raw_fcd = row.get("first_coupon_date")
+            fcd_parsed = _one(raw_fcd)
+            if pd.isna(fcd_parsed) or (isinstance(raw_fcd, str) and raw_fcd.strip() in ("#N/A", "N/A", "")):
+                first_coupon = maturity
+            else:
+                first_coupon = fcd_parsed.date()
+
             BondStatic(
                 cusip=str(row["cusip"]),
                 name=str(row.get("name", "")),
                 currency=str(row.get("currency", "")),
-                country=str(row.get("country", "")),
+                country=str(row.get("country", "")) if pd.notna(row.get("country", "")) else "",
                 coupon_rate=float(row["coupon_rate"]),
-                coupon_frequency=int(row["coupon_frequency"]),
-                day_count_convention=str(row["day_count_convention"]),
-                maturity_date=_one(row["maturity_date"]).date(),
-                first_coupon_date=_one(row["first_coupon_date"]).date(),
+                coupon_frequency=coupon_freq,
+                day_count_convention=normalise_day_count(str(row["day_count_convention"])),
+                maturity_date=maturity,
+                first_coupon_date=first_coupon,
                 bbg_ticker="" if pd.isna(row.get("bbg_ticker")) else str(row.get("bbg_ticker", "")),
                 instrument_type="" if pd.isna(row.get("instrument_type")) else str(row.get("instrument_type", "")),
             )

@@ -3,8 +3,52 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from datetime import date
 
-VALID_DAY_COUNTS = {"Act/360", "Act/365", "30/360"}
-VALID_FREQUENCIES = {1, 2, 4, 12}
+VALID_DAY_COUNTS = {"Act/360", "Act/365", "30/360", "Act/Act"}
+VALID_FREQUENCIES = {0, 1, 2, 4, 12}   # 0 = zero-coupon / non-coupon bearing
+
+# Normalization map: any Bloomberg or user-typed variant → internal canonical form.
+# Keys are lower-cased; the lookup in normalise_day_count() strips and lower-cases first.
+_DAY_COUNT_ALIASES: dict[str, str] = {
+    # ACT/360 family
+    "act/360": "Act/360",
+    "actual/360": "Act/360",
+    "a/360": "Act/360",
+    # ACT/365 family
+    "act/365": "Act/365",
+    "actual/365": "Act/365",
+    "a/365": "Act/365",
+    # ACT/ACT family (ISMA / ICMA)
+    "act/act": "Act/Act",
+    "actual/actual": "Act/Act",
+    "a/a": "Act/Act",
+    "act/act (isma)": "Act/Act",
+    "act/act (icma)": "Act/Act",
+    "actual/actual (isma)": "Act/Act",
+    "actual/actual (icma)": "Act/Act",
+    # 30/360 family
+    "30/360": "30/360",
+    "30/360 bond": "30/360",
+    "30/360 isda": "30/360",
+    "isma-30/360": "30/360",
+    "isma-30/360 noneom": "30/360",
+    "isma 30/360": "30/360",
+    "30e/360": "30/360",
+    "bond basis": "30/360",
+    # Already-canonical pass-through (case-insensitive variants)
+    "act/act": "Act/Act",
+}
+
+
+def normalise_day_count(raw: str) -> str:
+    """Convert any known day-count string to internal canonical form.
+
+    Already-canonical values are returned unchanged. Unknown strings are
+    returned as-is (BondStatic.__post_init__ will reject them with a clear
+    error if they are not in VALID_DAY_COUNTS).
+    """
+    if not raw:
+        return raw
+    return _DAY_COUNT_ALIASES.get(raw.strip().lower(), raw.strip())
 
 
 @dataclass
@@ -56,9 +100,11 @@ class BondStatic:
                 f"{self.cusip}: day_count_convention {self.day_count_convention!r} "
                 f"not in {VALID_DAY_COUNTS}"
             )
-        if self.maturity_date <= self.first_coupon_date:
+        # Allow first_coupon_date == maturity_date for zero-coupon / bullet bonds
+        # where Bloomberg sets first_coupon_date = maturity_date.
+        if self.maturity_date < self.first_coupon_date:
             raise ValueError(
-                f"{self.cusip}: maturity_date ({self.maturity_date}) must be after "
+                f"{self.cusip}: maturity_date ({self.maturity_date}) must not be before "
                 f"first_coupon_date ({self.first_coupon_date})"
             )
         if not 0 <= self.coupon_rate < 1:
