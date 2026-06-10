@@ -3,13 +3,13 @@ P&L Dashboard — Streamlit app.
 
 Run with:  streamlit run src/dashboard.py
 
-Total P&L = Realized + Price MTM + Accrued Interest. These three are mutually
-exclusive (Price MTM and Accrued together make up total unrealized), so they
+Total P&L = Realized + Price P&L + Accrued P&L. These three are mutually
+exclusive (Price P&L and Accrued P&L together make up total unrealized), so they
 sum to the headline figure with no double counting.
 
 Tabs:
-  Overview          — headline KPIs, attribution, cumulative P&L curve
-  Positions & MTM   — full per-position mark-to-market (clean AND dirty price)
+  Overview          — today's daily KPIs, attribution, cumulative P&L curve, P&L by country
+  Positions & MTM   — date-range P&L with full per-position mark-to-market
   Positions by Date — editable positions snapshot; saves as adjustment trades
   Trades by Date    — editable single-day trade blotter with save + recalculate
   MTM Attribution   — per-bond / rollup transparency views, color-coded
@@ -187,11 +187,11 @@ def _options(col):
     return sorted(all_trades[col].dropna().unique().tolist()) if not all_trades.empty else []
 
 
-sel_portfolios = st.sidebar.multiselect("Portfolio", _options("portfolio"), default=_options("portfolio"))
+sel_portfolios = st.sidebar.multiselect("Portfolio", _options("portfolio"), default=[])
 all_countries = sorted({b.country for b in bonds_static.values() if b.country})
-sel_countries = st.sidebar.multiselect("Country", all_countries, default=all_countries)
-sel_traders = st.sidebar.multiselect("Trader", _options("trader"), default=_options("trader"))
-sel_cusips = st.sidebar.multiselect("CUSIP / Bond", _options("cusip"), default=_options("cusip"))
+sel_countries = st.sidebar.multiselect("Country", all_countries, default=[])
+sel_traders = st.sidebar.multiselect("Trader", _options("trader"), default=[])
+sel_cusips = st.sidebar.multiselect("CUSIP / Bond", _options("cusip"), default=[])
 
 min_date = all_trades["trade_date"].min().date() if not all_trades.empty else date.today() - timedelta(days=365)
 as_of = st.sidebar.date_input("As of date", value=date.today())
@@ -328,6 +328,19 @@ total_price = _nansum(mtm_df["price_pnl"]) if not mtm_df.empty else 0.0
 total_accrued = _nansum(mtm_df["accrued_pnl"]) if not mtm_df.empty else 0.0
 total_pnl = total_realized + total_price + total_accrued
 
+# Today's daily move — sourced from pnl_history for the Overview KPIs
+_today = date.today()
+_today_hist = load_pnl_history(start_date=_today, end_date=_today)
+if not _today_hist.empty:
+    today_price    = float(_today_hist["price_pnl"].sum())
+    today_accrued  = float(_today_hist["accrued"].sum())
+    today_realized = float(_today_hist["realized_gain"].sum())
+    today_total    = float(_today_hist["total_pnl"].sum())
+    _today_data_available = True
+else:
+    today_price = today_accrued = today_realized = today_total = 0.0
+    _today_data_available = False
+
 # ── tabs ────────────────────────────────────────────────────────────────────
 
 (tab_overview, tab_mtm, tab_positions_date, tab_trades_date,
@@ -345,19 +358,25 @@ total_pnl = total_realized + total_price + total_accrued
 # ── Tab 1: Overview ───────────────────────────────────────────────────────────
 
 with tab_overview:
+    if not _today_data_available:
+        st.info(
+            "Today's P&L not yet computed. Click **Recompute P&L History** in the sidebar "
+            "to generate today's daily move data."
+        )
     c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total P&L", _fmt(total_pnl))
-    c2.metric("Price MTM", _fmt(total_price))
-    c3.metric("Accrued Interest", _fmt(total_accrued))
-    c4.metric("Realized Gains", _fmt(total_realized))
+    c1.metric("Total P&L (Today)",   _fmt(today_total))
+    c2.metric("Price P&L (Today)",   _fmt(today_price))
+    c3.metric("Accrued P&L (Today)", _fmt(today_accrued))
+    c4.metric("Realized (Today)",    _fmt(today_realized))
+    st.caption("Daily move as of today. Cumulative P&L is shown in the charts below.")
 
     st.markdown("---")
     left, right = st.columns([3, 2])
 
     with left:
-        st.subheader("P&L Attribution")
+        st.subheader("P&L Attribution (cumulative)")
         attr = pd.DataFrame({
-            "Component": ["Realized", "Price MTM", "Accrued"],
+            "Component": ["Realized", "Price P&L", "Accrued P&L"],
             "Value": [total_realized, total_price, total_accrued],
         })
         if attr["Value"].abs().sum() > 0:
@@ -385,62 +404,165 @@ with tab_overview:
         )
         daily["date"] = pd.to_datetime(daily["date"])
         comp = daily.set_index("date")[["price_pnl", "accrued", "realized_gain"]].fillna(0).cumsum()
-        comp.columns = ["Price MTM", "Accrued", "Realized"]
+        comp.columns = ["Price P&L", "Accrued P&L", "Realized"]
         st.line_chart(comp, width='stretch')
         st.caption("Total P&L (cumulative)")
         st.line_chart(daily.set_index("date")[["total_pnl"]].fillna(0).cumsum(), width='stretch')
+
+    # ── P&L by Country ────────────────────────────────────────────────────────
+    st.markdown("---")
+    st.subheader("P&L by Country")
+    if pnl_hist.empty:
+        st.info("No history computed yet.")
+    elif bs_df.empty or "country" not in bs_df.columns:
+        st.info("Bond static data not loaded — country breakdown unavailable.")
+    else:
+        country_hist = pnl_hist.merge(
+            bs_df[["cusip", "country"]].drop_duplicates("cusip"),
+            on="cusip", how="left",
+        )
+        country_hist["country"] = country_hist["country"].fillna("Unknown")
+        country_hist["date"] = pd.to_datetime(country_hist["date"])
+
+        # Cumulative by country line chart
+        country_cum_raw = (
+            country_hist.groupby(["date", "country"])["total_pnl"]
+            .sum().reset_index().sort_values("date")
+        )
+        country_pivot = (
+            country_cum_raw.pivot(index="date", columns="country", values="total_pnl")
+            .fillna(0).cumsum()
+        )
+        st.caption("Cumulative P&L by country")
+        st.line_chart(country_pivot, width="stretch")
+
+        # Daily by country bar chart
+        country_daily_raw = (
+            country_hist.groupby(["date", "country"])["total_pnl"]
+            .sum().reset_index().sort_values("date")
+        )
+        country_daily_pivot = (
+            country_daily_raw.pivot(index="date", columns="country", values="total_pnl")
+            .fillna(0)
+        )
+        st.caption("Daily P&L by country")
+        st.bar_chart(country_daily_pivot, width="stretch")
 
 # ── Tab 2: Positions & MTM ────────────────────────────────────────────────────
 
 with tab_mtm:
     st.subheader("Mark-to-Market — clean & dirty price")
-    if mtm_df.empty:
+
+    # Date range filter
+    _mc1, _mc2, _mc3 = st.columns([2, 2, 1])
+    with _mc1:
+        mtm_start = st.date_input("P&L from", value=date.today(), key="mtm_start")
+    with _mc2:
+        mtm_end = st.date_input("P&L to", value=date.today(), key="mtm_end")
+    with _mc3:
+        st.write("")  # vertical spacer
+        if st.button("Today", key="mtm_today"):
+            st.session_state["mtm_start"] = date.today()
+            st.session_state["mtm_end"] = date.today()
+            st.rerun()
+
+    # Positions / prices as of range end
+    positions_mtm = compute_positions(trades_df, as_of=mtm_end)
+    mtm_df_range = mark_to_market(positions_mtm, prices, bonds_static, mtm_end)
+
+    # P&L summed over range from pnl_history
+    pnl_range = load_pnl_history(portfolio=hist_portfolio, start_date=mtm_start, end_date=mtm_end)
+    if not pnl_range.empty:
+        pnl_sum = (
+            pnl_range.groupby("cusip")
+            .agg(
+                price_pnl=("price_pnl", "sum"),
+                accrued_pnl=("accrued", "sum"),
+                realized_gain=("realized_gain", "sum"),
+            )
+            .reset_index()
+        )
+    else:
+        pnl_sum = pd.DataFrame(columns=["cusip", "price_pnl", "accrued_pnl", "realized_gain"])
+
+    if mtm_df_range.empty:
         if trades_df.empty:
             st.info("No trades match the current filters. Check `data/trades.csv`.")
         else:
             st.info("No prices loaded. Add prices in **Data Editor → Manual Prices** or click **Refresh Bloomberg Prices**.")
     else:
-        realized_lookup = (
-            realized_df.set_index("cusip")["realized_gain"].to_dict() if not realized_df.empty else {}
-        )
-        view = mtm_df.copy()
+        view = mtm_df_range.copy()
         view = _enrich(view, bs_df, ["name", "country", "currency"])
-        view["realized"] = view["cusip"].map(realized_lookup).fillna(0.0)
+
+        # Replace P&L columns with range-summed values from pnl_history
+        view = view.drop(columns=["price_pnl", "accrued_pnl", "mtm_gain"], errors="ignore")
+        if not pnl_sum.empty:
+            view = view.merge(pnl_sum, on="cusip", how="left")
+        else:
+            view["price_pnl"] = float("nan")
+            view["accrued_pnl"] = float("nan")
+            view["realized_gain"] = 0.0
+        view["unrealized_pnl"] = view["price_pnl"].fillna(0) + view["accrued_pnl"].fillna(0)
+        view["realized"] = view.get("realized_gain", pd.Series(0.0, index=view.index)).fillna(0)
+
         view = view.rename(columns={
             "cusip": "CUSIP", "name": "Name", "country": "Country", "currency": "CCY",
             "net_nominal": "Nominal", "clean_px": "Clean Px",
             "accrued_today_pct": "Accrued %", "dirty_px": "Dirty Px",
-            "mtm_value": "MTM Value", "book_value": "Book Value", "mtm_gain": "MTM Gain",
-            "accrued_pnl": "Accrued", "price_pnl": "Price MTM", "realized": "Realized",
+            "mtm_value": "MTM Value", "book_value": "Book Value",
+            "price_pnl": "Price P&L", "accrued_pnl": "Accrued P&L",
+            "unrealized_pnl": "Unrealized P&L", "realized": "Realized",
             "note": "Note",
         })
         ordered = ["CUSIP", "Name", "Country", "CCY", "Nominal",
                    "Clean Px", "Accrued %", "Dirty Px",
-                   "MTM Value", "Book Value", "Price MTM", "Accrued", "MTM Gain",
-                   "Realized", "Note"]
+                   "MTM Value", "Book Value", "Price P&L", "Accrued P&L",
+                   "Unrealized P&L", "Realized", "Note"]
         styled_mtm = _color_pnl_df(
             view[[c for c in ordered if c in view.columns]],
-            ["Price MTM", "Accrued", "MTM Gain", "Realized"],
+            ["Price P&L", "Accrued P&L", "Unrealized P&L", "Realized"],
         )
-        _filtered_dataframe(styled_mtm, "mtm", width="stretch", hide_index=True)
+        _filtered_dataframe(
+            styled_mtm, "mtm", width="stretch", hide_index=True,
+            column_config={
+                "Nominal":        st.column_config.NumberColumn(format="%,.0f"),
+                "Clean Px":       st.column_config.NumberColumn(format="%.4f"),
+                "Accrued %":      st.column_config.NumberColumn(format="%.6f"),
+                "Dirty Px":       st.column_config.NumberColumn(format="%.4f"),
+                "MTM Value":      st.column_config.NumberColumn(format="%,.0f"),
+                "Book Value":     st.column_config.NumberColumn(format="%,.0f"),
+                "Price P&L":      st.column_config.NumberColumn(format="%,.0f"),
+                "Accrued P&L":    st.column_config.NumberColumn(format="%,.0f"),
+                "Unrealized P&L": st.column_config.NumberColumn(format="%,.0f"),
+                "Realized":       st.column_config.NumberColumn(format="%,.0f"),
+            },
+        )
 
         with st.expander("Accrual detail"):
-            acc_detail_mtm = accrual_breakdown(positions, bonds_static, as_of)
+            acc_detail_mtm = accrual_breakdown(positions_mtm, bonds_static, mtm_end)
             if not acc_detail_mtm.empty:
                 acc_view_mtm = _enrich(acc_detail_mtm, bs_df, ["name", "country", "currency"])
                 _filtered_dataframe(acc_view_mtm, "mtm_acc", width="stretch", hide_index=True)
             else:
                 st.info("No accruing positions.")
 
+        range_price = float(pnl_sum["price_pnl"].sum()) if not pnl_sum.empty else 0.0
+        range_accrued = float(pnl_sum["accrued_pnl"].sum()) if not pnl_sum.empty else 0.0
+        range_realized = float(pnl_sum["realized_gain"].sum()) if not pnl_sum.empty else 0.0
+        range_unrealized = range_price + range_accrued
+
         st.markdown("**Portfolio totals**")
-        t1, t2, t3, t4, t5 = st.columns(5)
-        t1.metric("MTM Value", _fmt(_nansum(mtm_df["mtm_value"])))
-        t2.metric("Book Value", _fmt(_nansum(mtm_df["book_value"])))
-        t3.metric("Price MTM", _fmt(total_price))
-        t4.metric("Accrued", _fmt(total_accrued))
-        t5.metric("MTM Gain", _fmt(_nansum(mtm_df["mtm_gain"])))
-        st.caption("Dirty Px = Clean Px + Accrued %.  MTM Value = Nominal × Dirty Px / 100.  "
-                   "MTM Gain = MTM Value + Book Value = Price MTM + Accrued.")
+        t1, t2, t3, t4, t5, t6 = st.columns(6)
+        t1.metric("MTM Value",      _fmt(_nansum(mtm_df_range["mtm_value"])))
+        t2.metric("Book Value",     _fmt(_nansum(mtm_df_range["book_value"])))
+        t3.metric("Price P&L",      _fmt(range_price))
+        t4.metric("Accrued P&L",    _fmt(range_accrued))
+        t5.metric("Unrealized P&L", _fmt(range_unrealized))
+        t6.metric("Realized",       _fmt(range_realized))
+        st.caption(
+            f"Dirty Px = Clean Px + Accrued %.  MTM Value = Nominal × Dirty Px / 100.  "
+            f"P&L columns = sum from {mtm_start} to {mtm_end}. Positions as of {mtm_end}."
+        )
 
 # ── Tab 3: Positions by Date ──────────────────────────────────────────────────
 
@@ -615,8 +737,11 @@ with tab_attribution:
         snap_tab, range_tab = st.tabs(["Current Snapshot", "Date Range"])
 
         with snap_tab:
-            if mtm_df.empty:
-                st.info("No MTM data. Ensure prices are loaded.")
+            # Today's per-bond P&L from pnl_history
+            today_bond_hist = load_pnl_history(start_date=_today, end_date=_today)
+
+            if mtm_df.empty and today_bond_hist.empty:
+                st.info("No data. Ensure prices are loaded and P&L history has been computed for today.")
             else:
                 snap_view = _enrich(
                     mtm_df.copy(), bs_df,
@@ -629,41 +754,90 @@ with tab_attribution:
                         acc_bk[["cusip", "last_coupon_date", "days_accrued"]],
                         on="cusip", how="left",
                     )
-                realized_lookup2 = (
-                    realized_df.set_index("cusip")["realized_gain"].to_dict()
-                    if not realized_df.empty else {}
+
+                # Merge today's daily P&L per bond
+                if not today_bond_hist.empty:
+                    today_pnl_by_cusip = (
+                        today_bond_hist.groupby("cusip")
+                        .agg(
+                            today_price_pnl=("price_pnl", "sum"),
+                            today_accrued=("accrued", "sum"),
+                            today_realized=("realized_gain", "sum"),
+                            today_total=("total_pnl", "sum"),
+                        )
+                        .reset_index()
+                    )
+                    snap_view = snap_view.merge(today_pnl_by_cusip, on="cusip", how="left")
+                else:
+                    for col in ["today_price_pnl", "today_accrued", "today_realized", "today_total"]:
+                        snap_view[col] = 0.0
+
+                snap_view["today_unrealized"] = (
+                    snap_view["today_price_pnl"].fillna(0)
+                    + snap_view["today_accrued"].fillna(0)
                 )
-                snap_view["realized"] = snap_view["cusip"].map(realized_lookup2).fillna(0.0)
 
                 snap_cols = [
                     "name", "cusip", "country", "currency",
-                    "net_nominal", "clean_px", "accrued_today_pct", "dirty_px",
-                    "mtm_value", "book_value", "mtm_gain",
-                    "price_pnl", "accrued_pnl", "realized",
+                    "net_nominal", "clean_px", "dirty_px",
+                    "today_price_pnl", "today_accrued", "today_unrealized",
+                    "today_realized", "today_total",
                     "last_coupon_date", "days_accrued",
                     "coupon_rate", "day_count_convention", "maturity_date",
                 ]
                 snap_view = snap_view[[c for c in snap_cols if c in snap_view.columns]]
                 snap_view = snap_view.rename(columns={
                     "name": "Name", "cusip": "CUSIP", "country": "Country", "currency": "CCY",
-                    "net_nominal": "Nominal", "clean_px": "Clean Px",
-                    "accrued_today_pct": "Accrued %", "dirty_px": "Dirty Px",
-                    "mtm_value": "MTM Value", "book_value": "Book Value",
-                    "mtm_gain": "MTM Gain", "price_pnl": "Price P&L",
-                    "accrued_pnl": "Accrued P&L", "realized": "Realized",
+                    "net_nominal": "Nominal", "clean_px": "Clean Px", "dirty_px": "Dirty Px",
+                    "today_price_pnl": "Price P&L", "today_accrued": "Accrued P&L",
+                    "today_unrealized": "Unrealized P&L",
+                    "today_realized": "Realized", "today_total": "Total P&L",
                     "last_coupon_date": "Last Coupon", "days_accrued": "Days Accrued",
                     "coupon_rate": "Coupon Rate", "day_count_convention": "Day Count",
                     "maturity_date": "Maturity",
                 })
+
+                # Totals row
+                _pnl_total_cols = ["Nominal", "Price P&L", "Accrued P&L", "Unrealized P&L",
+                                   "Realized", "Total P&L"]
+                _totals = {c: "" for c in snap_view.columns}
+                _totals["Name"] = "TOTAL"
+                for _col in _pnl_total_cols:
+                    if _col in snap_view.columns:
+                        _vals = pd.to_numeric(snap_view[_col], errors="coerce")
+                        _totals[_col] = _vals.sum()
+                snap_with_totals = pd.concat(
+                    [snap_view, pd.DataFrame([_totals])], ignore_index=True
+                )
+
                 styled_snap = _color_pnl_df(
-                    snap_view, ["Price P&L", "Accrued P&L", "MTM Gain", "Realized"]
+                    snap_with_totals, ["Price P&L", "Accrued P&L", "Unrealized P&L",
+                                       "Realized", "Total P&L"]
                 )
-                _filtered_dataframe(styled_snap, "attr_snap", width="stretch", hide_index=True)
-                st.caption(
-                    "Price P&L = clean price change × nominal.  "
-                    "Accrued P&L = daily accrual.  "
-                    "MTM Gain = Price P&L + Accrued P&L."
+                _filtered_dataframe(
+                    styled_snap, "attr_snap", width="stretch", hide_index=True,
+                    column_config={
+                        "Nominal":        st.column_config.NumberColumn(format="%,.0f"),
+                        "Clean Px":       st.column_config.NumberColumn(format="%.4f"),
+                        "Dirty Px":       st.column_config.NumberColumn(format="%.4f"),
+                        "Price P&L":      st.column_config.NumberColumn(format="%,.0f"),
+                        "Accrued P&L":    st.column_config.NumberColumn(format="%,.0f"),
+                        "Unrealized P&L": st.column_config.NumberColumn(format="%,.0f"),
+                        "Realized":       st.column_config.NumberColumn(format="%,.0f"),
+                        "Total P&L":      st.column_config.NumberColumn(format="%,.0f"),
+                        "Coupon Rate":    st.column_config.NumberColumn(format="%.4f"),
+                    },
                 )
+                if not today_bond_hist.empty:
+                    st.caption(
+                        "Today's P&L contribution per bond. "
+                        "Unrealized P&L = Price P&L + Accrued P&L."
+                    )
+                else:
+                    st.caption(
+                        "No P&L history for today — run **Recompute P&L History** to populate. "
+                        "Position/price data shown from as-of date."
+                    )
 
         with range_tab:
             pnl_hist_attr = load_pnl_history(
@@ -735,14 +909,23 @@ with tab_attribution:
                     "accrued": "Accrued P&L",
                     "realized_gain": "Realized",
                     "total_pnl": "Total P&L",
-                    "net_nominal": "Net Nominal",
+                    "net_nominal": "Nominal",
                 })
                 .sort_values("Total P&L", ascending=False)
             )
             styled_rollup = _color_pnl_df(
                 agg, ["Price P&L", "Accrued P&L", "Realized", "Total P&L"]
             )
-            _filtered_dataframe(styled_rollup, "attr_rollup", width="stretch", hide_index=True)
+            _filtered_dataframe(
+                styled_rollup, "attr_rollup", width="stretch", hide_index=True,
+                column_config={
+                    "Nominal":     st.column_config.NumberColumn(format="%,.0f"),
+                    "Price P&L":   st.column_config.NumberColumn(format="%,.0f"),
+                    "Accrued P&L": st.column_config.NumberColumn(format="%,.0f"),
+                    "Realized":    st.column_config.NumberColumn(format="%,.0f"),
+                    "Total P&L":   st.column_config.NumberColumn(format="%,.0f"),
+                },
+            )
             st.caption(
                 f"Aggregated P&L grouped by {label.lower()} over "
                 f"{hist_start} → {as_of}. Values are cumulative sums."
@@ -758,30 +941,51 @@ with tab_attribution:
                 acc_detail_attr, bs_df,
                 ["name", "country", "currency", "coupon_rate", "day_count_convention"],
             )
+
+            # Compute new accrual rate columns
+            _safe_days = acc_full["days_accrued"].replace(0, 1)
+            acc_full["accrued_bps_day"] = (
+                acc_full["accrued_per_100"] / _safe_days * 100
+            ).round(4)
+            acc_full["accrued_cash_day"] = (
+                acc_full["accrued_total"] / _safe_days
+            ).round(2)
+
             acc_display_cols = [
                 "name", "cusip", "country", "currency",
                 "coupon_rate", "day_count_convention",
                 "last_coupon_date", "days_accrued",
-                "accrued_per_100", "accrued_total", "note",
+                "accrued_bps_day", "accrued_cash_day", "accrued_total", "note",
             ]
             acc_full = acc_full[[c for c in acc_display_cols if c in acc_full.columns]]
             acc_full = acc_full.rename(columns={
                 "name": "Name", "cusip": "CUSIP", "country": "Country", "currency": "CCY",
                 "coupon_rate": "Coupon Rate", "day_count_convention": "Day Count",
                 "last_coupon_date": "Last Coupon", "days_accrued": "Days Accrued",
-                "accrued_per_100": "Accrued/100", "accrued_total": "Accrued Total",
+                "accrued_bps_day": "Accrued bps/day",
+                "accrued_cash_day": "Accrued cash/day",
+                "accrued_total": "Accrued Total",
                 "note": "Note",
             })
             styled_acc = _color_pnl_df(acc_full, ["Accrued Total"])
-            _filtered_dataframe(styled_acc, "attr_acc", width="stretch", hide_index=True)
+            _filtered_dataframe(
+                styled_acc, "attr_acc", width="stretch", hide_index=True,
+                column_config={
+                    "Coupon Rate":      st.column_config.NumberColumn(format="%.4f"),
+                    "Accrued bps/day":  st.column_config.NumberColumn(format="%.4f"),
+                    "Accrued cash/day": st.column_config.NumberColumn(format="%,.2f"),
+                    "Accrued Total":    st.column_config.NumberColumn(format="%,.2f"),
+                },
+            )
             total_accrued_attr = (
                 _nansum(acc_detail_attr["accrued_total"])
                 if "accrued_total" in acc_detail_attr.columns else 0.0
             )
             st.metric("Total Portfolio Accrued", _fmt(total_accrued_attr))
             st.caption(
-                "Accrued/100 = accrued interest per 100 par (using bond's day-count convention).  "
-                "Accrued Total = Accrued/100 × Net Nominal / 100."
+                "Accrued bps/day = daily carry rate in basis points per 100 par.  "
+                "Accrued cash/day = daily carry in currency units at current position.  "
+                "Accrued Total = cumulative accrued interest since last coupon."
             )
 
     # ── Price History Table ──────────────────────────────────────────────────
@@ -811,7 +1015,18 @@ with tab_attribution:
                 "accrued_pnl": "Accrued P&L",
             })
             styled_ts = _color_pnl_df(ts_display, ["Price P&L", "Accrued P&L"])
-            _filtered_dataframe(styled_ts, "attr_ts", width="stretch", hide_index=True, height=500)
+            _filtered_dataframe(
+                styled_ts, "attr_ts", width="stretch", hide_index=True, height=500,
+                column_config={
+                    "Nominal":     st.column_config.NumberColumn(format="%,.0f"),
+                    "Clean Px":    st.column_config.NumberColumn(format="%.4f"),
+                    "Accrued %":   st.column_config.NumberColumn(format="%.6f"),
+                    "Dirty Px":    st.column_config.NumberColumn(format="%.4f"),
+                    "MTM Value":   st.column_config.NumberColumn(format="%,.0f"),
+                    "Price P&L":   st.column_config.NumberColumn(format="%,.0f"),
+                    "Accrued P&L": st.column_config.NumberColumn(format="%,.0f"),
+                },
+            )
             st.download_button(
                 "Download CSV",
                 ts_display.to_csv(index=False).encode(),
