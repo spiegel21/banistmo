@@ -31,6 +31,7 @@ TRADES_COLUMNS = [
 BONDS_COLUMNS = [
     "cusip", "name", "currency", "country", "coupon_rate", "coupon_frequency",
     "day_count_convention", "maturity_date", "first_coupon_date", "bbg_ticker",
+    "instrument_type",
 ]
 INITIAL_COLUMNS = ["portfolio", "cusip", "nominal", "price", "book_value", "inception_date"]
 MANUAL_PRICES_COLUMNS = ["cusip", "px_last", "date"]
@@ -115,6 +116,7 @@ def _validate_bonds(df: pd.DataFrame) -> list[str]:
                 maturity_date=_one(row["maturity_date"]).date(),
                 first_coupon_date=_one(row["first_coupon_date"]).date(),
                 bbg_ticker="" if pd.isna(row.get("bbg_ticker")) else str(row.get("bbg_ticker", "")),
+                instrument_type="" if pd.isna(row.get("instrument_type")) else str(row.get("instrument_type", "")),
             )
         except (ValueError, KeyError, TypeError, AttributeError) as exc:
             problems.append(f"Row {n} ({row.get('cusip')}): {exc}")
