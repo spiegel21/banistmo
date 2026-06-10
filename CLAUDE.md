@@ -69,16 +69,13 @@ python generate_sample_data.py
 streamlit run src/dashboard.py
   → positions visible; P&L shows "—" until Bloomberg data is imported
 
-Sidebar → Today's Prices
-  ① Prepare & open template     → writes tickers to Live MTM + Static sheets
-  [Bloomberg populates → Save & Close Excel]
-  ③ Import prices & static      → bonds_static.csv filled; current prices loaded
-
-Sidebar → Price History
+Sidebar → Bloomberg
   [gap detection runs automatically via find_price_gaps(all_trades)]
-  ① Prepare & open history template → writes BDH blocks for all hold intervals
-  [Bloomberg populates → Save & Close Excel]
-  ③ Import history              → price_history.csv appended;
+  ① Prepare & open template     → writes tickers to Live MTM + Static sheets;
+                                   writes BDH blocks to History sheet (if gaps exist)
+  [Bloomberg populates all sheets → Save & Close Excel]
+  ③ Import all data             → bonds_static.csv filled; current prices loaded;
+                                   price_history.csv appended;
                                    P&L recomputed automatically (full history, all portfolios)
                                    → pnl_history.csv written; dashboard refreshes
 ```

@@ -215,10 +215,10 @@ positions = compute_positions(trades_df, as_of=as_of)
 # single-portfolio scope used by per-portfolio views/history
 hist_portfolio = sel_portfolios[0] if len(sel_portfolios) == 1 else None
 
-# ── sidebar: today's prices ───────────────────────────────────────────────────
+# ── sidebar: bloomberg (prices + history, single workflow) ───────────────────
 
 st.sidebar.markdown("---")
-st.sidebar.subheader("Today's Prices")
+st.sidebar.subheader("Bloomberg")
 
 prices = load_latest_prices()
 snapshots = sorted(PRICES_DIR.glob("prices_*.csv"))
@@ -228,79 +228,13 @@ if snapshots:
 else:
     st.sidebar.caption("No price snapshot yet")
 
-cusip_list = list(positions.keys())
-
-if st.sidebar.button("① Prepare & open template", key="btn_prepare_prices"):
-    if cusip_list:
-        _path = prepare_template(cusip_list, TEMPLATE_PATH, bonds_static=bonds_static)
-        if open_in_excel(_path):
-            st.sidebar.success(
-                f"Opened **{_path.name}** in Excel — wait for Bloomberg to "
-                "finish populating, then save and close."
-            )
-        else:
-            st.sidebar.success(
-                f"Template ready ({len(cusip_list)} CUSIP(s)) — open "
-                f"**{_path}** in Excel, wait for Bloomberg, then save and close."
-            )
-    else:
-        st.sidebar.warning("No positions to price.")
-
-st.sidebar.caption("② Bloomberg populates → Save → Close Excel")
-
-if st.sidebar.button("③ Import prices & static", key="btn_import_prices"):
-    _imported = read_prices_from_template(TEMPLATE_PATH)
-    _fetched_static = read_static_from_template(TEMPLATE_PATH)
-    _msg_parts = []
-
-    if _imported:
-        prices = _imported
-        _msg_parts.append(f"{len(_imported)} price(s) imported")
-    else:
-        _msg_parts.append("no prices found (open template in Excel first)")
-
-    if not _fetched_static.empty and not _fetched_static["cusip"].isna().all():
-        try:
-            _n_new, _n_filled = merge_bonds_static(_fetched_static)
-            if _n_new or _n_filled:
-                _msg_parts.append(f"bond static: {_n_new} new CUSIP(s), {_n_filled} field(s) filled")
-        except ValueError as _exc:
-            st.sidebar.error(
-                f"Bond static validation failed — fix rows in Data Editor → Bond Static.\n\n{_exc}"
-            )
-
-    if _imported:
-        st.sidebar.success(" · ".join(_msg_parts))
-        st.rerun()
-    else:
-        st.sidebar.warning(" · ".join(_msg_parts))
-
-# ── sidebar: price history backfill ──────────────────────────────────────────
-
-st.sidebar.markdown("---")
-st.sidebar.subheader("Price History")
-
 # Gap detection runs on every render: picks up trade edits and new CUSIPs.
 _price_gaps = find_price_gaps(all_trades) if not all_trades.empty else []
-
 if _price_gaps:
     _n_cusips_gap = len({c for c, _, _ in _price_gaps})
     st.sidebar.warning(
-        f"Missing prices: {len(_price_gaps)} range(s) across {_n_cusips_gap} CUSIP(s)."
+        f"Missing history: {len(_price_gaps)} range(s) across {_n_cusips_gap} CUSIP(s)."
     )
-    if st.sidebar.button("① Prepare & open history template", key="btn_prepare_hist"):
-        _path = prepare_history_template(_price_gaps, TEMPLATE_PATH, bonds_static=bonds_static)
-        if open_in_excel(_path):
-            st.sidebar.success(
-                f"Opened **{_path.name}** in Excel — wait for all {len(_price_gaps)} "
-                "BDH block(s) to populate, then save and close."
-            )
-        else:
-            st.sidebar.success(
-                f"Template ready ({len(_price_gaps)} block(s)) — open "
-                f"**{_path}** in Excel, wait for Bloomberg, then save and close."
-            )
-    st.sidebar.caption("② Bloomberg populates all blocks → Save → Close Excel")
 else:
     _last_px_date = last_priced_date()
     if _last_px_date:
@@ -308,20 +242,66 @@ else:
     else:
         st.sidebar.caption("No price history yet.")
 
-if st.sidebar.button("③ Import history", key="btn_import_hist"):
-    _hist_df = read_history_from_template(TEMPLATE_PATH)
+cusip_list = list(positions.keys())
+
+if st.sidebar.button("① Prepare & open template", key="btn_prepare_all"):
+    if cusip_list:
+        prepare_template(cusip_list, TEMPLATE_PATH, bonds_static=bonds_static)
+        if _price_gaps:
+            prepare_history_template(_price_gaps, TEMPLATE_PATH, bonds_static=bonds_static)
+        _n_hist = len({c for c, _, _ in _price_gaps})
+        _sheets = "Live MTM + Static" + (f" + {_n_hist} History block(s)" if _n_hist else "")
+        if open_in_excel(TEMPLATE_PATH):
+            st.sidebar.success(
+                f"Opened **{TEMPLATE_PATH.name}** in Excel — wait for Bloomberg to "
+                f"populate {_sheets}, then save and close."
+            )
+        else:
+            st.sidebar.success(
+                f"Template ready — open **{TEMPLATE_PATH}** in Excel, "
+                f"wait for Bloomberg to populate {_sheets}, then save and close."
+            )
+    else:
+        st.sidebar.warning("No positions to price.")
+
+st.sidebar.caption("② Bloomberg populates → Save → Close Excel")
+
+if st.sidebar.button("③ Import all data", key="btn_import_all"):
+    _imported       = read_prices_from_template(TEMPLATE_PATH)
+    _fetched_static = read_static_from_template(TEMPLATE_PATH)
+    _hist_df        = read_history_from_template(TEMPLATE_PATH)
+    _msg_parts      = []
+
+    if _imported:
+        prices = _imported
+        _msg_parts.append(f"{len(_imported)} price(s) imported")
+    else:
+        _msg_parts.append("no current prices found")
+
+    if not _fetched_static.empty and not _fetched_static["cusip"].isna().all():
+        try:
+            _n_new, _n_filled = merge_bonds_static(_fetched_static)
+            if _n_new or _n_filled:
+                _msg_parts.append(f"static: {_n_new} new CUSIP(s), {_n_filled} field(s) filled")
+        except ValueError as _exc:
+            st.sidebar.error(
+                f"Bond static validation failed — fix rows in Data Editor → Bond Static.\n\n{_exc}"
+            )
+
     if not _hist_df.empty:
         with st.spinner("Recomputing P&L history..."):
             compute_daily_pnl(min_date, as_of, portfolio=None)
-        st.sidebar.success(
-            f"Imported {len(_hist_df)} price records "
-            f"through {_hist_df['date'].max()} · P&L recomputed."
+        _msg_parts.append(
+            f"{len(_hist_df)} history record(s) through {_hist_df['date'].max()} · P&L recomputed"
         )
+
+    if _imported or not _hist_df.empty:
+        st.sidebar.success(" · ".join(_msg_parts))
         st.rerun()
     else:
         st.sidebar.warning(
-            "No prices found — open the template in Excel, wait for Bloomberg "
-            "to populate all blocks, save, then import."
+            " · ".join(_msg_parts) or
+            "No data found — open the template in Excel, wait for Bloomberg, save, then import."
         )
 
 # ── sidebar: P&L history ──────────────────────────────────────────────────────

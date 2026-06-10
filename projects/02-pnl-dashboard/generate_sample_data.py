@@ -69,9 +69,9 @@ _BOND_BY_CUSIP: dict[str, _Bond] = {b.cusip: b for b in BONDS}
 # Representative clean prices (% of par) used for inception position book values.
 # Real market prices come from Bloomberg via the import flow.
 _SPOT_PRICES: dict[str, float] = {
-    "25714PFB9": 97.50,
-    "195325ER2": 95.25,
-    "25714PEF1": 98.75,
+    "25714PFB9": 107.53,
+    "195325ER2": 105.62,
+    "25714PEF1":  96.36,
 }
 
 
