@@ -23,11 +23,19 @@ def load_bonds_static(path: Path | None = None) -> dict[str, BondStatic]:
     if not path.exists() or path.stat().st_size == 0:
         return {}
 
-    df = pd.read_csv(path, dtype={"cusip": str}, parse_dates=["maturity_date", "first_coupon_date"])
+    df = pd.read_csv(path, dtype={"cusip": str}, parse_dates=["maturity_date"])
+    # first_coupon_date is intentionally NOT in parse_dates: Bloomberg returns "#N/A"
+    # for zero-coupon / bullet bonds, and we need the raw string so the fallback
+    # logic below can detect it.  If the column exists, parse it ourselves.
+    if "first_coupon_date" in df.columns:
+        df["first_coupon_date"] = pd.to_datetime(df["first_coupon_date"], errors="coerce")
     result: dict[str, BondStatic] = {}
     for _, row in df.iterrows():
         cusip = str(row.get("cusip", ""))
-        missing = [f for f in ("coupon_frequency", "coupon_rate", "maturity_date", "first_coupon_date")
+        # Only block on fields that have NO fallback path.
+        # coupon_frequency (#N/A → 0) and first_coupon_date (#N/A → maturity_date)
+        # are handled further down and must NOT cause a skip here.
+        missing = [f for f in ("coupon_rate", "maturity_date")
                    if pd.isna(row.get(f))]
         if missing:
             log.warning("bonds_static row for %s missing required field(s) %s — row skipped",
