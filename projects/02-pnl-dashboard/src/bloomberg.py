@@ -754,7 +754,18 @@ def read_static_from_template(wb_path: Path = TEMPLATE_PATH) -> pd.DataFrame:
         return pd.DataFrame(columns=BONDS_COLUMNS)
 
     ws = wb["Static"]
-    headers = [ws.cell(row=1, column=c).value for c in range(1, 10)]
+    # Read headers dynamically — stop at first empty cell so the reader
+    # automatically handles templates with more or fewer columns than expected.
+    headers: list[str | None] = []
+    for c in range(1, ws.max_column + 2):
+        h = ws.cell(row=1, column=c).value
+        if h is None:
+            break
+        headers.append(str(h))
+
+    if not headers:
+        log.warning("Static sheet has no headers — was the template regenerated?")
+        return pd.DataFrame(columns=BONDS_COLUMNS)
 
     records = []
     for row in range(2, 52):
@@ -781,8 +792,10 @@ def read_static_from_template(wb_path: Path = TEMPLATE_PATH) -> pd.DataFrame:
             elif field == "maturity_date":
                 if hasattr(val, "date"):
                     val = val.date().isoformat()
-                elif val is not None:
+                elif val is not None and str(val).strip() not in ("#N/A", "N/A", ""):
                     val = str(val)
+                else:
+                    val = None  # Bloomberg #N/A → can't import this bond
             elif field == "first_coupon_date":
                 # Bloomberg returns #N/A (None from xlwings, or a string) when
                 # a bond has no distinct first coupon (zero-coupon / bullet).
@@ -806,6 +819,15 @@ def read_static_from_template(wb_path: Path = TEMPLATE_PATH) -> pd.DataFrame:
                         val = 0
 
             rec[field] = val
+
+        # maturity_date is required — skip any row where Bloomberg returned #N/A
+        if rec.get("maturity_date") is None:
+            log.warning(
+                "Static row for %s: maturity_date is missing/N/A — "
+                "bond may have matured or the ticker is incorrect. Row skipped.",
+                rec.get("cusip", "?"),
+            )
+            continue
         records.append(rec)
 
     if not records:
