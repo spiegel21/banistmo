@@ -232,6 +232,10 @@ positions = compute_positions(trades_df, as_of=as_of)
 # CUSIPs surviving all sidebar filters — used to restrict pnl_history to selected bonds
 _filtered_cusips: set[str] = set(trades_df["cusip"].unique()) if not trades_df.empty else set()
 
+# Load price history once here — used by both the sidebar coverage widget and the
+# MTM transparency columns computed later in the page.
+_ph = load_price_history()
+
 # single-portfolio scope used by per-portfolio views/history
 hist_portfolio = sel_portfolios[0] if len(sel_portfolios) == 1 else None
 
@@ -249,8 +253,9 @@ else:
     st.sidebar.caption("No price snapshot yet")
 
 _price_gaps = find_price_gaps(all_trades) if not all_trades.empty else []
+_gap_cusips = {c for c, _, _ in _price_gaps}
 if _price_gaps:
-    _n_cusips_gap = len({c for c, _, _ in _price_gaps})
+    _n_cusips_gap = len(_gap_cusips)
     st.sidebar.warning(
         f"Missing history: {len(_price_gaps)} range(s) across {_n_cusips_gap} CUSIP(s)."
     )
@@ -260,6 +265,39 @@ else:
         st.sidebar.caption(f"Price history complete through {_last_px_date}.")
     else:
         st.sidebar.caption("No price history yet.")
+
+with st.sidebar.expander("Price History Coverage"):
+    _all_held_cusips = set(positions.keys())
+    _ph_counts: dict[str, int] = {}
+    _ph_last: dict[str, str] = {}
+    if not _ph.empty:
+        for _c, _grp in _ph.groupby("cusip"):
+            _ph_counts[str(_c)] = len(_grp)
+            _ph_last[str(_c)] = str(_grp["date"].max())[:10]
+
+    _cov_rows = []
+    for _cusip in sorted(_all_held_cusips):
+        _b = bonds_static.get(_cusip)
+        _name = (_b.name if _b and _b.name else "") or ""
+        _days = _ph_counts.get(_cusip, 0)
+        _thru = _ph_last.get(_cusip, "—")
+        if _cusip in _gap_cusips:
+            _status = "⚠ gaps — in BDH sheet"
+        elif _days > 0:
+            _status = f"✓ complete ({_thru})"
+        else:
+            _status = "✗ no history yet"
+        _cov_rows.append({"CUSIP": _cusip, "Name": _name, "Days": _days, "Status": _status})
+
+    if _cov_rows:
+        st.dataframe(pd.DataFrame(_cov_rows), hide_index=True, use_container_width=True)
+    else:
+        st.write("No positions found.")
+    st.caption(
+        "✓ = history already in price_history.csv (excluded from BDH sheet). "
+        "⚠ = gaps detected → bond appears in History BDH sheet. "
+        "✗ = bought today or BDH not yet run."
+    )
 
 cusip_list = list(positions.keys())
 
@@ -348,7 +386,6 @@ total_accrued = _nansum(mtm_df["accrued_pnl"]) if not mtm_df.empty else 0.0
 total_pnl = total_realized + total_price + total_accrued
 
 # ── MTM transparency: prev_px, cost_px, px_change, px_vs_cost ────────────────
-_ph = load_price_history()
 _prev_day = _prev_bday(as_of)
 if not _ph.empty:
     _prev_ph = _ph[_ph["date"].dt.date == _prev_day]

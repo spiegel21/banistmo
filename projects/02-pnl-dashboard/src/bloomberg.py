@@ -770,7 +770,13 @@ def read_static_from_template(wb_path: Path = TEMPLATE_PATH) -> pd.DataFrame:
                 continue
             val = ws.cell(row=row, column=col_idx).value
 
-            if field == "day_count_convention":
+            if field in ("name", "currency", "country"):
+                # Plain string fields: None (openpyxl renders #N/A errors as None)
+                # or non-string values → empty string.
+                val = "" if val is None else str(val).strip()
+                if val.upper() in ("#N/A", "N/A"):
+                    val = ""
+            elif field == "day_count_convention":
                 val = _normalize_day_count(val)
             elif field == "maturity_date":
                 if hasattr(val, "date"):

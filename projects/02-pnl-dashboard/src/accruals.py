@@ -61,9 +61,9 @@ def load_bonds_static(path: Path | None = None) -> dict[str, BondStatic]:
 
             bond = BondStatic(
                 cusip=cusip,
-                name=row.get("name", ""),
-                currency=row.get("currency", ""),
-                country=row.get("country", "") if pd.notna(row.get("country", "")) else "",
+                name="" if pd.isna(row.get("name")) else str(row.get("name", "")).strip(),
+                currency="" if pd.isna(row.get("currency")) else str(row.get("currency", "")).strip(),
+                country="" if pd.isna(row.get("country")) else str(row.get("country", "")).strip(),
                 coupon_rate=float(row["coupon_rate"]),
                 coupon_frequency=coupon_freq,
                 day_count_convention=normalise_day_count(str(row["day_count_convention"])),
