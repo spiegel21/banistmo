@@ -99,6 +99,19 @@ def _is_real_price(v) -> bool:
     return isinstance(v, (int, float)) and not math.isnan(v)
 
 
+def _is_bloomberg_refreshing(val) -> bool:
+    """Return True when a cell still holds Bloomberg's temporary 'Requesting data' placeholder.
+
+    While Bloomberg is recalculating, cells show '#N/A Requesting data' (or variants).
+    openpyxl data_only=True reads that as a plain string.  Importing at this point
+    would silently write garbage; callers should block and tell the user to wait.
+    """
+    if not isinstance(val, str):
+        return False
+    lower = val.strip().lower()
+    return "requesting" in lower or lower in ("#n/a", "n/a", "calculating", "loading")
+
+
 def _all_prices_filled(sheet, n: int) -> bool:
     """Return True only when all price cells (col B) contain finite numeric values."""
     values = sheet.range(f"B2:B{n + 1}").value
@@ -189,6 +202,22 @@ def read_prices_from_template(wb_path: Path = TEMPLATE_PATH) -> dict[str, float]
     wb = load_workbook(str(wb_path), data_only=True)
     sheet_name = _BDP_SHEET if _BDP_SHEET in wb.sheetnames else "Sheet1"
     ws = wb[sheet_name]
+
+    # Scan for Bloomberg's "Requesting data" placeholder before reading anything.
+    # If Bloomberg is still refreshing, block the import immediately rather than
+    # importing partial/garbage data.
+    refreshing_rows = [
+        r for r in range(2, 52)
+        if _is_bloomberg_refreshing(ws.cell(row=r, column=1).value)
+        or _is_bloomberg_refreshing(ws.cell(row=r, column=2).value)
+    ]
+    if refreshing_rows:
+        raise ValueError(
+            f"Bloomberg is still refreshing Live MTM (rows {refreshing_rows[:5]}{'…' if len(refreshing_rows) > 5 else ''}). "
+            "Wait until every cell shows a real value (no '#N/A Requesting data'), "
+            "then Save and Close Excel before importing."
+        )
+
     prices = {}
     for row in range(2, 52):
         raw = ws.cell(row=row, column=1).value
@@ -656,6 +685,22 @@ def read_history_from_template(wb_path: Path = TEMPLATE_PATH) -> pd.DataFrame:
     ws = wb["History"]
     max_row = ws.max_row or 3
 
+    # Check for Bloomberg's refreshing placeholder in the first data rows.
+    n_data_cols = len(ordered_cusips) * 2
+    refreshing_cells = [
+        f"row {r} col {c}"
+        for r in range(3, min(max_row + 1, 8))   # sample a few rows; full scan is slow
+        for c in range(1, n_data_cols + 1)
+        if _is_bloomberg_refreshing(ws.cell(row=r, column=c).value)
+    ]
+    if refreshing_cells:
+        raise ValueError(
+            f"Bloomberg is still refreshing History sheet ({len(refreshing_cells)} cell(s) sampled, "
+            f"e.g. {refreshing_cells[0]}). "
+            "Wait until BDH blocks show real date/price rows (no '#N/A Requesting data'), "
+            "then Save and Close Excel before importing."
+        )
+
     records = []
     for i, cusip in enumerate(ordered_cusips):
         col_data  = 2 * i + 1   # odd column: dates
@@ -766,6 +811,22 @@ def read_static_from_template(wb_path: Path = TEMPLATE_PATH) -> pd.DataFrame:
     if not headers:
         log.warning("Static sheet has no headers — was the template regenerated?")
         return pd.DataFrame(columns=BONDS_COLUMNS)
+
+    # Scan every data cell for Bloomberg's refreshing placeholder before reading.
+    n_cols = len(headers)
+    refreshing_cells = [
+        f"row {r} col {c}"
+        for r in range(2, 52)
+        for c in range(1, n_cols + 1)
+        if _is_bloomberg_refreshing(ws.cell(row=r, column=c).value)
+    ]
+    if refreshing_cells:
+        raise ValueError(
+            f"Bloomberg is still refreshing Static sheet ({len(refreshing_cells)} cell(s), "
+            f"e.g. {refreshing_cells[0]}). "
+            "Wait until every cell shows a real value (no '#N/A Requesting data'), "
+            "then Save and Close Excel before importing."
+        )
 
     records = []
     for row in range(2, 52):

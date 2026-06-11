@@ -321,12 +321,25 @@ if st.sidebar.button("① Prepare & open template", key="btn_prepare_all"):
     else:
         st.sidebar.warning("No positions to price.")
 
-st.sidebar.caption("② Bloomberg populates → Save → Close Excel")
+st.sidebar.caption(
+    "② Wait until **all** cells show real values "
+    "(no '#N/A Requesting data') → **Save** → **Close** Excel"
+)
 
 if st.sidebar.button("③ Import all data", key="btn_import_all"):
-    _imported       = read_prices_from_template(TEMPLATE_PATH)
-    _fetched_static = read_static_from_template(TEMPLATE_PATH)
-    _hist_df        = read_history_from_template(TEMPLATE_PATH)
+    try:
+        _imported       = read_prices_from_template(TEMPLATE_PATH)
+        _fetched_static = read_static_from_template(TEMPLATE_PATH)
+        _hist_df        = read_history_from_template(TEMPLATE_PATH)
+    except ValueError as _refresh_exc:
+        st.sidebar.error(
+            f"⏳ **Bloomberg still refreshing** — {_refresh_exc}\n\n"
+            "**What to do:** switch to Excel, wait until every cell shows a real value "
+            "(prices, dates, names — no '#N/A Requesting data'), "
+            "then **File → Save** and **close** the file before clicking ③ again."
+        )
+        st.stop()
+
     _msg_parts      = []
 
     if _imported:
