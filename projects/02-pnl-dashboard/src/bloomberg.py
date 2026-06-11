@@ -558,15 +558,23 @@ def prepare_history_template(
     from openpyxl.styles import Font
     from openpyxl.utils import get_column_letter
 
+    end_date = date.today() - timedelta(days=1)
+    end_str  = end_date.strftime("%m/%d/%Y")
+
     # Collapse multiple ranges per CUSIP: keep earliest start date.
+    # Skip CUSIPs whose earliest gap starts AFTER end_date — BDH needs
+    # start <= end to produce data; these bonds are priced via Live MTM only.
     cusip_starts: dict[str, date] = {}
     for cusip, start, _end in cusip_ranges:
         cusip = str(cusip)
+        if start > end_date:
+            log.info(
+                "prepare_history_template: %s gap starts %s > end %s — skipped (use Live MTM)",
+                cusip, start, end_date,
+            )
+            continue
         if cusip not in cusip_starts or start < cusip_starts[cusip]:
             cusip_starts[cusip] = start
-
-    end_date = date.today() - timedelta(days=1)
-    end_str  = end_date.strftime("%m/%d/%Y")
 
     wb = load_workbook(str(wb_path))
     ws = wb["History"]
