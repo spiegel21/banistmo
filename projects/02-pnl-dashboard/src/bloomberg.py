@@ -431,6 +431,14 @@ def last_priced_date() -> date | None:
         return None
 
 
+def _prev_business_day(d: date) -> date:
+    """Most recent business day strictly before d (skips Sat/Sun)."""
+    d = d - timedelta(days=1)
+    while d.weekday() >= 5:  # 5=Sat, 6=Sun
+        d -= timedelta(days=1)
+    return d
+
+
 def find_price_gaps(
     all_trades: pd.DataFrame,
     end_date: date | None = None,
@@ -451,7 +459,11 @@ def find_price_gaps(
         return []
 
     if end_date is None:
-        end_date = date.today()
+        # BDH returns end-of-day closes — today's close does not exist yet
+        # (today's price comes from the Live MTM intraday BDP sheet). Cap at the
+        # previous business day so `today` never enters gap detection, which
+        # would otherwise create an invalid BDH(start=today, end=yesterday).
+        end_date = _prev_business_day(date.today())
 
     # ── step 1: compute hold intervals per CUSIP ─────────────────────────────
     hold_intervals: dict[str, list[tuple[date, date]]] = {}
@@ -558,7 +570,7 @@ def prepare_history_template(
     from openpyxl.styles import Font
     from openpyxl.utils import get_column_letter
 
-    end_date = date.today() - timedelta(days=1)
+    end_date = _prev_business_day(date.today())
     end_str  = end_date.strftime("%m/%d/%Y")
 
     # Collapse multiple ranges per CUSIP: keep earliest start date.

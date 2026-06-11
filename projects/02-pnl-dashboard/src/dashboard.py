@@ -742,12 +742,18 @@ with tab_trades_date:
 
     st.caption(f"{len(day_trades)} trade(s) from {trades_start} to {trades_end}.")
 
+    # Show the bond name (display-only) right after cusip. Dropped on save —
+    # save_trades() filters to TRADES_COLUMNS, so "name" never reaches disk.
+    if not day_trades.empty and "cusip" in day_trades.columns:
+        day_trades = _enrich(day_trades, bs_df, ["name"])
+
     edited_day = st.data_editor(
         day_trades,
         num_rows="dynamic",
         width="stretch",
         key="ed_trades_by_date",
         column_config={
+            "name":         st.column_config.TextColumn("Name", disabled=True),
             "trade_date":   st.column_config.TextColumn("Trade Date"),
             "settle_date":  st.column_config.TextColumn("Settle Date"),
             "side":         st.column_config.SelectboxColumn("Side", options=["buy", "sell"]),
