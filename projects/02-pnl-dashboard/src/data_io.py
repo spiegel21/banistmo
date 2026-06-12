@@ -101,7 +101,15 @@ def _one(value):
 
 
 def _validate_bonds(df: pd.DataFrame) -> list[str]:
+    """Return human-readable problems; empty list means every row is valid."""
+    problems, _ = _validate_bonds_detailed(df)
+    return problems
+
+
+def _validate_bonds_detailed(df: pd.DataFrame) -> tuple[list[str], list]:
+    """Like _validate_bonds but also returns the DataFrame index labels of bad rows."""
     problems: list[str] = []
+    bad_index: list = []
     for i, row in df.iterrows():
         n = i + 1
         try:
@@ -137,7 +145,8 @@ def _validate_bonds(df: pd.DataFrame) -> list[str]:
             )
         except (ValueError, KeyError, TypeError, AttributeError) as exc:
             problems.append(f"Row {n} ({row.get('cusip')}): {exc}")
-    return problems
+            bad_index.append(i)
+    return problems, bad_index
 
 
 # ── savers ──────────────────────────────────────────────────────────────────
@@ -166,11 +175,25 @@ def save_trades(df: pd.DataFrame) -> Path | None:
     return backup
 
 
-def save_bonds_static(df: pd.DataFrame) -> Path | None:
-    """Validate every row via BondStatic, then back up and write bonds_static.csv."""
-    problems = _validate_bonds(df)
+def save_bonds_static(df: pd.DataFrame, skip_invalid: bool = False) -> Path | None:
+    """Validate every row via BondStatic, then back up and write bonds_static.csv.
+
+    By default a single invalid row aborts the whole write (strict mode used by
+    the Data Editor). With ``skip_invalid=True`` invalid rows are logged and kept
+    in the file as-is rather than raising, so one unfetchable bond (e.g. a govt
+    security where the default "CUSIP Corp" ticker returns #N/A) cannot block the
+    static refresh of every other bond. Rows still missing required fields are
+    skipped gracefully at load time by ``load_bonds_static``.
+    """
+    problems, bad_index = _validate_bonds_detailed(df)
     if problems:
-        raise ValueError("Cannot save bond static:\n" + "\n".join(problems))
+        if not skip_invalid:
+            raise ValueError("Cannot save bond static:\n" + "\n".join(problems))
+        log.warning(
+            "Writing bonds_static.csv with %d row(s) still missing required "
+            "static data (kept as placeholders):\n%s",
+            len(bad_index), "\n".join(problems),
+        )
 
     out = df.copy()
     out["cusip"] = out["cusip"].astype(str)

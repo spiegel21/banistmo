@@ -348,11 +348,22 @@ if st.sidebar.button("③ Import all data", key="btn_import_all"):
     else:
         _msg_parts.append("no current prices found")
 
+    _static_saved = False
     if not _fetched_static.empty and not _fetched_static["cusip"].isna().all():
         try:
-            _n_new, _n_filled = merge_bonds_static(_fetched_static)
+            _n_new, _n_filled, _incomplete = merge_bonds_static(_fetched_static)
+            _static_saved = True
             if _n_new or _n_filled:
                 _msg_parts.append(f"static: {_n_new} new CUSIP(s), {_n_filled} field(s) filled")
+            if _incomplete:
+                st.sidebar.warning(
+                    f"⚠ {len(_incomplete)} bond(s) returned no maturity date from Bloomberg "
+                    f"(likely govt/sovereign — the default \"CUSIP Corp\" ticker doesn't resolve): "
+                    f"{', '.join(_incomplete[:8])}{'…' if len(_incomplete) > 8 else ''}.\n\n"
+                    "Set each one's **bbg_ticker** (e.g. `<id> Govt`) in "
+                    "**Data Editor → Bond Static**, then run ① Prepare and ③ Import again. "
+                    "Other bonds were saved normally."
+                )
         except ValueError as _exc:
             st.sidebar.error(
                 f"Bond static validation failed — fix rows in Data Editor → Bond Static.\n\n{_exc}"
@@ -365,7 +376,7 @@ if st.sidebar.button("③ Import all data", key="btn_import_all"):
             f"{len(_hist_df)} history record(s) through {_hist_df['date'].max()} · P&L recomputed"
         )
 
-    if _imported or not _hist_df.empty:
+    if _imported or not _hist_df.empty or _static_saved:
         st.sidebar.success(" · ".join(_msg_parts))
         st.rerun()
     else:

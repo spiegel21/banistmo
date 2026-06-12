@@ -897,20 +897,23 @@ def read_static_from_template(wb_path: Path = TEMPLATE_PATH) -> pd.DataFrame:
     return pd.DataFrame(records).reindex(columns=BONDS_COLUMNS)
 
 
-def merge_bonds_static(fetched_df: pd.DataFrame) -> tuple[int, int]:
+def merge_bonds_static(fetched_df: pd.DataFrame) -> tuple[int, int, list[str]]:
     """Fill gaps in bonds_static.csv using Bloomberg-fetched reference data.
 
     Existing values are preserved — only NaN / blank cells are filled.
     CUSIPs not yet in bonds_static.csv are added entirely.
 
-    Returns (n_new_cusips, n_fields_filled).
-    Raises ValueError (propagated from save_bonds_static) if any merged row
-    still fails BondStatic validation after the merge.
+    Returns (n_new_cusips, n_fields_filled, incomplete_cusips) where
+    incomplete_cusips lists bonds that STILL lack a maturity_date after the
+    merge — typically govt/sovereign securities whose default "CUSIP Corp"
+    ticker returns #N/A.  These rows are written as placeholders (not dropped)
+    and never block the save of the bonds that did resolve: set their
+    bbg_ticker (e.g. "<id> Govt") in the Data Editor and re-import.
     """
     from data_io import save_bonds_static, BONDS_COLUMNS
 
     if fetched_df.empty:
-        return (0, 0)
+        return (0, 0, [])
 
     if BONDS_STATIC_PATH.exists() and BONDS_STATIC_PATH.stat().st_size > 0:
         existing = pd.read_csv(BONDS_STATIC_PATH, dtype={"cusip": str})
@@ -940,8 +943,18 @@ def merge_bonds_static(fetched_df: pd.DataFrame) -> tuple[int, int]:
     post = merged.set_index("cusip")
     fields_filled = int((post.notna() & pre.isna()).sum().sum())
 
-    save_bonds_static(merged)
-    return (len(new_cusips), fields_filled)
+    # Bonds still missing maturity_date after the merge can't be priced for
+    # accruals — keep them as placeholders but surface them to the caller.
+    if "maturity_date" in merged.columns:
+        incomplete = sorted(
+            merged.loc[merged["maturity_date"].isna(), "cusip"].astype(str).tolist()
+        )
+    else:
+        incomplete = []
+
+    # skip_invalid=True: one unresolved bond must not block the rest of the save.
+    save_bonds_static(merged, skip_invalid=True)
+    return (len(new_cusips), fields_filled, incomplete)
 
 
 def open_in_excel(path: Path) -> bool:

@@ -38,6 +38,30 @@ def test_save_bonds_rejects_invalid_and_leaves_file_unchanged():
     assert load_bonds_static()["037833100"].coupon_frequency == 2
 
 
+def test_save_bonds_skip_invalid_keeps_good_rows():
+    # One unfetchable bond (blank maturity_date — e.g. a govt security whose
+    # default "CUSIP Corp" ticker returned #N/A) must NOT block saving the
+    # other bonds that resolved correctly.
+    df = pd.read_csv(config.BONDS_STATIC_PATH, dtype={"cusip": str})
+    assert len(df) >= 2, "fixture needs at least two bonds"
+    df.loc[0, "maturity_date"] = None  # simulate Bloomberg #N/A for one bond
+
+    # Strict mode still rejects the whole write.
+    with pytest.raises(ValueError):
+        data_io.save_bonds_static(df)
+
+    # Resilient mode writes everything; good rows load, the blank one is skipped.
+    data_io.save_bonds_static(df, skip_invalid=True)
+    loaded = load_bonds_static()
+    good_cusip = str(df.loc[1, "cusip"])
+    bad_cusip = str(df.loc[0, "cusip"])
+    assert good_cusip in loaded            # resolved bond survived
+    assert bad_cusip not in loaded         # blank-maturity bond skipped at load
+    # placeholder row is still on disk so it can be fixed and re-imported
+    on_disk = pd.read_csv(config.BONDS_STATIC_PATH, dtype={"cusip": str})
+    assert bad_cusip in on_disk["cusip"].astype(str).values
+
+
 def test_validate_trades_flags_bad_side_and_date():
     bad = pd.DataFrame([dict(
         cusip="X", side="hold", nominal="abc", price=100,

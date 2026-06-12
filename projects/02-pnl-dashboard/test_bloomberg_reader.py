@@ -19,6 +19,8 @@ import pandas as pd
 from openpyxl import load_workbook
 from openpyxl.utils import get_column_letter
 
+import config
+
 TEMPLATE       = Path("templates/bloomberg_prices.xlsx")
 PRICE_HISTORY  = Path("data/price_history.csv")
 BACKFILL_STATE = Path("data/prices/backfill_state.json")
@@ -219,3 +221,72 @@ try:
         print("  (empty)")
 except ValueError as e:
     print(f"  ERROR: {e}")
+
+# ── 9. The file accruals actually reads: data/bonds_static.csv ────────────────
+# This is the file that drives bond names + maturity in every dashboard tab.
+# If names show as None and accruals warns "missing maturity_date", the blanks
+# live HERE — not in the template.
+BONDS_STATIC = config.BONDS_STATIC_PATH
+print(f"\n=== data/bonds_static.csv  ({BONDS_STATIC}) ===")
+if BONDS_STATIC.exists() and BONDS_STATIC.stat().st_size > 0:
+    bs = pd.read_csv(BONDS_STATIC, dtype={"cusip": str})
+    print(f"  {len(bs)} rows, columns: {list(bs.columns)}\n")
+    blank_name = bs["name"].isna() if "name" in bs.columns else pd.Series([], dtype=bool)
+    blank_mat = bs["maturity_date"].isna() if "maturity_date" in bs.columns else pd.Series([], dtype=bool)
+    print(f"  rows with BLANK name        : {int(blank_name.sum())}")
+    print(f"  rows with BLANK maturity_date: {int(blank_mat.sum())}")
+    if blank_mat.any():
+        print("\n  CUSIPs missing maturity_date (these trigger the accruals warning "
+              "AND, in the old code, blocked the entire static save):")
+        for c in bs.loc[blank_mat, "cusip"].astype(str):
+            print(f"    - {c}")
+else:
+    print("  NOT FOUND or empty — run generate_sample_data.py / import first.")
+
+# ── 10. Dry-run the merge: would the static save have been blocked? ───────────
+print("\n=== Dry-run merge (read_static_from_template → merge) ===")
+try:
+    from data_io import _validate_bonds, BONDS_COLUMNS
+
+    sdf = read_static_from_template(TEMPLATE)
+    if sdf.empty:
+        print("  Static sheet read returned no rows — nothing to merge.")
+    else:
+        tmpl_cusips = set(sdf["cusip"].astype(str))
+        print(f"  Template Static resolved {len(tmpl_cusips)} CUSIP(s): {sorted(tmpl_cusips)}")
+
+        if BONDS_STATIC.exists() and BONDS_STATIC.stat().st_size > 0:
+            existing = pd.read_csv(BONDS_STATIC, dtype={"cusip": str})
+            csv_cusips = set(existing["cusip"].astype(str))
+        else:
+            existing = pd.DataFrame(columns=BONDS_COLUMNS)
+            csv_cusips = set()
+
+        in_csv_not_template = csv_cusips - tmpl_cusips
+        if in_csv_not_template:
+            print(f"  ⚠ In bonds_static.csv but NOT resolved by template "
+                  f"(govt? matured? wrong suffix): {sorted(in_csv_not_template)}")
+            print("    → after merge these stay blank → OLD code: save BLOCKED for ALL bonds.")
+            print("    → NEW code: kept as placeholders, every other bond saved fine.")
+        else:
+            print("  ✓ Every bonds_static.csv CUSIP was resolved by the template.")
+
+        # Reproduce the merge and check what strict validation would say.
+        existing["cusip"] = existing["cusip"].astype(str)
+        fetched = sdf.reindex(columns=BONDS_COLUMNS).copy()
+        fetched["cusip"] = fetched["cusip"].astype(str)
+        merged = (existing.set_index("cusip")
+                  .combine_first(fetched.set_index("cusip")).reset_index())
+        if "first_coupon_date" in merged and "maturity_date" in merged:
+            m = merged["first_coupon_date"].isna()
+            merged.loc[m, "first_coupon_date"] = merged.loc[m, "maturity_date"]
+        problems = _validate_bonds(merged)
+        if problems:
+            print(f"\n  STRICT save would RAISE on {len(problems)} row(s) "
+                  f"(this is what silently dropped your static data):")
+            for p in problems:
+                print(f"    {p}")
+        else:
+            print("\n  ✓ Strict save would succeed — no blocking rows.")
+except ValueError as e:
+    print(f"  ERROR (Bloomberg refreshing?): {e}")
