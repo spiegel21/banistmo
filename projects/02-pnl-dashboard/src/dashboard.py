@@ -339,6 +339,10 @@ if st.sidebar.button("③ Import all data", key="btn_import_all"):
             "then **File → Save** and **close** the file before clicking ③ again."
         )
         st.stop()
+    except Exception as _read_exc:
+        st.sidebar.error(f"❌ Error reading template: {_read_exc}")
+        st.exception(_read_exc)
+        st.stop()
 
     _msg_parts      = []
 
@@ -364,17 +368,23 @@ if st.sidebar.button("③ Import all data", key="btn_import_all"):
                     "**Data Editor → Bond Static**, then run ① Prepare and ③ Import again. "
                     "Other bonds were saved normally."
                 )
-        except ValueError as _exc:
+        except Exception as _exc:
             st.sidebar.error(
-                f"Bond static validation failed — fix rows in Data Editor → Bond Static.\n\n{_exc}"
+                f"❌ Bond static save failed: {_exc}\n\n"
+                f"Type: `{type(_exc).__name__}`"
             )
+            st.exception(_exc)
 
     if not _hist_df.empty:
-        with st.spinner("Recomputing P&L history..."):
-            compute_daily_pnl(min_date, as_of, portfolio=None)
-        _msg_parts.append(
-            f"{len(_hist_df)} history record(s) through {_hist_df['date'].max()} · P&L recomputed"
-        )
+        try:
+            with st.spinner("Recomputing P&L history..."):
+                compute_daily_pnl(min_date, as_of, portfolio=None)
+            _msg_parts.append(
+                f"{len(_hist_df)} history record(s) through {_hist_df['date'].max()} · P&L recomputed"
+            )
+        except Exception as _pnl_exc:
+            st.sidebar.error(f"❌ P&L recompute failed: {_pnl_exc}")
+            st.exception(_pnl_exc)
 
     if _imported or not _hist_df.empty or _static_saved:
         st.sidebar.success(" · ".join(_msg_parts))
