@@ -290,3 +290,40 @@ try:
             print("\n  ✓ Strict save would succeed — no blocking rows.")
 except ValueError as e:
     print(f"  ERROR (Bloomberg refreshing?): {e}")
+
+# ── 11. Ticker round-trip check ────────────────────────────────────────────
+# read_static_from_template/read_prices_from_template recover the CUSIP for
+# each row from template_state.json (written by prepare_template). If that
+# state is missing/stale they fall back to stripping a suffix off the ticker
+# text in col A — which silently derives the WRONG cusip for any bond whose
+# bbg_ticker isn't exactly "{cusip} {suffix}" (e.g. a custom govt/Treasury
+# description ticker). This section flags any such mismatch directly.
+from bloomberg import _cusip_from_ticker, _load_template_state
+
+print("\n=== Ticker round-trip check (template_state.json vs col A) ===")
+TEMPLATE_STATE = Path("data/prices/template_state.json")
+if TEMPLATE_STATE.exists():
+    tstate = json.loads(TEMPLATE_STATE.read_text())
+    print(f"  template_state.json found: {TEMPLATE_STATE}")
+else:
+    tstate = {}
+    print("  NOT FOUND — readers will fall back to ticker-text parsing for every row "
+          "(run ① Prepare to create it).")
+
+for sheet_name, ws in (("Live MTM", ws_live), ("Static", ws_static)):
+    ordered = tstate.get(sheet_name, [])
+    print(f"\n  -- {sheet_name} --")
+    mismatches = 0
+    for r in range(2, ws.max_row + 1):
+        raw = ws.cell(r, 1).value
+        if raw is None:
+            continue
+        expected = ordered[r - 2] if (r - 2) < len(ordered) else None
+        derived = _cusip_from_ticker(str(raw))
+        if expected is not None and expected != derived:
+            mismatches += 1
+            print(f"    ⚠ row {r}: ticker={raw!r} → derived cusip={derived!r} "
+                  f"but template_state says cusip={expected!r} "
+                  "(would have been MISFILED under the wrong key without the fix)")
+    if mismatches == 0:
+        print(f"    no mismatches in {len(ordered) or '0'} mapped row(s)")

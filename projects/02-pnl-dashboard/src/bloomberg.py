@@ -63,6 +63,13 @@ def _cusip_from_ticker(ticker: str) -> str:
 
     Works for any suffix in _KNOWN_SUFFIXES; if no match the full string is
     returned as-is (handles plain CUSIPs written by older template versions).
+
+    This is a best-effort FALLBACK only. It assumes the ticker is exactly
+    "{cusip} {suffix}", which breaks for govt/sovereign bonds that need a
+    custom descriptive Bloomberg ticker (e.g. a full Treasury description)
+    in bbg_ticker — those don't round-trip back to the real CUSIP. Prefer
+    the row->CUSIP mapping persisted by prepare_template() (see
+    _load_template_state) whenever it's available.
     """
     t = str(ticker).strip()
     upper = t.upper()
@@ -70,6 +77,35 @@ def _cusip_from_ticker(ticker: str) -> str:
         if upper.endswith(sfx.upper()):
             return t[: len(t) - len(sfx)].strip()
     return t
+
+
+_TEMPLATE_STATE_PATH = PRICES_DIR / "template_state.json"
+
+
+def _load_template_state() -> dict:
+    if _TEMPLATE_STATE_PATH.exists():
+        import json
+        return json.loads(_TEMPLATE_STATE_PATH.read_text())
+    return {}
+
+
+def _save_template_state(state: dict) -> None:
+    import json
+    _TEMPLATE_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
+    _TEMPLATE_STATE_PATH.write_text(json.dumps(state, indent=2, default=str))
+
+
+def _row_cusips(sheet_name: str, n_rows: int) -> list[str | None]:
+    """Return the CUSIP written to each row (index 0 = row 2) by prepare_template().
+
+    Reading this back from saved state — rather than re-deriving it from the
+    ticker text in col A — is what makes the round-trip correct even when
+    bbg_ticker is a custom descriptive ticker (not "{cusip} {suffix}").
+    Returns a list padded with None past the recorded length.
+    """
+    state = _load_template_state()
+    ordered = state.get(sheet_name, [])
+    return [ordered[i] if i < len(ordered) else None for i in range(n_rows)]
 
 
 def _try_xlwings_import():
@@ -175,16 +211,24 @@ def prepare_template(
     """
     from openpyxl import load_workbook
     wb = load_workbook(str(wb_path))
+    cusips_str = [str(c) for c in cusips]
     for sheet_name in (_BDP_SHEET, "Static"):
         if sheet_name not in wb.sheetnames:
             continue
         ws = wb[sheet_name]
         for row in range(2, 52):
             ws.cell(row=row, column=1).value = None
-        for i, cusip in enumerate(cusips):
+        for i, cusip in enumerate(cusips_str):
             ticker = _ticker_for(cusip, bonds_static)
             ws.cell(row=i + 2, column=1).value = ticker
     wb.save(str(wb_path))
+
+    # Persist row->CUSIP order so the readers don't have to reverse-parse the
+    # ticker text (which fails whenever bbg_ticker isn't "{cusip} {suffix}").
+    state = _load_template_state()
+    state[_BDP_SHEET] = cusips_str
+    state["Static"] = cusips_str
+    _save_template_state(state)
     return wb_path
 
 
@@ -218,6 +262,8 @@ def read_prices_from_template(wb_path: Path = TEMPLATE_PATH) -> dict[str, float]
             "then Save and Close Excel before importing."
         )
 
+    row_cusips = _row_cusips(_BDP_SHEET, 50)
+
     prices = {}
     for row in range(2, 52):
         raw = ws.cell(row=row, column=1).value
@@ -229,7 +275,9 @@ def read_prices_from_template(wb_path: Path = TEMPLATE_PATH) -> dict[str, float]
         if raw_str in ("#N/A", "N/A"):
             log.debug("Live MTM row %d: ticker returned #N/A — skipped", row)
             continue
-        cusip = _cusip_from_ticker(raw_str)
+        # Prefer the CUSIP recorded by prepare_template() — reverse-parsing the
+        # ticker text breaks for custom (non "{cusip} {suffix}") bbg_tickers.
+        cusip = row_cusips[row - 2] or _cusip_from_ticker(raw_str)
         # #N/A in any price field → bond has matured; Bloomberg no longer prices it
         if price is None or (isinstance(price, str) and price.strip() in ("#N/A", "N/A")):
             log.info("Live MTM: %s returned #N/A for PX_LAST — bond likely matured, skipped", cusip)
@@ -828,15 +876,18 @@ def read_static_from_template(wb_path: Path = TEMPLATE_PATH) -> pd.DataFrame:
             "then Save and Close Excel before importing."
         )
 
+    row_cusips = _row_cusips("Static", 50)
+
     records = []
     for row in range(2, 52):
         raw_a = ws.cell(row=row, column=1).value
         if not raw_a:
             continue
 
-        # Col A may hold a full ticker ("912828Z78 Govt") or a bare CUSIP from
-        # older templates — _cusip_from_ticker handles both.
-        rec: dict = {"cusip": _cusip_from_ticker(str(raw_a))}
+        # Prefer the CUSIP recorded by prepare_template() over reverse-parsing
+        # col A's ticker text — that parsing assumes "{cusip} {suffix}" and
+        # silently derives the wrong key for custom govt/sovereign tickers.
+        rec: dict = {"cusip": row_cusips[row - 2] or _cusip_from_ticker(str(raw_a))}
         for col_idx, field in enumerate(headers[1:], 2):
             if not field:
                 continue
