@@ -126,6 +126,9 @@ The dashboard is organised into tabs, several focused on auditability:
   broken or incomplete, with severity (error / warning / needs-input), the
   offending field, and a suggested fix. Catches missing names, weird/stale
   prices, economic mismatches, unknown bonds, and missing classification.
+- **📐 Risk** — analytical risk engine: per-bond YTM, modified/Macaulay
+  duration, DV01, and convexity; market-value-weighted portfolio summary; and
+  historical VaR / Expected Shortfall from realised daily P&L.
 - **MTM Attribution** — Bond Detail, **Bond Movements** (full per-bond audit
   trail: running position, WAVG cost, cash, realized), Rollup (group by any
   classification dimension), Accrual Detail, **Coupon Calendar** (cash-flow
@@ -147,4 +150,5 @@ The dashboard is organised into tabs, several focused on auditability:
 | `src/reconciliation.py` | Data-quality / Needs-Attention findings engine |
 | `src/movements.py` | Per-bond movement lineage (running position & cost) |
 | `src/exposure.py` | Exposure, concentration & maturity-ladder analytics |
+| `src/analytics.py` | Analytical risk engine: YTM, duration, DV01, convexity, historical VaR |
 | `src/dashboard.py` | Streamlit front-end |

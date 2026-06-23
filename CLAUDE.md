@@ -110,6 +110,7 @@ Transparency & risk modules (all pure, unit-tested, framework-agnostic):
 - `src/reconciliation.py` — `run_all_checks()` returns a tidy findings DataFrame powering the **Debug / Needs-Attention** tab: broken/incomplete trades, unknown bonds, missing classification, and missing/weird/stale prices, each with severity + suggested fix.
 - `src/movements.py` — `position_movements()` rebuilds each bond's per-trade running position, WAVG cost, cash, and realized gain; its realized column reconciles exactly with `trading_gains`.
 - `src/exposure.py` — nominal/MTM aggregation across classification dimensions, top-N concentration, and a remaining-tenor maturity ladder (no pricing model).
+- `src/analytics.py` — analytical risk engine: solves YTM from the clean price, then modified/Macaulay duration, DV01, and convexity by finite differences off `price_from_yield` (street convention: discount at yield compounded `coupon_frequency`×/yr, Act/365 time). `portfolio_risk()` returns a per-bond table + MV-weighted summary; `var_historical()` gives VaR/ES from realised daily P&L. No external curve, so G-/Z-spread are out of scope.
 - `src/accruals.py` also provides `next_coupon_date` / `upcoming_coupons` for the Coupon Calendar cash-flow forecast.
 
 ### Data model

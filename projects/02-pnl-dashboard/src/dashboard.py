@@ -47,6 +47,7 @@ from history import (
 import reconciliation
 from movements import position_movements
 import exposure
+import analytics
 from classification import classify
 
 TEMPLATE_PATH = config.BLOOMBERG_TEMPLATE_PATH
@@ -511,10 +512,11 @@ else:
 
 # ── tabs ────────────────────────────────────────────────────────────────────
 
-(tab_overview, tab_debug, tab_mtm, tab_positions_date, tab_trades_date,
+(tab_overview, tab_debug, tab_risk, tab_mtm, tab_positions_date, tab_trades_date,
  tab_attribution, tab_ledger, tab_ts, tab_edit) = st.tabs([
     "Overview",
     "🔧 Debug",
+    "📐 Risk",
     "Positions & MTM",
     "Positions by Date",
     "Trades by Date",
@@ -765,7 +767,91 @@ with tab_debug:
         )
 
 
-# ── Tab 3: Positions & MTM ────────────────────────────────────────────────────
+# ── Tab 3: Risk Analytics ─────────────────────────────────────────────────────
+
+with tab_risk:
+    st.subheader("Risk Analytics — yield, duration, DV01, convexity")
+    st.caption(
+        "In-house bond math: YTM solved from the clean price, then modified/Macaulay "
+        "duration, DV01 (per 1bp), and convexity by finite differences. Portfolio "
+        "duration/convexity/YTM are market-value weighted; DV01 sums in cash terms. "
+        f"Marked as of {as_of}. Spreads (G/Z) need a yield curve and are out of scope."
+    )
+
+    risk_df, risk_summary = analytics.portfolio_risk(positions, bonds_static, prices, as_of)
+
+    rs1, rs2, rs3, rs4, rs5 = st.columns(5)
+    rs1.metric("MTM Value", _fmt(risk_summary["mtm_value"]))
+    rs2.metric("Portfolio DV01", _fmt(risk_summary["dv01_dollar"]),
+               help="Cash P&L for a 1bp parallel yield rise (sum across bonds).")
+    _md = risk_summary["mod_duration"]
+    rs3.metric("Mod. Duration", "—" if _md != _md else f"{_md:.2f}",
+               help="MV-weighted modified duration (years).")
+    _yt = risk_summary["ytm"]
+    rs4.metric("Portfolio YTM", "—" if _yt != _yt else f"{_yt*100:.2f}%",
+               help="MV-weighted yield to maturity.")
+    _cx = risk_summary["convexity"]
+    rs5.metric("Convexity", "—" if _cx != _cx else f"{_cx:.1f}",
+               help="MV-weighted convexity.")
+
+    if risk_df.empty:
+        st.info("No positions to analyse. Load positions and prices first.")
+    else:
+        rv = _enrich(risk_df, bs_df, ["country", "currency"])
+        rv = rv.rename(columns={
+            "cusip": "CUSIP", "name": "Name", "country": "Country", "currency": "CCY",
+            "net_nominal": "Nominal", "clean_px": "Clean Px", "dirty_px": "Dirty Px",
+            "mtm_value": "MTM Value", "ytm": "YTM", "mac_duration": "Mac Dur",
+            "mod_duration": "Mod Dur", "dv01_dollar": "DV01 ($)", "convexity": "Convexity",
+            "note": "Note",
+        })
+        if "YTM" in rv.columns:
+            rv["YTM"] = pd.to_numeric(rv["YTM"], errors="coerce") * 100  # show as %
+        _filtered_dataframe(
+            rv, "risk_tbl", width="stretch", hide_index=True, height=420,
+            column_config={
+                "Nominal":   st.column_config.NumberColumn(format="%,.0f"),
+                "Clean Px":  st.column_config.NumberColumn(format="%.4f"),
+                "Dirty Px":  st.column_config.NumberColumn(format="%.4f"),
+                "MTM Value": st.column_config.NumberColumn(format="%,.0f"),
+                "YTM":       st.column_config.NumberColumn(format="%.3f"),
+                "Mac Dur":   st.column_config.NumberColumn(format="%.3f"),
+                "Mod Dur":   st.column_config.NumberColumn(format="%.3f"),
+                "DV01 ($)":  st.column_config.NumberColumn(format="%,.2f"),
+                "Convexity": st.column_config.NumberColumn(format="%.2f"),
+            },
+        )
+        st.caption("YTM shown in %. DV01 ($) = cash P&L per 1bp; positive = loses on a yield rise.")
+        st.download_button(
+            "Download risk table CSV", risk_df.to_csv(index=False).encode(),
+            file_name=f"risk_analytics_{as_of}.csv", mime="text/csv",
+        )
+
+    # ── Historical VaR / Expected Shortfall ───────────────────────────────────
+    st.markdown("---")
+    st.subheader("Historical VaR / Expected Shortfall")
+    st.caption(
+        "Empirical tail of realised daily total P&L over the selected history window "
+        "(sidebar **History from** → **As of**). Needs computed P&L history."
+    )
+    _conf = st.select_slider("Confidence", options=[0.90, 0.95, 0.99], value=0.99, key="var_conf")
+    _var_hist = load_pnl_history(portfolio=hist_portfolio, start_date=hist_start, end_date=as_of)
+    _var_hist = _apply_cusip_filter(_var_hist, _filtered_cusips)
+    if _var_hist.empty:
+        st.info("No P&L history yet — click **Recompute P&L History** in the sidebar.")
+    else:
+        _daily_pnl = _var_hist.groupby("date")["total_pnl"].sum()
+        _var = analytics.var_historical(_daily_pnl, confidence=_conf)
+        v1, v2, v3, v4 = st.columns(4)
+        v1.metric(f"VaR ({int(_conf*100)}%)", _fmt(-_var["var"]),
+                  help="Loss not expected to be exceeded on a normal day at this confidence.")
+        v2.metric("Expected Shortfall", _fmt(-_var["es"]),
+                  help="Average loss on days worse than VaR.")
+        v3.metric("Worst day", _fmt(_var["worst_day"]))
+        v4.metric("Observations", _var["n_obs"])
+
+
+# ── Tab 4: Positions & MTM ────────────────────────────────────────────────────
 
 with tab_mtm:
     st.subheader("Mark-to-Market — clean & dirty price")
