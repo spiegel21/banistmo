@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import config
 import data_io
 from position_manager import load_all_trades, compute_positions, get_positions_as_of
-from accruals import load_bonds_static, total_portfolio_accruals, upcoming_coupons
+from accruals import load_bonds_static, upcoming_coupons
 from trading_gains import total_realized_pnl, realized_pnl
 from mtm import mark_to_market
 from bloomberg import (
@@ -153,16 +153,11 @@ def _arrow_safe(df: pd.DataFrame) -> pd.DataFrame:
     Replacing blank/whitespace-only strings with None lets Arrow infer a numeric
     column. Genuine text columns are unaffected (blanks just render empty).
     """
-    if df.empty:
-        return df
     obj_cols = df.select_dtypes(include="object").columns
-    if len(obj_cols) == 0:
+    if df.empty or obj_cols.empty:
         return df
     df = df.copy()
-    for col in obj_cols:
-        df[col] = df[col].map(
-            lambda v: None if isinstance(v, str) and v.strip() == "" else v
-        )
+    df[obj_cols] = df[obj_cols].replace(r"^\s*$", None, regex=True)
     return df
 
 

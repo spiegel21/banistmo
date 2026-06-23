@@ -21,7 +21,6 @@ defaults) so they are pure and unit-testable.
 """
 from __future__ import annotations
 
-from datetime import date
 from pathlib import Path
 
 import pandas as pd

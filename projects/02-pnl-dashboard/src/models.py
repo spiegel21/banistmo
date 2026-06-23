@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date
 
 VALID_DAY_COUNTS = {"Act/360", "Act/365", "30/360", "Act/Act"}
@@ -34,8 +34,6 @@ _DAY_COUNT_ALIASES: dict[str, str] = {
     "isma 30/360": "30/360",
     "30e/360": "30/360",
     "bond basis": "30/360",
-    # Already-canonical pass-through (case-insensitive variants)
-    "act/act": "Act/Act",
 }
 
 
