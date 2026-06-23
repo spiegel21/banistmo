@@ -44,6 +44,7 @@ from history import (
     compute_daily_pnl, load_pnl_history,
     daily_snapshot, position_timeseries, accrual_breakdown,
 )
+import reconciliation
 
 TEMPLATE_PATH = config.BLOOMBERG_TEMPLATE_PATH
 PRICES_DIR = config.PRICES_DIR
@@ -473,9 +474,10 @@ else:
 
 # ── tabs ────────────────────────────────────────────────────────────────────
 
-(tab_overview, tab_mtm, tab_positions_date, tab_trades_date,
+(tab_overview, tab_debug, tab_mtm, tab_positions_date, tab_trades_date,
  tab_attribution, tab_ledger, tab_ts, tab_edit) = st.tabs([
     "Overview",
+    "🔧 Debug",
     "Positions & MTM",
     "Positions by Date",
     "Trades by Date",
@@ -593,7 +595,72 @@ with tab_overview:
             st.caption("Daily P&L by country")
             st.bar_chart(_day_pivot, width="stretch")
 
-# ── Tab 2: Positions & MTM ────────────────────────────────────────────────────
+# ── Tab 2: Debug / Needs Attention ────────────────────────────────────────────
+
+with tab_debug:
+    st.subheader("Debug — data quality & items needing attention")
+    st.caption(
+        "Every trade, bond, and price that is broken or incomplete, in one place. "
+        "**Errors** block correct P&L, **warnings** look suspicious (e.g. weird prices), "
+        "**needs-input** marks missing manual fields (name, country of risk, rating…)."
+    )
+
+    _held_cusips = {c for c, p in positions.items() if p.net_nominal != 0}
+    with st.spinner("Running data-quality checks..."):
+        findings_df, summary = reconciliation.run_all_checks(
+            raw_trades=reconciliation._read_raw_trades(),
+            bonds_static=bonds_static,
+            held_cusips=_held_cusips,
+            current_prices=prices,
+            price_history=_ph,
+        )
+
+    d1, d2, d3, d4 = st.columns(4)
+    d1.metric("🔴 Errors", summary.get("error", 0))
+    d2.metric("🟠 Warnings", summary.get("warning", 0))
+    d3.metric("🟡 Needs input", summary.get("needs_input", 0))
+    d4.metric("Total findings", summary.get("total", 0))
+
+    if findings_df.empty:
+        st.success("✅ No data-quality issues found. Trades, bonds, and prices all look clean.")
+    else:
+        fc1, fc2 = st.columns(2)
+        with fc1:
+            sev_filter = st.multiselect(
+                "Severity", ["error", "warning", "needs_input"],
+                default=["error", "warning", "needs_input"], key="dbg_sev",
+            )
+        with fc2:
+            cats = sorted(findings_df["category"].unique().tolist())
+            cat_filter = st.multiselect("Category", cats, default=cats, key="dbg_cat")
+
+        view = findings_df.copy()
+        if sev_filter:
+            view = view[view["severity"].isin(sev_filter)]
+        if cat_filter:
+            view = view[view["category"].isin(cat_filter)]
+
+        _sev_icon = {"error": "🔴 error", "warning": "🟠 warning", "needs_input": "🟡 needs input"}
+        view["severity"] = view["severity"].map(_sev_icon).fillna(view["severity"])
+        view = view.rename(columns={
+            "severity": "Severity", "category": "Category", "source": "Source",
+            "key": "CUSIP / Row", "field": "Field", "issue": "Issue",
+            "suggested_fix": "Suggested fix",
+        })
+        _filtered_dataframe(view, "debug", width="stretch", hide_index=True, height=460)
+        st.download_button(
+            "Download findings CSV",
+            findings_df.to_csv(index=False).encode(),
+            file_name=f"debug_findings_{date.today()}.csv",
+            mime="text/csv",
+        )
+        st.caption(
+            "Fix items in **Data Editor** (trades / bond static / manual prices) or via the "
+            "**Bloomberg** import in the sidebar, then revisit this tab — it re-runs every load."
+        )
+
+
+# ── Tab 3: Positions & MTM ────────────────────────────────────────────────────
 
 with tab_mtm:
     st.subheader("Mark-to-Market — clean & dirty price")
