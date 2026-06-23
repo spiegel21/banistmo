@@ -31,7 +31,8 @@ TRADES_COLUMNS = [
 BONDS_COLUMNS = [
     "cusip", "name", "currency", "country", "coupon_rate", "coupon_frequency",
     "day_count_convention", "maturity_date", "first_coupon_date", "bbg_ticker",
-    "instrument_type",
+    "instrument_type", "issuer", "country_of_risk", "sector", "seniority",
+    "market", "rating_sp", "rating_moody", "rating_fitch",
 ]
 INITIAL_COLUMNS = ["portfolio", "cusip", "nominal", "price", "book_value", "inception_date"]
 MANUAL_PRICES_COLUMNS = ["cusip", "px_last", "date"]

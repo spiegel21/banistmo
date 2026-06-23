@@ -12,7 +12,7 @@ import pandas as pd
 
 import config
 from config import get_logger
-from models import Position, BondStatic, normalise_day_count
+from models import Position, BondStatic, normalise_day_count, normalise_instrument_type
 
 log = get_logger(__name__)
 
@@ -80,6 +80,11 @@ def load_bonds_static(path: Path | None = None) -> dict[str, BondStatic]:
                 log.warning("bonds_static row for %s missing day_count_convention — defaulting to 30/360", cusip)
                 dcc = "30/360"
 
+            def _s(field: str) -> str:
+                """Blank-safe string read for an optional static column."""
+                val = row.get(field)
+                return "" if pd.isna(val) else str(val).strip()
+
             bond = BondStatic(
                 cusip=cusip,
                 name="" if pd.isna(row.get("name")) else str(row.get("name", "")).strip(),
@@ -91,7 +96,15 @@ def load_bonds_static(path: Path | None = None) -> dict[str, BondStatic]:
                 maturity_date=maturity,
                 first_coupon_date=first_coupon,
                 bbg_ticker="" if pd.isna(row.get("bbg_ticker")) else str(row.get("bbg_ticker", "")),
-                instrument_type="" if pd.isna(row.get("instrument_type")) else str(row.get("instrument_type", "")),
+                instrument_type=normalise_instrument_type(_s("instrument_type")),
+                issuer=_s("issuer"),
+                country_of_risk=_s("country_of_risk"),
+                sector=_s("sector"),
+                seniority=_s("seniority"),
+                market=_s("market"),
+                rating_sp=_s("rating_sp"),
+                rating_moody=_s("rating_moody"),
+                rating_fitch=_s("rating_fitch"),
             )
         except (ValueError, KeyError, TypeError) as exc:
             log.warning("Skipping invalid bonds_static row for %s: %s", cusip, exc)
