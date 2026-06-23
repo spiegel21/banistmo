@@ -4,10 +4,8 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from bs4 import BeautifulSoup
 import time
-from bs4 import BeautifulSoup
 from textblob import TextBlob
 from vaderSentiment.vaderSentiment import SentimentIntensityAnalyzer
-import time
 import random
 
 # Download necessary NLTK data (uncomment if needed)

@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import config
 import data_io
 from position_manager import load_all_trades, compute_positions, get_positions_as_of
-from accruals import load_bonds_static, total_portfolio_accruals
+from accruals import load_bonds_static
 from trading_gains import total_realized_pnl, realized_pnl
 from mtm import mark_to_market
 from bloomberg import (

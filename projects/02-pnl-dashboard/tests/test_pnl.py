@@ -5,7 +5,7 @@ import pytest
 
 from position_manager import load_all_trades, compute_positions
 from accruals import load_bonds_static, total_portfolio_accruals
-from trading_gains import realized_pnl, total_realized_pnl
+from trading_gains import realized_pnl
 from mtm import mark_to_market
 
 

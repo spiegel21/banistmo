@@ -1,0 +1,12 @@
+# Lint config for the monorepo. Default rule set (pyflakes + a curated subset of
+# pycodestyle errors) — intentionally lenient on style (no line-length/format
+# enforcement) since the projects follow PEP 8 by hand.
+target-version = "py310"
+line-length = 120
+
+# Interactive Bloomberg diagnostic script: imports are deliberately interleaved
+# with print() output, so E402/F401 don't apply.
+extend-exclude = [
+    "projects/02-pnl-dashboard/test_bloomberg_reader.py",
+    "**/.venv",
+]
