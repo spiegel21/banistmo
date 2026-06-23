@@ -45,6 +45,7 @@ from history import (
     daily_snapshot, position_timeseries, accrual_breakdown,
 )
 import reconciliation
+from movements import position_movements
 
 TEMPLATE_PATH = config.BLOOMBERG_TEMPLATE_PATH
 PRICES_DIR = config.PRICES_DIR
@@ -964,7 +965,7 @@ with tab_attribution:
     st.subheader("MTM Attribution & Transparency")
     attr_view = st.selectbox(
         "View",
-        ["Bond Detail", "Rollup", "Accrual Detail", "Price History Table"],
+        ["Bond Detail", "Bond Movements", "Rollup", "Accrual Detail", "Price History Table"],
         key="attr_view_sel",
     )
 
@@ -1110,6 +1111,61 @@ with tab_attribution:
                 styled_pivot = _color_pnl_df(pivot_reset, list(pivot.columns))
                 _filtered_dataframe(styled_pivot, "attr_pivot", width="stretch", hide_index=True, height=420)
                 st.caption("Daily total P&L per bond. Each column = bond name (CUSIP).")
+
+    # ── Bond Movements ───────────────────────────────────────────────────────
+    elif attr_view == "Bond Movements":
+        st.caption(
+            "Full audit trail per bond: every trade and its effect on the running "
+            "position, WAVG cost basis, cash, and realized gains. The realized column "
+            "reconciles exactly with the rest of the app."
+        )
+        _mv_cusips = sorted(trades_df["cusip"].dropna().unique().tolist()) if not trades_df.empty else []
+        if not _mv_cusips:
+            st.info("No trades match the current filters.")
+        else:
+            _label_map = {
+                c: (f"{bonds_static[c].name} ({c})" if c in bonds_static and bonds_static[c].name else c)
+                for c in _mv_cusips
+            }
+            _sel_mv = st.selectbox(
+                "Bond", _mv_cusips, format_func=lambda c: _label_map.get(c, c),
+                key="mv_cusip_sel",
+            )
+            mv = position_movements(trades_df, cusip=_sel_mv, portfolio=hist_portfolio)
+            if mv.empty:
+                st.info("No movements for this bond with the current filters.")
+            else:
+                mv_view = mv.rename(columns={
+                    "trade_date": "Trade Date", "portfolio": "Portfolio", "cusip": "CUSIP",
+                    "trader": "Trader", "side": "Side", "nominal": "Nominal", "price": "Price",
+                    "cash_flow": "Cash Flow", "running_nominal": "Running Nominal",
+                    "running_wavg_cost": "Running WAVG Cost", "realized_gain": "Realized Gain",
+                    "cumulative_cash": "Cumulative Cash", "cumulative_realized": "Cumulative Realized",
+                })
+                if "Trade Date" in mv_view.columns:
+                    mv_view["Trade Date"] = pd.to_datetime(mv_view["Trade Date"]).dt.date
+                _filtered_dataframe(
+                    mv_view, "bond_mv", width="stretch", hide_index=True, height=420,
+                    column_config={
+                        "Nominal":             st.column_config.NumberColumn(format="%,.0f"),
+                        "Price":               st.column_config.NumberColumn(format="%.4f"),
+                        "Cash Flow":           st.column_config.NumberColumn(format="%,.2f"),
+                        "Running Nominal":     st.column_config.NumberColumn(format="%,.0f"),
+                        "Running WAVG Cost":   st.column_config.NumberColumn(format="%.4f"),
+                        "Realized Gain":       st.column_config.NumberColumn(format="%,.2f"),
+                        "Cumulative Cash":     st.column_config.NumberColumn(format="%,.2f"),
+                        "Cumulative Realized": st.column_config.NumberColumn(format="%,.2f"),
+                    },
+                )
+                m1, m2, m3 = st.columns(3)
+                m1.metric("Current Nominal", _fmt(mv["running_nominal"].iloc[-1]))
+                m2.metric("Realized (lifetime)", _fmt(mv["cumulative_realized"].iloc[-1]))
+                m3.metric("Net Cash", _fmt(mv["cumulative_cash"].iloc[-1]))
+                st.download_button(
+                    "Download movements CSV",
+                    mv.to_csv(index=False).encode(),
+                    file_name=f"movements_{_sel_mv}.csv", mime="text/csv",
+                )
 
     # ── Rollup ───────────────────────────────────────────────────────────────
     elif attr_view == "Rollup":
