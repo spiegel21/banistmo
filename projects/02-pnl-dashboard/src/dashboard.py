@@ -46,6 +46,8 @@ from history import (
 )
 import reconciliation
 from movements import position_movements
+import exposure
+from classification import classify
 
 TEMPLATE_PATH = config.BLOOMBERG_TEMPLATE_PATH
 PRICES_DIR = config.PRICES_DIR
@@ -102,6 +104,21 @@ def _bonds_static_df(bonds_static: dict) -> pd.DataFrame:
         "instrument_type": b.instrument_type,
     } for b in bonds_static.values()]
     return pd.DataFrame(rows)
+
+
+def _classification_df(bonds_static: dict) -> pd.DataFrame:
+    """cusip → derived classification dimensions (sovereign/corp, country of risk,
+    local/global, sector, seniority, issuer). Centralises classify() so filters,
+    rollups, and exposure all agree."""
+    cols = ["cusip", "instrument_type", "country_of_risk", "market",
+            "sector", "seniority", "issuer"]
+    if not bonds_static:
+        return pd.DataFrame(columns=cols)
+    rows = []
+    for cusip, b in bonds_static.items():
+        d = classify(b)
+        rows.append({"cusip": cusip, **{k: d.get(k) for k in cols[1:]}})
+    return pd.DataFrame(rows, columns=cols)
 
 
 def _enrich(df: pd.DataFrame, bs_df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
@@ -219,6 +236,7 @@ st.title("Fixed-Income P&L Dashboard")
 all_trades = load_all_trades()
 bonds_static = load_bonds_static()
 bs_df = _bonds_static_df(bonds_static)
+clf_df = _classification_df(bonds_static)
 
 # ── sidebar: filters ──────────────────────────────────────────────────────────
 
@@ -229,9 +247,17 @@ def _options(col):
     return sorted(all_trades[col].dropna().unique().tolist()) if not all_trades.empty else []
 
 
+def _clf_options(col):
+    return sorted(clf_df[col].dropna().unique().tolist()) if not clf_df.empty else []
+
+
 sel_portfolios = st.sidebar.multiselect("Portfolio", _options("portfolio"), default=[])
 all_countries = sorted({b.country for b in bonds_static.values() if b.country})
 sel_countries = st.sidebar.multiselect("Country", all_countries, default=[])
+sel_country_risk = st.sidebar.multiselect("Country of Risk", _clf_options("country_of_risk"), default=[])
+sel_inst_type = st.sidebar.multiselect("Sovereign / Corp", _clf_options("instrument_type"), default=[])
+sel_market = st.sidebar.multiselect("Local / Global", _clf_options("market"), default=[])
+sel_sector = st.sidebar.multiselect("Sector", _clf_options("sector"), default=[])
 sel_traders = st.sidebar.multiselect("Trader", _options("trader"), default=[])
 sel_cusips = st.sidebar.multiselect("CUSIP / Bond", _options("cusip"), default=[])
 
@@ -251,6 +277,16 @@ if not trades_df.empty:
     if sel_countries and bonds_static:
         in_countries = {c for c, b in bonds_static.items() if b.country in sel_countries}
         trades_df = trades_df[trades_df["cusip"].isin(in_countries)]
+    # classification-based filters (country of risk, sovereign/corp, local/global, sector)
+    for _sel, _col in [
+        (sel_country_risk, "country_of_risk"),
+        (sel_inst_type, "instrument_type"),
+        (sel_market, "market"),
+        (sel_sector, "sector"),
+    ]:
+        if _sel and not clf_df.empty:
+            _keep = set(clf_df[clf_df[_col].isin(_sel)]["cusip"])
+            trades_df = trades_df[trades_df["cusip"].isin(_keep)]
 
 positions = compute_positions(trades_df, as_of=as_of)
 
@@ -595,6 +631,74 @@ with tab_overview:
             )
             st.caption("Daily P&L by country")
             st.bar_chart(_day_pivot, width="stretch")
+
+    # ── Exposure & Concentration ──────────────────────────────────────────────
+    st.markdown("---")
+    st.subheader("Exposure & Concentration")
+    _exp_base = exposure.exposure_base(positions, bonds_static, prices, as_of)
+    if _exp_base.empty:
+        st.info("No exposure to show — load prices and bond static data first.")
+    else:
+        _dim_label = st.selectbox(
+            "Break down by", list(exposure.DIMENSIONS.keys()), key="exp_dim",
+        )
+        _dim_col = exposure.DIMENSIONS[_dim_label]
+        if _dim_col == "portfolio":
+            # portfolio isn't on the bond; attach the (single) scope if filtered
+            _exp_base = _exp_base.assign(portfolio=hist_portfolio or "all")
+        _agg = exposure.aggregate_exposure(_exp_base, _dim_col)
+        if _agg.empty:
+            st.info("No data for this dimension.")
+        else:
+            _ec1, _ec2 = st.columns([3, 2])
+            with _ec1:
+                _agg_view = _agg.rename(columns={
+                    _dim_col: _dim_label, "net_nominal": "Nominal", "mtm_value": "MTM Value",
+                    "pct_nominal": "% Nominal", "pct_mtm": "% MTM", "n_bonds": "# Bonds",
+                })
+                st.dataframe(
+                    _arrow_safe(_agg_view), hide_index=True, width="stretch",
+                    column_config={
+                        "Nominal":   st.column_config.NumberColumn(format="%,.0f"),
+                        "MTM Value": st.column_config.NumberColumn(format="%,.0f"),
+                        "% Nominal": st.column_config.NumberColumn(format="%.1f"),
+                        "% MTM":     st.column_config.NumberColumn(format="%.1f"),
+                    },
+                )
+            with _ec2:
+                _chart = _agg.set_index(_dim_col)[["mtm_value"]]
+                st.caption("MTM value by " + _dim_label.lower())
+                st.bar_chart(_chart, width="stretch")
+                _conc = exposure.concentration(_exp_base, _dim_col, top_n=5)
+                st.metric(
+                    f"Top-5 {_dim_label} concentration (% MTM)",
+                    f"{_conc['top_n_pct']:.1f}%",
+                    help=f"Largest: {_conc['largest']} ({_conc['largest_pct']:.1f}%)",
+                )
+
+        # ── Maturity ladder ───────────────────────────────────────────────────
+        st.markdown("**Maturity ladder**")
+        _ladder = exposure.maturity_ladder(_exp_base, as_of)
+        if _ladder.empty:
+            st.info("No maturity data.")
+        else:
+            _lc1, _lc2 = st.columns([3, 2])
+            with _lc1:
+                _ladder_view = _ladder.rename(columns={
+                    "bucket": "Tenor", "net_nominal": "Nominal",
+                    "mtm_value": "MTM Value", "n_bonds": "# Bonds",
+                })
+                st.dataframe(
+                    _arrow_safe(_ladder_view), hide_index=True, width="stretch",
+                    column_config={
+                        "Nominal":   st.column_config.NumberColumn(format="%,.0f"),
+                        "MTM Value": st.column_config.NumberColumn(format="%,.0f"),
+                    },
+                )
+            with _lc2:
+                st.caption("MTM value by remaining tenor")
+                st.bar_chart(_ladder.set_index("bucket")[["mtm_value"]], width="stretch")
+
 
 # ── Tab 2: Debug / Needs Attention ────────────────────────────────────────────
 
@@ -1171,7 +1275,8 @@ with tab_attribution:
     elif attr_view == "Rollup":
         group_by = st.selectbox(
             "Group by",
-            ["Issuer (6-digit CUSIP)", "Country", "Currency", "Portfolio"],
+            ["Issuer (6-digit CUSIP)", "Country", "Country of Risk", "Currency",
+             "Sovereign / Corp", "Local / Global", "Sector", "Portfolio"],
             key="rollup_group",
         )
         pnl_hist_roll = load_pnl_history(
@@ -1185,15 +1290,33 @@ with tab_attribution:
                 bs_df[["cusip", "country", "currency"]].drop_duplicates("cusip"),
                 on="cusip", how="left",
             )
+            if not clf_df.empty:
+                rollup = rollup.merge(
+                    clf_df[["cusip", "country_of_risk", "instrument_type", "market", "sector"]]
+                    .drop_duplicates("cusip"),
+                    on="cusip", how="left",
+                )
             if group_by == "Issuer (6-digit CUSIP)":
                 rollup["group_key"] = rollup["cusip"].str[:6]
                 label = "Issuer"
             elif group_by == "Country":
                 rollup["group_key"] = rollup["country"].fillna("Unknown")
                 label = "Country"
+            elif group_by == "Country of Risk":
+                rollup["group_key"] = rollup.get("country_of_risk", pd.Series(dtype=str)).fillna("Unknown")
+                label = "Country of Risk"
             elif group_by == "Currency":
                 rollup["group_key"] = rollup["currency"].fillna("Unknown")
                 label = "Currency"
+            elif group_by == "Sovereign / Corp":
+                rollup["group_key"] = rollup.get("instrument_type", pd.Series(dtype=str)).fillna("Unknown")
+                label = "Sovereign / Corp"
+            elif group_by == "Local / Global":
+                rollup["group_key"] = rollup.get("market", pd.Series(dtype=str)).fillna("Unknown")
+                label = "Local / Global"
+            elif group_by == "Sector":
+                rollup["group_key"] = rollup.get("sector", pd.Series(dtype=str)).fillna("Unknown")
+                label = "Sector"
             else:
                 rollup["group_key"] = rollup["portfolio"]
                 label = "Portfolio"
