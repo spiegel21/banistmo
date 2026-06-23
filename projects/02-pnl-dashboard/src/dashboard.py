@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import config
 import data_io
 from position_manager import load_all_trades, compute_positions, get_positions_as_of
-from accruals import load_bonds_static, total_portfolio_accruals
+from accruals import load_bonds_static, total_portfolio_accruals, upcoming_coupons
 from trading_gains import total_realized_pnl, realized_pnl
 from mtm import mark_to_market
 from bloomberg import (
@@ -1069,7 +1069,8 @@ with tab_attribution:
     st.subheader("MTM Attribution & Transparency")
     attr_view = st.selectbox(
         "View",
-        ["Bond Detail", "Bond Movements", "Rollup", "Accrual Detail", "Price History Table"],
+        ["Bond Detail", "Bond Movements", "Rollup", "Accrual Detail",
+         "Coupon Calendar", "Price History Table"],
         key="attr_view_sel",
     )
 
@@ -1413,6 +1414,51 @@ with tab_attribution:
                 "Accrued bps/day = daily carry rate in basis points per 100 par.  "
                 "Accrued cash/day = daily carry in currency units at current position.  "
                 "Accrued Total = cumulative accrued interest since last coupon."
+            )
+
+    # ── Coupon Calendar ──────────────────────────────────────────────────────
+    elif attr_view == "Coupon Calendar":
+        st.caption(
+            "Forecast of coupon cash flows for currently-held positions. "
+            "Short positions show negative (paid-away) coupons."
+        )
+        _cc1, _cc2 = st.columns(2)
+        with _cc1:
+            cal_start = st.date_input("From", value=as_of, key="cal_start")
+        with _cc2:
+            cal_end = st.date_input("To", value=as_of + timedelta(days=365), key="cal_end")
+
+        cal = upcoming_coupons(positions, bonds_static, cal_start, cal_end)
+        if cal.empty:
+            st.info("No coupons scheduled in this window for held positions.")
+        else:
+            cal = _enrich(cal, bs_df, ["name", "country", "currency"])
+            cal_view = cal.rename(columns={
+                "coupon_date": "Coupon Date", "cusip": "CUSIP", "name": "Name",
+                "country": "Country", "currency": "CCY", "net_nominal": "Nominal",
+                "coupon_rate": "Coupon Rate", "coupon_amount": "Coupon Amount",
+            })
+            _filtered_dataframe(
+                cal_view, "coupon_cal", width="stretch", hide_index=True, height=420,
+                column_config={
+                    "Nominal":       st.column_config.NumberColumn(format="%,.0f"),
+                    "Coupon Rate":   st.column_config.NumberColumn(format="%.4f"),
+                    "Coupon Amount": st.column_config.NumberColumn(format="%,.2f"),
+                },
+            )
+            cc_m1, cc_m2 = st.columns(2)
+            cc_m1.metric("Total coupons (window)", _fmt(cal["coupon_amount"].sum()))
+            cc_m2.metric("Coupon events", len(cal))
+            # Monthly bar chart of coupon cash
+            _cal_m = cal.copy()
+            _cal_m["month"] = pd.to_datetime(_cal_m["coupon_date"]).dt.to_period("M").astype(str)
+            _by_month = _cal_m.groupby("month")["coupon_amount"].sum()
+            st.caption("Coupon cash by month")
+            st.bar_chart(_by_month, width="stretch")
+            st.download_button(
+                "Download coupon calendar CSV",
+                cal.to_csv(index=False).encode(),
+                file_name=f"coupon_calendar_{cal_start}_{cal_end}.csv", mime="text/csv",
             )
 
     # ── Price History Table ──────────────────────────────────────────────────

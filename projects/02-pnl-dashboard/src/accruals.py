@@ -157,6 +157,55 @@ def last_coupon_date(bond: BondStatic, as_of: date) -> date:
     return _prev_period_start(bond)
 
 
+def next_coupon_date(bond: BondStatic, as_of: date) -> date | None:
+    """Earliest coupon date strictly after as_of, or None if the bond has matured
+    or is non-coupon-bearing."""
+    if bond.coupon_frequency == 0:
+        return None
+    future = [d for d in _coupon_dates(bond) if d > as_of]
+    return min(future) if future else None
+
+
+def coupon_amount_per_period(nominal: float, bond: BondStatic) -> float:
+    """Cash coupon paid each period for a given nominal (annual coupon / frequency)."""
+    if bond.coupon_frequency == 0:
+        return 0.0
+    return nominal * bond.coupon_rate / bond.coupon_frequency
+
+
+def upcoming_coupons(
+    positions: dict[str, Position],
+    bonds_static: dict[str, BondStatic],
+    start: date,
+    end: date,
+) -> pd.DataFrame:
+    """Forecast coupon cash flows for held positions between start and end (inclusive).
+
+    One row per (coupon_date, cusip): the position-scaled coupon amount. Short
+    positions produce negative (paid-away) coupons. Sorted by date.
+    """
+    cols = ["coupon_date", "cusip", "net_nominal", "coupon_rate", "coupon_amount"]
+    rows = []
+    for cusip, pos in positions.items():
+        if pos.net_nominal == 0:
+            continue
+        bond = bonds_static.get(cusip)
+        if bond is None or bond.coupon_frequency == 0:
+            continue
+        per = coupon_amount_per_period(pos.net_nominal, bond)
+        for d in _coupon_dates(bond):
+            if start <= d <= end:
+                rows.append({
+                    "coupon_date": d.isoformat(),
+                    "cusip": cusip,
+                    "net_nominal": pos.net_nominal,
+                    "coupon_rate": bond.coupon_rate,
+                    "coupon_amount": round(per, 2),
+                })
+    df = pd.DataFrame(rows, columns=cols)
+    return df.sort_values(["coupon_date", "cusip"]).reset_index(drop=True) if not df.empty else df
+
+
 def _days_30_360(start: date, end: date) -> int:
     """30/360 (bond basis) day count between two dates."""
     d1 = min(start.day, 30)

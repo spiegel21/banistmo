@@ -29,7 +29,10 @@ import pandas as pd
 import config
 from config import ALL_PORTFOLIOS, get_logger
 from position_manager import load_all_trades, compute_positions
-from accruals import load_bonds_static, accrued_interest, last_coupon_date, days_accrued
+from accruals import (
+    load_bonds_static, accrued_interest, last_coupon_date, days_accrued,
+    next_coupon_date, coupon_amount_per_period,
+)
 from trading_gains import realized_pnl
 from mtm import mark_to_market
 from bloomberg import load_price_history
@@ -261,8 +264,8 @@ def position_timeseries(
 
 
 _ACCRUAL_COLUMNS = [
-    "cusip", "day_count_convention", "last_coupon_date", "days_accrued",
-    "accrued_per_100", "accrued_total", "note",
+    "cusip", "day_count_convention", "last_coupon_date", "next_coupon_date",
+    "days_accrued", "accrued_per_100", "accrued_total", "coupon_amount", "note",
 ]
 
 
@@ -279,17 +282,21 @@ def accrual_breakdown(positions, bonds_static, as_of: date) -> pd.DataFrame:
         if bond is None:
             rows.append({
                 "cusip": cusip, "day_count_convention": "", "last_coupon_date": None,
-                "days_accrued": None, "accrued_per_100": None, "accrued_total": None,
+                "next_coupon_date": None, "days_accrued": None, "accrued_per_100": None,
+                "accrued_total": None, "coupon_amount": None,
                 "note": "missing bond static",
             })
             continue
+        ncd = next_coupon_date(bond, as_of)
         rows.append({
             "cusip": cusip,
             "day_count_convention": bond.day_count_convention,
             "last_coupon_date": last_coupon_date(bond, as_of).isoformat(),
+            "next_coupon_date": ncd.isoformat() if ncd else None,
             "days_accrued": days_accrued(bond, as_of),
             "accrued_per_100": round(accrued_interest(100, bond, as_of), 6),
             "accrued_total": round(accrued_interest(pos.net_nominal, bond, as_of), 2),
+            "coupon_amount": round(coupon_amount_per_period(pos.net_nominal, bond), 2),
             "note": "",
         })
     return pd.DataFrame(rows, columns=_ACCRUAL_COLUMNS)
