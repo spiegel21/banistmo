@@ -101,9 +101,16 @@ Email parser (external) → data/trades.csv
 ```
 
 - `src/config.py` is the single source of all file paths; override the data directory with `PNL_DATA_DIR` env var.
-- `src/models.py` defines the three dataclasses (`Trade`, `Position`, `BondStatic`) that flow through the whole system.
+- `src/models.py` defines the three dataclasses (`Trade`, `Position`, `BondStatic`) that flow through the whole system, plus `normalise_day_count` / `normalise_instrument_type` canonicalisers.
 - `src/data_io.py` owns all CSV read/write and backup logic; nothing else touches disk directly except `history.py` for price caching.
 - `bloomberg.find_price_gaps(all_trades)` walks the signed-trade stream per CUSIP to compute hold intervals (position-by-date), then diffs against `price_history.csv` to return only the missing business-day ranges — the exact input for `prepare_history_template()`. Called on every dashboard render so gap detection is always current.
+
+Transparency & risk modules (all pure, unit-tested, framework-agnostic):
+- `src/classification.py` — derives the enterprise classification dimensions (sovereign/corp, country of risk, local/global) with precedence: explicit `BondStatic` field → Bloomberg-extracted value → heuristic → `"Unknown"`. Never invents data.
+- `src/reconciliation.py` — `run_all_checks()` returns a tidy findings DataFrame powering the **Debug / Needs-Attention** tab: broken/incomplete trades, unknown bonds, missing classification, and missing/weird/stale prices, each with severity + suggested fix.
+- `src/movements.py` — `position_movements()` rebuilds each bond's per-trade running position, WAVG cost, cash, and realized gain; its realized column reconciles exactly with `trading_gains`.
+- `src/exposure.py` — nominal/MTM aggregation across classification dimensions, top-N concentration, and a remaining-tenor maturity ladder (no pricing model).
+- `src/accruals.py` also provides `next_coupon_date` / `upcoming_coupons` for the Coupon Calendar cash-flow forecast.
 
 ### Data model
 
@@ -132,6 +139,15 @@ Position fields computed by `position_manager.py`:
 | `net_nominal` | Sum of all signed nominals for this CUSIP |
 | `wavg_price` | Weighted-average clean price (cost basis) |
 | `book_value` | Sum of `net` across all trades |
+
+`BondStatic` (in `bonds_static.csv`) carries indenture terms (`coupon_rate`,
+`coupon_frequency`, `day_count_convention`, `maturity_date`, `first_coupon_date`)
+plus enterprise classification fields, all optional and `""` == unknown:
+`instrument_type` (canonical Sovereign/Corporate/Agency/Supranational/Municipal/
+Other), `issuer`, `country_of_risk`, `sector`, `seniority`, `market`
+(Local/Global), and `rating_sp` / `rating_moody` / `rating_fitch`. Bloomberg
+import fills these where the terminal returns them; `classification.py` derives
+sovereign/corp and local/global when they are blank.
 
 ### Key invariants
 
