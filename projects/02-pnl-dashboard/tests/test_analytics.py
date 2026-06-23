@@ -92,6 +92,30 @@ def test_portfolio_risk_handles_missing_price():
     assert summary["n_priced"] == 0
 
 
+def test_risk_by_group():
+    positions = {
+        "A": Position("A", 1_000_000, 100, -1e6, date(2025, 1, 1)),
+        "B": Position("B", 2_000_000, 100, -2e6, date(2025, 1, 1)),
+    }
+    bonds = {"A": _bond(cusip="A"),
+             "B": _bond(cusip="B", maturity_date=date(2028, 6, 15))}
+    prices = {"A": 99.0, "B": 97.0}
+    risk_df, _ = an.portfolio_risk(positions, bonds, prices, as_of=date(2026, 3, 10))
+    grouped = an.risk_by_group(risk_df, {"A": "CO", "B": "US"})
+    assert set(grouped["group"]) == {"CO", "US"}
+    assert grouped["n_bonds"].sum() == 2
+    # group DV01 sums to portfolio DV01
+    assert grouped["dv01_dollar"].sum() == pytest.approx(risk_df["dv01_dollar"].sum(), abs=1.0)
+
+
+def test_risk_by_group_unmapped_is_unknown():
+    positions = {"A": Position("A", 1_000_000, 100, -1e6, date(2025, 1, 1))}
+    bonds = {"A": _bond(cusip="A")}
+    risk_df, _ = an.portfolio_risk(positions, bonds, {"A": 99.0}, as_of=date(2026, 3, 10))
+    grouped = an.risk_by_group(risk_df, {})  # no mapping
+    assert list(grouped["group"]) == ["Unknown"]
+
+
 def test_var_historical():
     # symmetric-ish series with a couple of bad days
     s = pd.Series([100, -50, 20, -200, 10, -30, 40, -500, 5, -10])

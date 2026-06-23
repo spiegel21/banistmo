@@ -218,6 +218,42 @@ def _summarise(df: pd.DataFrame) -> dict:
     }
 
 
+# ── risk by classification dimension ──────────────────────────────────────────
+
+_GROUP_COLS = ["group", "mtm_value", "dv01_dollar", "mod_duration", "n_bonds"]
+
+
+def risk_by_group(risk_df: pd.DataFrame, group_map: dict[str, str]) -> pd.DataFrame:
+    """Aggregate the per-bond risk table by a classification dimension.
+
+    ``group_map`` maps cusip → group label (e.g. country of risk). DV01 sums in
+    cash terms; modified duration is market-value weighted within each group.
+    Bonds with no solved risk are excluded; unmapped CUSIPs fall into "Unknown".
+    Sorted by absolute DV01 descending (largest rate risk first).
+    """
+    if risk_df is None or risk_df.empty:
+        return pd.DataFrame(columns=_GROUP_COLS)
+    df = risk_df[risk_df["mod_duration"].notna() & risk_df["mtm_value"].notna()].copy()
+    if df.empty:
+        return pd.DataFrame(columns=_GROUP_COLS)
+    df["group"] = df["cusip"].map(group_map).fillna("Unknown")
+
+    rows = []
+    for g, grp in df.groupby("group"):
+        w = grp["mtm_value"].abs()
+        wsum = w.sum()
+        md = float((grp["mod_duration"] * w).sum() / wsum) if wsum else float("nan")
+        rows.append({
+            "group": g,
+            "mtm_value": round(float(grp["mtm_value"].sum()), 2),
+            "dv01_dollar": round(float(grp["dv01_dollar"].sum()), 2),
+            "mod_duration": round(md, 4),
+            "n_bonds": int(grp["cusip"].nunique()),
+        })
+    out = pd.DataFrame(rows, columns=_GROUP_COLS)
+    return out.sort_values("dv01_dollar", key=lambda s: s.abs(), ascending=False).reset_index(drop=True)
+
+
 # ── historical VaR / Expected Shortfall ───────────────────────────────────────
 
 def var_historical(daily_pnl: pd.Series, confidence: float = 0.99) -> dict:

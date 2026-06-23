@@ -827,6 +827,46 @@ with tab_risk:
             file_name=f"risk_analytics_{as_of}.csv", mime="text/csv",
         )
 
+    # ── Risk by classification dimension ──────────────────────────────────────
+    if not risk_df.empty:
+        st.markdown("---")
+        st.subheader("Rate risk by dimension")
+        st.caption("DV01 and market-value-weighted modified duration grouped by classification.")
+        _rbg_dims = {
+            "Country of Risk": "country_of_risk", "Sector": "sector",
+            "Sovereign / Corp": "instrument_type", "Local / Global": "market",
+            "Currency": "currency",
+        }
+        _rbg_label = st.selectbox("Group risk by", list(_rbg_dims.keys()), key="risk_dim")
+        _rbg_col = _rbg_dims[_rbg_label]
+        if _rbg_col == "currency":
+            _gmap = {b.cusip: (b.currency or "Unknown") for b in bonds_static.values()}
+        elif not clf_df.empty:
+            _gmap = dict(zip(clf_df["cusip"], clf_df[_rbg_col]))
+        else:
+            _gmap = {}
+        _rbg = analytics.risk_by_group(risk_df, _gmap)
+        if _rbg.empty:
+            st.info("No solved risk to group yet.")
+        else:
+            _rc1, _rc2 = st.columns([3, 2])
+            with _rc1:
+                _rbg_view = _rbg.rename(columns={
+                    "group": _rbg_label, "mtm_value": "MTM Value",
+                    "dv01_dollar": "DV01 ($)", "mod_duration": "Mod Dur", "n_bonds": "# Bonds",
+                })
+                st.dataframe(
+                    _arrow_safe(_rbg_view), hide_index=True, width="stretch",
+                    column_config={
+                        "MTM Value": st.column_config.NumberColumn(format="%,.0f"),
+                        "DV01 ($)":  st.column_config.NumberColumn(format="%,.2f"),
+                        "Mod Dur":   st.column_config.NumberColumn(format="%.2f"),
+                    },
+                )
+            with _rc2:
+                st.caption("DV01 ($) by " + _rbg_label.lower())
+                st.bar_chart(_rbg.set_index("group")[["dv01_dollar"]], width="stretch")
+
     # ── Historical VaR / Expected Shortfall ───────────────────────────────────
     st.markdown("---")
     st.subheader("Historical VaR / Expected Shortfall")
