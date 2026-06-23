@@ -133,16 +133,11 @@ def _arrow_safe(df: pd.DataFrame) -> pd.DataFrame:
     Replacing blank/whitespace-only strings with None lets Arrow infer a numeric
     column. Genuine text columns are unaffected (blanks just render empty).
     """
-    if df.empty:
-        return df
     obj_cols = df.select_dtypes(include="object").columns
-    if len(obj_cols) == 0:
+    if df.empty or obj_cols.empty:
         return df
     df = df.copy()
-    for col in obj_cols:
-        df[col] = df[col].map(
-            lambda v: None if isinstance(v, str) and v.strip() == "" else v
-        )
+    df[obj_cols] = df[obj_cols].replace(r"^\s*$", None, regex=True)
     return df
 
 
