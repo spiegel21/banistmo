@@ -120,6 +120,17 @@ def _validate_bonds_detailed(df: pd.DataFrame) -> tuple[list[str], list]:
             except (ValueError, TypeError):
                 coupon_freq = 0
 
+            # coupon_rate: blank / None / "#N/A" → 0.0 (zero-coupon)
+            raw_rate = row.get("coupon_rate")
+            try:
+                coupon_rate = float(raw_rate)
+            except (ValueError, TypeError):
+                coupon_rate = 0.0
+            if pd.isna(coupon_rate):
+                coupon_rate = 0.0
+            if coupon_rate == 0.0 and coupon_freq != 0:
+                coupon_freq = 0
+
             maturity = _one(row["maturity_date"]).date()
 
             # first_coupon_date: "#N/A" from Bloomberg → use maturity_date
@@ -130,14 +141,20 @@ def _validate_bonds_detailed(df: pd.DataFrame) -> tuple[list[str], list]:
             else:
                 first_coupon = fcd_parsed.date()
 
+            # day_count_convention: blank / None → default to 30/360
+            raw_dcc = row.get("day_count_convention")
+            dcc = normalise_day_count(str(raw_dcc).strip()) if pd.notna(raw_dcc) and str(raw_dcc).strip() else ""
+            if not dcc:
+                dcc = "30/360"
+
             BondStatic(
                 cusip=str(row["cusip"]),
                 name=str(row.get("name", "")),
                 currency=str(row.get("currency", "")),
                 country=str(row.get("country", "")) if pd.notna(row.get("country", "")) else "",
-                coupon_rate=float(row["coupon_rate"]),
+                coupon_rate=coupon_rate,
                 coupon_frequency=coupon_freq,
-                day_count_convention=normalise_day_count(str(row["day_count_convention"])),
+                day_count_convention=dcc,
                 maturity_date=maturity,
                 first_coupon_date=first_coupon,
                 bbg_ticker="" if pd.isna(row.get("bbg_ticker")) else str(row.get("bbg_ticker", "")),

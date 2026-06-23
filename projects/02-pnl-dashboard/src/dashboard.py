@@ -123,6 +123,29 @@ def _color_pnl_df(df: pd.DataFrame, pnl_cols: list[str]) -> pd.DataFrame:
     return df
 
 
+def _arrow_safe(df: pd.DataFrame) -> pd.DataFrame:
+    """Make a DataFrame safe for Streamlit's Arrow serialization.
+
+    Streamlit converts each column to a pyarrow array; an ``object`` column that
+    holds numbers plus a stray empty string (e.g. a totals row, or a numeric
+    field that came in blank) raises
+    ``Could not convert '' with type str: tried to convert to double``.
+    Replacing blank/whitespace-only strings with None lets Arrow infer a numeric
+    column. Genuine text columns are unaffected (blanks just render empty).
+    """
+    if df.empty:
+        return df
+    obj_cols = df.select_dtypes(include="object").columns
+    if len(obj_cols) == 0:
+        return df
+    df = df.copy()
+    for col in obj_cols:
+        df[col] = df[col].map(
+            lambda v: None if isinstance(v, str) and v.strip() == "" else v
+        )
+    return df
+
+
 def _filtered_dataframe(df: pd.DataFrame, key: str, **kwargs) -> None:
     """Render a text filter then display the (filtered) dataframe."""
     filt = st.text_input(
@@ -135,7 +158,7 @@ def _filtered_dataframe(df: pd.DataFrame, key: str, **kwargs) -> None:
             lambda col: col.astype(str).str.contains(filt.strip(), case=False, na=False)
         ).any(axis=1)
         df = df[mask]
-    st.dataframe(df, **kwargs)
+    st.dataframe(_arrow_safe(df), **kwargs)
 
 
 def _make_adjustment_trades(
@@ -949,7 +972,10 @@ with tab_attribution:
                 # Totals row
                 _pnl_total_cols = ["Nominal", "Price P&L", "Accrued P&L", "Unrealized P&L",
                                    "Realized", "Total P&L"]
-                _totals = {c: "" for c in snap_view.columns}
+                # Use None (not "") for non-total columns: an empty string in an
+                # otherwise-numeric column breaks Streamlit's Arrow serialization
+                # ("Could not convert '' with type str: tried to convert to double").
+                _totals = {c: None for c in snap_view.columns}
                 _totals["Name"] = "TOTAL"
                 for _col in _pnl_total_cols:
                     if _col in snap_view.columns:

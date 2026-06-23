@@ -32,21 +32,34 @@ def load_bonds_static(path: Path | None = None) -> dict[str, BondStatic]:
     result: dict[str, BondStatic] = {}
     for _, row in df.iterrows():
         cusip = str(row.get("cusip", ""))
-        # Only block on fields that have NO fallback path.
-        # coupon_frequency (#N/A → 0) and first_coupon_date (#N/A → maturity_date)
-        # are handled further down and must NOT cause a skip here.
-        missing = [f for f in ("coupon_rate", "maturity_date")
-                   if pd.isna(row.get(f))]
-        if missing:
-            log.warning("bonds_static row for %s missing required field(s) %s — row skipped",
-                        cusip, missing)
+        # Only block on fields that have NO fallback path. maturity_date is the
+        # one field we cannot synthesise. Everything else (coupon_rate #N/A → 0,
+        # coupon_frequency #N/A → 0, first_coupon_date #N/A → maturity_date) is
+        # handled below and must NOT cause a skip here.
+        if pd.isna(row.get("maturity_date")):
+            log.warning("bonds_static row for %s missing required field 'maturity_date' — row skipped",
+                        cusip)
             continue
         try:
             # coupon_frequency: Bloomberg can return "#N/A" for non-coupon bonds → 0
-            raw_freq = row["coupon_frequency"]
+            raw_freq = row.get("coupon_frequency")
             try:
                 coupon_freq = int(round(float(raw_freq)))
             except (ValueError, TypeError):
+                coupon_freq = 0
+
+            # coupon_rate: blank / None / "#N/A" → 0.0 (treat as zero-coupon) so the
+            # bond still loads rather than vanishing from the dashboard.
+            raw_rate = row.get("coupon_rate")
+            try:
+                coupon_rate = float(raw_rate)
+            except (ValueError, TypeError):
+                coupon_rate = 0.0
+            if pd.isna(coupon_rate):
+                coupon_rate = 0.0
+            if coupon_rate == 0.0 and coupon_freq != 0:
+                # Missing/zero coupon with a stated frequency: keep it consistent
+                # as a non-coupon-bearing bond so no phantom accrual is computed.
                 coupon_freq = 0
 
             maturity = row["maturity_date"].date()
@@ -59,14 +72,22 @@ def load_bonds_static(path: Path | None = None) -> dict[str, BondStatic]:
             else:
                 first_coupon = pd.to_datetime(raw_fcd).date() if not hasattr(raw_fcd, "date") else raw_fcd.date()
 
+            # day_count_convention: blank / None → default to 30/360 so the bond
+            # still loads (irrelevant for zero-coupon bonds; a sane default otherwise).
+            raw_dcc = row.get("day_count_convention")
+            dcc = normalise_day_count(str(raw_dcc).strip()) if pd.notna(raw_dcc) and str(raw_dcc).strip() else ""
+            if not dcc:
+                log.warning("bonds_static row for %s missing day_count_convention — defaulting to 30/360", cusip)
+                dcc = "30/360"
+
             bond = BondStatic(
                 cusip=cusip,
                 name="" if pd.isna(row.get("name")) else str(row.get("name", "")).strip(),
                 currency="" if pd.isna(row.get("currency")) else str(row.get("currency", "")).strip(),
                 country="" if pd.isna(row.get("country")) else str(row.get("country", "")).strip(),
-                coupon_rate=float(row["coupon_rate"]),
+                coupon_rate=coupon_rate,
                 coupon_frequency=coupon_freq,
-                day_count_convention=normalise_day_count(str(row["day_count_convention"])),
+                day_count_convention=dcc,
                 maturity_date=maturity,
                 first_coupon_date=first_coupon,
                 bbg_ticker="" if pd.isna(row.get("bbg_ticker")) else str(row.get("bbg_ticker", "")),
