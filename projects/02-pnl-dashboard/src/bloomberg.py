@@ -893,12 +893,23 @@ def read_static_from_template(wb_path: Path = TEMPLATE_PATH) -> pd.DataFrame:
                 continue
             val = ws.cell(row=row, column=col_idx).value
 
-            if field in ("name", "currency", "country"):
+            if field in ("name", "currency", "country", "issuer", "country_of_risk",
+                         "sector", "seniority", "market", "rating_sp",
+                         "rating_moody", "rating_fitch"):
                 # Plain string fields: None (openpyxl renders #N/A errors as None)
                 # or non-string values → empty string.
                 val = "" if val is None else str(val).strip()
                 if val.upper() in ("#N/A", "N/A"):
                     val = ""
+                if field == "country_of_risk":
+                    val = val.upper()
+            elif field == "instrument_type":
+                # Bloomberg MARKET_SECTOR_DES (Govt/Corp/…) → canonical bucket.
+                from models import normalise_instrument_type
+                val = "" if val is None else str(val).strip()
+                if val.upper() in ("#N/A", "N/A"):
+                    val = ""
+                val = normalise_instrument_type(val)
             elif field == "day_count_convention":
                 val = _normalize_day_count(val)
             elif field == "maturity_date":

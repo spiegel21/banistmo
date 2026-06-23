@@ -49,6 +49,60 @@ def normalise_day_count(raw: str) -> str:
     return _DAY_COUNT_ALIASES.get(raw.strip().lower(), raw.strip())
 
 
+# Canonical instrument-type buckets used everywhere in the app for the
+# sovereign-vs-corp dimension. Empty string == unknown (never guessed silently).
+VALID_INSTRUMENT_TYPES = {
+    "Sovereign", "Corporate", "Agency", "Supranational", "Municipal", "Other", ""
+}
+
+# Any Bloomberg MARKET_SECTOR_DES / user-typed variant → canonical bucket.
+# Keys are lower-cased; the lookup strips and lower-cases first.
+_INSTRUMENT_TYPE_ALIASES: dict[str, str] = {
+    # sovereign / government
+    "sovereign": "Sovereign",
+    "govt": "Sovereign",
+    "government": "Sovereign",
+    "treasury": "Sovereign",
+    "sov": "Sovereign",
+    # corporate
+    "corp": "Corporate",
+    "corporate": "Corporate",
+    "credit": "Corporate",
+    # agency / quasi-sovereign
+    "agency": "Agency",
+    "agncy": "Agency",
+    "quasi": "Agency",
+    "quasi-sovereign": "Agency",
+    # supranational
+    "supra": "Supranational",
+    "supranational": "Supranational",
+    # municipal
+    "muni": "Municipal",
+    "municipal": "Municipal",
+    "mun": "Municipal",
+    # other / pass-through
+    "other": "Other",
+}
+
+
+def normalise_instrument_type(raw: str) -> str:
+    """Map any Bloomberg/user instrument-type string to a canonical bucket.
+
+    Unknown non-empty strings fall through to ``"Other"``; blank stays blank
+    (== unknown) so the debug view can flag it as needing manual input.
+    """
+    if not raw or not str(raw).strip():
+        return ""
+    key = str(raw).strip().lower()
+    if key in _INSTRUMENT_TYPE_ALIASES:
+        return _INSTRUMENT_TYPE_ALIASES[key]
+    # Already-canonical (case-insensitive) values pass through unchanged.
+    for canon in VALID_INSTRUMENT_TYPES:
+        if canon and key == canon.lower():
+            return canon
+    return "Other"
+
+
 @dataclass
 class Trade:
     cusip: str
@@ -86,7 +140,16 @@ class BondStatic:
     maturity_date: date
     first_coupon_date: date
     bbg_ticker: str = ""        # full Bloomberg ticker e.g. "912828Z78 Govt"; blank → cusip + " Corp"
-    instrument_type: str = ""   # "Corp", "Sovereign", "Agency", or "" (unknown)
+    instrument_type: str = ""   # canonical: Sovereign/Corporate/Agency/Supranational/Municipal/Other/"" (unknown)
+    # ── enterprise classification dimensions (all optional; "" == unknown) ──────
+    issuer: str = ""            # issuer / obligor name (Bloomberg ISSUER)
+    country_of_risk: str = ""   # country of risk (Bloomberg CNTRY_OF_RISK); may differ from `country`
+    sector: str = ""            # industry sector (Bloomberg INDUSTRY_SECTOR / BICS level 1)
+    seniority: str = ""         # payment rank / seniority (Bloomberg PAYMENT_RANK)
+    market: str = ""            # "Local" or "Global" (domestic-ccy vs hard-ccy / eurobond); "" == derive
+    rating_sp: str = ""         # S&P rating (Bloomberg RTG_SP)
+    rating_moody: str = ""      # Moody's rating (Bloomberg RTG_MOODY)
+    rating_fitch: str = ""      # Fitch rating (Bloomberg RTG_FITCH)
 
     def __post_init__(self):
         if self.coupon_frequency not in VALID_FREQUENCIES:

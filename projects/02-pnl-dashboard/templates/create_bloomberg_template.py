@@ -67,6 +67,9 @@ def create_static_sheet(wb: Workbook) -> None:
     ws = wb.create_sheet("Static")
 
     # (header, BDP field expression keyed off A{row}; None = ticker col written by caller)
+    # `market` (Local/Global) has no single clean BDP mnemonic — it is derived
+    # from currency-vs-country-of-risk in classification.py, so it is left as a
+    # manual/derived column (None expr).
     columns = [
         ("bbg_ticker",          None),
         ("name",                'BDP(A{r},"SECURITY_DES")'),
@@ -77,6 +80,16 @@ def create_static_sheet(wb: Workbook) -> None:
         ("day_count_convention",'BDP(A{r},"DAY_CNT_DES")'),
         ("maturity_date",       'BDP(A{r},"MATURITY")'),
         ("first_coupon_date",   'BDP(A{r},"FIRST_CPN_DT")'),
+        # ── enterprise classification fields ──────────────────────────────────
+        ("instrument_type",     'BDP(A{r},"MARKET_SECTOR_DES")'),
+        ("issuer",              'BDP(A{r},"ISSUER")'),
+        ("country_of_risk",     'BDP(A{r},"CNTRY_OF_RISK")'),
+        ("sector",              'BDP(A{r},"INDUSTRY_SECTOR")'),
+        ("seniority",           'BDP(A{r},"PAYMENT_RANK")'),
+        ("market",              None),
+        ("rating_sp",           'BDP(A{r},"RTG_SP")'),
+        ("rating_moody",        'BDP(A{r},"RTG_MOODY")'),
+        ("rating_fitch",        'BDP(A{r},"RTG_FITCH")'),
     ]
 
     for col, (header, _) in enumerate(columns, 1):

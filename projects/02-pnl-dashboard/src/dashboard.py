@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import config
 import data_io
 from position_manager import load_all_trades, compute_positions, get_positions_as_of
-from accruals import load_bonds_static
+from accruals import load_bonds_static, upcoming_coupons
 from trading_gains import total_realized_pnl, realized_pnl
 from mtm import mark_to_market
 from bloomberg import (
@@ -44,6 +44,11 @@ from history import (
     compute_daily_pnl, load_pnl_history,
     daily_snapshot, position_timeseries, accrual_breakdown,
 )
+import reconciliation
+from movements import position_movements
+import exposure
+import analytics
+from classification import classify
 
 TEMPLATE_PATH = config.BLOOMBERG_TEMPLATE_PATH
 PRICES_DIR = config.PRICES_DIR
@@ -100,6 +105,21 @@ def _bonds_static_df(bonds_static: dict) -> pd.DataFrame:
         "instrument_type": b.instrument_type,
     } for b in bonds_static.values()]
     return pd.DataFrame(rows)
+
+
+def _classification_df(bonds_static: dict) -> pd.DataFrame:
+    """cusip → derived classification dimensions (sovereign/corp, country of risk,
+    local/global, sector, seniority, issuer). Centralises classify() so filters,
+    rollups, and exposure all agree."""
+    cols = ["cusip", "instrument_type", "country_of_risk", "market",
+            "sector", "seniority", "issuer"]
+    if not bonds_static:
+        return pd.DataFrame(columns=cols)
+    rows = []
+    for cusip, b in bonds_static.items():
+        d = classify(b)
+        rows.append({"cusip": cusip, **{k: d.get(k) for k in cols[1:]}})
+    return pd.DataFrame(rows, columns=cols)
 
 
 def _enrich(df: pd.DataFrame, bs_df: pd.DataFrame, cols: list[str]) -> pd.DataFrame:
@@ -212,6 +232,7 @@ st.title("Fixed-Income P&L Dashboard")
 all_trades = load_all_trades()
 bonds_static = load_bonds_static()
 bs_df = _bonds_static_df(bonds_static)
+clf_df = _classification_df(bonds_static)
 
 # ── sidebar: filters ──────────────────────────────────────────────────────────
 
@@ -222,9 +243,17 @@ def _options(col):
     return sorted(all_trades[col].dropna().unique().tolist()) if not all_trades.empty else []
 
 
+def _clf_options(col):
+    return sorted(clf_df[col].dropna().unique().tolist()) if not clf_df.empty else []
+
+
 sel_portfolios = st.sidebar.multiselect("Portfolio", _options("portfolio"), default=[])
 all_countries = sorted({b.country for b in bonds_static.values() if b.country})
 sel_countries = st.sidebar.multiselect("Country", all_countries, default=[])
+sel_country_risk = st.sidebar.multiselect("Country of Risk", _clf_options("country_of_risk"), default=[])
+sel_inst_type = st.sidebar.multiselect("Sovereign / Corp", _clf_options("instrument_type"), default=[])
+sel_market = st.sidebar.multiselect("Local / Global", _clf_options("market"), default=[])
+sel_sector = st.sidebar.multiselect("Sector", _clf_options("sector"), default=[])
 sel_traders = st.sidebar.multiselect("Trader", _options("trader"), default=[])
 sel_cusips = st.sidebar.multiselect("CUSIP / Bond", _options("cusip"), default=[])
 
@@ -244,6 +273,16 @@ if not trades_df.empty:
     if sel_countries and bonds_static:
         in_countries = {c for c, b in bonds_static.items() if b.country in sel_countries}
         trades_df = trades_df[trades_df["cusip"].isin(in_countries)]
+    # classification-based filters (country of risk, sovereign/corp, local/global, sector)
+    for _sel, _col in [
+        (sel_country_risk, "country_of_risk"),
+        (sel_inst_type, "instrument_type"),
+        (sel_market, "market"),
+        (sel_sector, "sector"),
+    ]:
+        if _sel and not clf_df.empty:
+            _keep = set(clf_df[clf_df[_col].isin(_sel)]["cusip"])
+            trades_df = trades_df[trades_df["cusip"].isin(_keep)]
 
 positions = compute_positions(trades_df, as_of=as_of)
 
@@ -468,9 +507,11 @@ else:
 
 # ── tabs ────────────────────────────────────────────────────────────────────
 
-(tab_overview, tab_mtm, tab_positions_date, tab_trades_date,
+(tab_overview, tab_debug, tab_risk, tab_mtm, tab_positions_date, tab_trades_date,
  tab_attribution, tab_ledger, tab_ts, tab_edit) = st.tabs([
     "Overview",
+    "🔧 Debug",
+    "📐 Risk",
     "Positions & MTM",
     "Positions by Date",
     "Trades by Date",
@@ -588,7 +629,264 @@ with tab_overview:
             st.caption("Daily P&L by country")
             st.bar_chart(_day_pivot, width="stretch")
 
-# ── Tab 2: Positions & MTM ────────────────────────────────────────────────────
+    # ── Exposure & Concentration ──────────────────────────────────────────────
+    st.markdown("---")
+    st.subheader("Exposure & Concentration")
+    _exp_base = exposure.exposure_base(positions, bonds_static, prices, as_of)
+    if _exp_base.empty:
+        st.info("No exposure to show — load prices and bond static data first.")
+    else:
+        _dim_label = st.selectbox(
+            "Break down by", list(exposure.DIMENSIONS.keys()), key="exp_dim",
+        )
+        _dim_col = exposure.DIMENSIONS[_dim_label]
+        if _dim_col == "portfolio":
+            # portfolio isn't on the bond; attach the (single) scope if filtered
+            _exp_base = _exp_base.assign(portfolio=hist_portfolio or "all")
+        _agg = exposure.aggregate_exposure(_exp_base, _dim_col)
+        if _agg.empty:
+            st.info("No data for this dimension.")
+        else:
+            _ec1, _ec2 = st.columns([3, 2])
+            with _ec1:
+                _agg_view = _agg.rename(columns={
+                    _dim_col: _dim_label, "net_nominal": "Nominal", "mtm_value": "MTM Value",
+                    "pct_nominal": "% Nominal", "pct_mtm": "% MTM", "n_bonds": "# Bonds",
+                })
+                st.dataframe(
+                    _arrow_safe(_agg_view), hide_index=True, width="stretch",
+                    column_config={
+                        "Nominal":   st.column_config.NumberColumn(format="%,.0f"),
+                        "MTM Value": st.column_config.NumberColumn(format="%,.0f"),
+                        "% Nominal": st.column_config.NumberColumn(format="%.1f"),
+                        "% MTM":     st.column_config.NumberColumn(format="%.1f"),
+                    },
+                )
+            with _ec2:
+                _chart = _agg.set_index(_dim_col)[["mtm_value"]]
+                st.caption("MTM value by " + _dim_label.lower())
+                st.bar_chart(_chart, width="stretch")
+                _conc = exposure.concentration(_exp_base, _dim_col, top_n=5)
+                st.metric(
+                    f"Top-5 {_dim_label} concentration (% MTM)",
+                    f"{_conc['top_n_pct']:.1f}%",
+                    help=f"Largest: {_conc['largest']} ({_conc['largest_pct']:.1f}%)",
+                )
+
+        # ── Maturity ladder ───────────────────────────────────────────────────
+        st.markdown("**Maturity ladder**")
+        _ladder = exposure.maturity_ladder(_exp_base, as_of)
+        if _ladder.empty:
+            st.info("No maturity data.")
+        else:
+            _lc1, _lc2 = st.columns([3, 2])
+            with _lc1:
+                _ladder_view = _ladder.rename(columns={
+                    "bucket": "Tenor", "net_nominal": "Nominal",
+                    "mtm_value": "MTM Value", "n_bonds": "# Bonds",
+                })
+                st.dataframe(
+                    _arrow_safe(_ladder_view), hide_index=True, width="stretch",
+                    column_config={
+                        "Nominal":   st.column_config.NumberColumn(format="%,.0f"),
+                        "MTM Value": st.column_config.NumberColumn(format="%,.0f"),
+                    },
+                )
+            with _lc2:
+                st.caption("MTM value by remaining tenor")
+                st.bar_chart(_ladder.set_index("bucket")[["mtm_value"]], width="stretch")
+
+
+# ── Tab 2: Debug / Needs Attention ────────────────────────────────────────────
+
+with tab_debug:
+    st.subheader("Debug — data quality & items needing attention")
+    st.caption(
+        "Every trade, bond, and price that is broken or incomplete, in one place. "
+        "**Errors** block correct P&L, **warnings** look suspicious (e.g. weird prices), "
+        "**needs-input** marks missing manual fields (name, country of risk, rating…)."
+    )
+
+    _held_cusips = {c for c, p in positions.items() if p.net_nominal != 0}
+    with st.spinner("Running data-quality checks..."):
+        findings_df, summary = reconciliation.run_all_checks(
+            raw_trades=reconciliation._read_raw_trades(),
+            bonds_static=bonds_static,
+            held_cusips=_held_cusips,
+            current_prices=prices,
+            price_history=_ph,
+        )
+
+    d1, d2, d3, d4 = st.columns(4)
+    d1.metric("🔴 Errors", summary.get("error", 0))
+    d2.metric("🟠 Warnings", summary.get("warning", 0))
+    d3.metric("🟡 Needs input", summary.get("needs_input", 0))
+    d4.metric("Total findings", summary.get("total", 0))
+
+    if findings_df.empty:
+        st.success("✅ No data-quality issues found. Trades, bonds, and prices all look clean.")
+    else:
+        fc1, fc2 = st.columns(2)
+        with fc1:
+            sev_filter = st.multiselect(
+                "Severity", ["error", "warning", "needs_input"],
+                default=["error", "warning", "needs_input"], key="dbg_sev",
+            )
+        with fc2:
+            cats = sorted(findings_df["category"].unique().tolist())
+            cat_filter = st.multiselect("Category", cats, default=cats, key="dbg_cat")
+
+        view = findings_df.copy()
+        if sev_filter:
+            view = view[view["severity"].isin(sev_filter)]
+        if cat_filter:
+            view = view[view["category"].isin(cat_filter)]
+
+        _sev_icon = {"error": "🔴 error", "warning": "🟠 warning", "needs_input": "🟡 needs input"}
+        view["severity"] = view["severity"].map(_sev_icon).fillna(view["severity"])
+        view = view.rename(columns={
+            "severity": "Severity", "category": "Category", "source": "Source",
+            "key": "CUSIP / Row", "field": "Field", "issue": "Issue",
+            "suggested_fix": "Suggested fix",
+        })
+        _filtered_dataframe(view, "debug", width="stretch", hide_index=True, height=460)
+        st.download_button(
+            "Download findings CSV",
+            findings_df.to_csv(index=False).encode(),
+            file_name=f"debug_findings_{date.today()}.csv",
+            mime="text/csv",
+        )
+        st.caption(
+            "Fix items in **Data Editor** (trades / bond static / manual prices) or via the "
+            "**Bloomberg** import in the sidebar, then revisit this tab — it re-runs every load."
+        )
+
+
+# ── Tab 3: Risk Analytics ─────────────────────────────────────────────────────
+
+with tab_risk:
+    st.subheader("Risk Analytics — yield, duration, DV01, convexity")
+    st.caption(
+        "In-house bond math: YTM solved from the clean price, then modified/Macaulay "
+        "duration, DV01 (per 1bp), and convexity by finite differences. Portfolio "
+        "duration/convexity/YTM are market-value weighted; DV01 sums in cash terms. "
+        f"Marked as of {as_of}. Spreads (G/Z) need a yield curve and are out of scope."
+    )
+
+    risk_df, risk_summary = analytics.portfolio_risk(positions, bonds_static, prices, as_of)
+
+    rs1, rs2, rs3, rs4, rs5 = st.columns(5)
+    rs1.metric("MTM Value", _fmt(risk_summary["mtm_value"]))
+    rs2.metric("Portfolio DV01", _fmt(risk_summary["dv01_dollar"]),
+               help="Cash P&L for a 1bp parallel yield rise (sum across bonds).")
+    _md = risk_summary["mod_duration"]
+    rs3.metric("Mod. Duration", "—" if _md != _md else f"{_md:.2f}",
+               help="MV-weighted modified duration (years).")
+    _yt = risk_summary["ytm"]
+    rs4.metric("Portfolio YTM", "—" if _yt != _yt else f"{_yt*100:.2f}%",
+               help="MV-weighted yield to maturity.")
+    _cx = risk_summary["convexity"]
+    rs5.metric("Convexity", "—" if _cx != _cx else f"{_cx:.1f}",
+               help="MV-weighted convexity.")
+
+    if risk_df.empty:
+        st.info("No positions to analyse. Load positions and prices first.")
+    else:
+        rv = _enrich(risk_df, bs_df, ["country", "currency"])
+        rv = rv.rename(columns={
+            "cusip": "CUSIP", "name": "Name", "country": "Country", "currency": "CCY",
+            "net_nominal": "Nominal", "clean_px": "Clean Px", "dirty_px": "Dirty Px",
+            "mtm_value": "MTM Value", "ytm": "YTM", "mac_duration": "Mac Dur",
+            "mod_duration": "Mod Dur", "dv01_dollar": "DV01 ($)", "convexity": "Convexity",
+            "note": "Note",
+        })
+        if "YTM" in rv.columns:
+            rv["YTM"] = pd.to_numeric(rv["YTM"], errors="coerce") * 100  # show as %
+        _filtered_dataframe(
+            rv, "risk_tbl", width="stretch", hide_index=True, height=420,
+            column_config={
+                "Nominal":   st.column_config.NumberColumn(format="%,.0f"),
+                "Clean Px":  st.column_config.NumberColumn(format="%.4f"),
+                "Dirty Px":  st.column_config.NumberColumn(format="%.4f"),
+                "MTM Value": st.column_config.NumberColumn(format="%,.0f"),
+                "YTM":       st.column_config.NumberColumn(format="%.3f"),
+                "Mac Dur":   st.column_config.NumberColumn(format="%.3f"),
+                "Mod Dur":   st.column_config.NumberColumn(format="%.3f"),
+                "DV01 ($)":  st.column_config.NumberColumn(format="%,.2f"),
+                "Convexity": st.column_config.NumberColumn(format="%.2f"),
+            },
+        )
+        st.caption("YTM shown in %. DV01 ($) = cash P&L per 1bp; positive = loses on a yield rise.")
+        st.download_button(
+            "Download risk table CSV", risk_df.to_csv(index=False).encode(),
+            file_name=f"risk_analytics_{as_of}.csv", mime="text/csv",
+        )
+
+    # ── Risk by classification dimension ──────────────────────────────────────
+    if not risk_df.empty:
+        st.markdown("---")
+        st.subheader("Rate risk by dimension")
+        st.caption("DV01 and market-value-weighted modified duration grouped by classification.")
+        _rbg_dims = {
+            "Country of Risk": "country_of_risk", "Sector": "sector",
+            "Sovereign / Corp": "instrument_type", "Local / Global": "market",
+            "Currency": "currency",
+        }
+        _rbg_label = st.selectbox("Group risk by", list(_rbg_dims.keys()), key="risk_dim")
+        _rbg_col = _rbg_dims[_rbg_label]
+        if _rbg_col == "currency":
+            _gmap = {b.cusip: (b.currency or "Unknown") for b in bonds_static.values()}
+        elif not clf_df.empty:
+            _gmap = dict(zip(clf_df["cusip"], clf_df[_rbg_col]))
+        else:
+            _gmap = {}
+        _rbg = analytics.risk_by_group(risk_df, _gmap)
+        if _rbg.empty:
+            st.info("No solved risk to group yet.")
+        else:
+            _rc1, _rc2 = st.columns([3, 2])
+            with _rc1:
+                _rbg_view = _rbg.rename(columns={
+                    "group": _rbg_label, "mtm_value": "MTM Value",
+                    "dv01_dollar": "DV01 ($)", "mod_duration": "Mod Dur", "n_bonds": "# Bonds",
+                })
+                st.dataframe(
+                    _arrow_safe(_rbg_view), hide_index=True, width="stretch",
+                    column_config={
+                        "MTM Value": st.column_config.NumberColumn(format="%,.0f"),
+                        "DV01 ($)":  st.column_config.NumberColumn(format="%,.2f"),
+                        "Mod Dur":   st.column_config.NumberColumn(format="%.2f"),
+                    },
+                )
+            with _rc2:
+                st.caption("DV01 ($) by " + _rbg_label.lower())
+                st.bar_chart(_rbg.set_index("group")[["dv01_dollar"]], width="stretch")
+
+    # ── Historical VaR / Expected Shortfall ───────────────────────────────────
+    st.markdown("---")
+    st.subheader("Historical VaR / Expected Shortfall")
+    st.caption(
+        "Empirical tail of realised daily total P&L over the selected history window "
+        "(sidebar **History from** → **As of**). Needs computed P&L history."
+    )
+    _conf = st.select_slider("Confidence", options=[0.90, 0.95, 0.99], value=0.99, key="var_conf")
+    _var_hist = load_pnl_history(portfolio=hist_portfolio, start_date=hist_start, end_date=as_of)
+    _var_hist = _apply_cusip_filter(_var_hist, _filtered_cusips)
+    if _var_hist.empty:
+        st.info("No P&L history yet — click **Recompute P&L History** in the sidebar.")
+    else:
+        _daily_pnl = _var_hist.groupby("date")["total_pnl"].sum()
+        _var = analytics.var_historical(_daily_pnl, confidence=_conf)
+        v1, v2, v3, v4 = st.columns(4)
+        v1.metric(f"VaR ({int(_conf*100)}%)", _fmt(-_var["var"]),
+                  help="Loss not expected to be exceeded on a normal day at this confidence.")
+        v2.metric("Expected Shortfall", _fmt(-_var["es"]),
+                  help="Average loss on days worse than VaR.")
+        v3.metric("Worst day", _fmt(_var["worst_day"]))
+        v4.metric("Observations", _var["n_obs"])
+
+
+# ── Tab 4: Positions & MTM ────────────────────────────────────────────────────
 
 with tab_mtm:
     st.subheader("Mark-to-Market — clean & dirty price")
@@ -892,7 +1190,8 @@ with tab_attribution:
     st.subheader("MTM Attribution & Transparency")
     attr_view = st.selectbox(
         "View",
-        ["Bond Detail", "Rollup", "Accrual Detail", "Price History Table"],
+        ["Bond Detail", "Bond Movements", "Rollup", "Accrual Detail",
+         "Coupon Calendar", "Price History Table"],
         key="attr_view_sel",
     )
 
@@ -1039,11 +1338,67 @@ with tab_attribution:
                 _filtered_dataframe(styled_pivot, "attr_pivot", width="stretch", hide_index=True, height=420)
                 st.caption("Daily total P&L per bond. Each column = bond name (CUSIP).")
 
+    # ── Bond Movements ───────────────────────────────────────────────────────
+    elif attr_view == "Bond Movements":
+        st.caption(
+            "Full audit trail per bond: every trade and its effect on the running "
+            "position, WAVG cost basis, cash, and realized gains. The realized column "
+            "reconciles exactly with the rest of the app."
+        )
+        _mv_cusips = sorted(trades_df["cusip"].dropna().unique().tolist()) if not trades_df.empty else []
+        if not _mv_cusips:
+            st.info("No trades match the current filters.")
+        else:
+            _label_map = {
+                c: (f"{bonds_static[c].name} ({c})" if c in bonds_static and bonds_static[c].name else c)
+                for c in _mv_cusips
+            }
+            _sel_mv = st.selectbox(
+                "Bond", _mv_cusips, format_func=lambda c: _label_map.get(c, c),
+                key="mv_cusip_sel",
+            )
+            mv = position_movements(trades_df, cusip=_sel_mv, portfolio=hist_portfolio)
+            if mv.empty:
+                st.info("No movements for this bond with the current filters.")
+            else:
+                mv_view = mv.rename(columns={
+                    "trade_date": "Trade Date", "portfolio": "Portfolio", "cusip": "CUSIP",
+                    "trader": "Trader", "side": "Side", "nominal": "Nominal", "price": "Price",
+                    "cash_flow": "Cash Flow", "running_nominal": "Running Nominal",
+                    "running_wavg_cost": "Running WAVG Cost", "realized_gain": "Realized Gain",
+                    "cumulative_cash": "Cumulative Cash", "cumulative_realized": "Cumulative Realized",
+                })
+                if "Trade Date" in mv_view.columns:
+                    mv_view["Trade Date"] = pd.to_datetime(mv_view["Trade Date"]).dt.date
+                _filtered_dataframe(
+                    mv_view, "bond_mv", width="stretch", hide_index=True, height=420,
+                    column_config={
+                        "Nominal":             st.column_config.NumberColumn(format="%,.0f"),
+                        "Price":               st.column_config.NumberColumn(format="%.4f"),
+                        "Cash Flow":           st.column_config.NumberColumn(format="%,.2f"),
+                        "Running Nominal":     st.column_config.NumberColumn(format="%,.0f"),
+                        "Running WAVG Cost":   st.column_config.NumberColumn(format="%.4f"),
+                        "Realized Gain":       st.column_config.NumberColumn(format="%,.2f"),
+                        "Cumulative Cash":     st.column_config.NumberColumn(format="%,.2f"),
+                        "Cumulative Realized": st.column_config.NumberColumn(format="%,.2f"),
+                    },
+                )
+                m1, m2, m3 = st.columns(3)
+                m1.metric("Current Nominal", _fmt(mv["running_nominal"].iloc[-1]))
+                m2.metric("Realized (lifetime)", _fmt(mv["cumulative_realized"].iloc[-1]))
+                m3.metric("Net Cash", _fmt(mv["cumulative_cash"].iloc[-1]))
+                st.download_button(
+                    "Download movements CSV",
+                    mv.to_csv(index=False).encode(),
+                    file_name=f"movements_{_sel_mv}.csv", mime="text/csv",
+                )
+
     # ── Rollup ───────────────────────────────────────────────────────────────
     elif attr_view == "Rollup":
         group_by = st.selectbox(
             "Group by",
-            ["Issuer (6-digit CUSIP)", "Country", "Currency", "Portfolio"],
+            ["Issuer (6-digit CUSIP)", "Country", "Country of Risk", "Currency",
+             "Sovereign / Corp", "Local / Global", "Sector", "Portfolio"],
             key="rollup_group",
         )
         pnl_hist_roll = load_pnl_history(
@@ -1057,15 +1412,33 @@ with tab_attribution:
                 bs_df[["cusip", "country", "currency"]].drop_duplicates("cusip"),
                 on="cusip", how="left",
             )
+            if not clf_df.empty:
+                rollup = rollup.merge(
+                    clf_df[["cusip", "country_of_risk", "instrument_type", "market", "sector"]]
+                    .drop_duplicates("cusip"),
+                    on="cusip", how="left",
+                )
             if group_by == "Issuer (6-digit CUSIP)":
                 rollup["group_key"] = rollup["cusip"].str[:6]
                 label = "Issuer"
             elif group_by == "Country":
                 rollup["group_key"] = rollup["country"].fillna("Unknown")
                 label = "Country"
+            elif group_by == "Country of Risk":
+                rollup["group_key"] = rollup.get("country_of_risk", pd.Series(dtype=str)).fillna("Unknown")
+                label = "Country of Risk"
             elif group_by == "Currency":
                 rollup["group_key"] = rollup["currency"].fillna("Unknown")
                 label = "Currency"
+            elif group_by == "Sovereign / Corp":
+                rollup["group_key"] = rollup.get("instrument_type", pd.Series(dtype=str)).fillna("Unknown")
+                label = "Sovereign / Corp"
+            elif group_by == "Local / Global":
+                rollup["group_key"] = rollup.get("market", pd.Series(dtype=str)).fillna("Unknown")
+                label = "Local / Global"
+            elif group_by == "Sector":
+                rollup["group_key"] = rollup.get("sector", pd.Series(dtype=str)).fillna("Unknown")
+                label = "Sector"
             else:
                 rollup["group_key"] = rollup["portfolio"]
                 label = "Portfolio"
@@ -1162,6 +1535,51 @@ with tab_attribution:
                 "Accrued bps/day = daily carry rate in basis points per 100 par.  "
                 "Accrued cash/day = daily carry in currency units at current position.  "
                 "Accrued Total = cumulative accrued interest since last coupon."
+            )
+
+    # ── Coupon Calendar ──────────────────────────────────────────────────────
+    elif attr_view == "Coupon Calendar":
+        st.caption(
+            "Forecast of coupon cash flows for currently-held positions. "
+            "Short positions show negative (paid-away) coupons."
+        )
+        _cc1, _cc2 = st.columns(2)
+        with _cc1:
+            cal_start = st.date_input("From", value=as_of, key="cal_start")
+        with _cc2:
+            cal_end = st.date_input("To", value=as_of + timedelta(days=365), key="cal_end")
+
+        cal = upcoming_coupons(positions, bonds_static, cal_start, cal_end)
+        if cal.empty:
+            st.info("No coupons scheduled in this window for held positions.")
+        else:
+            cal = _enrich(cal, bs_df, ["name", "country", "currency"])
+            cal_view = cal.rename(columns={
+                "coupon_date": "Coupon Date", "cusip": "CUSIP", "name": "Name",
+                "country": "Country", "currency": "CCY", "net_nominal": "Nominal",
+                "coupon_rate": "Coupon Rate", "coupon_amount": "Coupon Amount",
+            })
+            _filtered_dataframe(
+                cal_view, "coupon_cal", width="stretch", hide_index=True, height=420,
+                column_config={
+                    "Nominal":       st.column_config.NumberColumn(format="%,.0f"),
+                    "Coupon Rate":   st.column_config.NumberColumn(format="%.4f"),
+                    "Coupon Amount": st.column_config.NumberColumn(format="%,.2f"),
+                },
+            )
+            cc_m1, cc_m2 = st.columns(2)
+            cc_m1.metric("Total coupons (window)", _fmt(cal["coupon_amount"].sum()))
+            cc_m2.metric("Coupon events", len(cal))
+            # Monthly bar chart of coupon cash
+            _cal_m = cal.copy()
+            _cal_m["month"] = pd.to_datetime(_cal_m["coupon_date"]).dt.to_period("M").astype(str)
+            _by_month = _cal_m.groupby("month")["coupon_amount"].sum()
+            st.caption("Coupon cash by month")
+            st.bar_chart(_by_month, width="stretch")
+            st.download_button(
+                "Download coupon calendar CSV",
+                cal.to_csv(index=False).encode(),
+                file_name=f"coupon_calendar_{cal_start}_{cal_end}.csv", mime="text/csv",
             )
 
     # ── Price History Table ──────────────────────────────────────────────────
