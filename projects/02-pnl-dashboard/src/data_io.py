@@ -100,6 +100,63 @@ def _one(value):
     return _parse_dates(s).iloc[0]
 
 
+def parse_bond_static_row(row) -> BondStatic:
+    """Parse one bonds_static row into a validated ``BondStatic``.
+
+    Single source of the field fallbacks shared by the dashboard loader
+    (``accruals.load_bonds_static``) and the editor validator
+    (``_validate_bonds_detailed``), so both treat blank / None / ``#N/A``
+    values identically:
+
+      - coupon_frequency blank/#N/A     → 0 (non-coupon-bearing)
+      - coupon_rate blank/None/#N/A     → 0.0; a 0 rate forces frequency 0
+      - first_coupon_date blank/#N/A    → maturity_date
+      - day_count_convention blank/None → "30/360"
+
+    ``maturity_date`` is the one field with no fallback; a missing value raises
+    ``ValueError`` so the caller can skip / report the row.
+    """
+    if pd.isna(row.get("maturity_date")):
+        raise ValueError("missing required field 'maturity_date'")
+    maturity = _one(row.get("maturity_date")).date()
+
+    # coupon_frequency: "#N/A" / blank → 0
+    try:
+        coupon_freq = int(round(float(row.get("coupon_frequency"))))
+    except (ValueError, TypeError):
+        coupon_freq = 0
+
+    # coupon_rate: blank / None / "#N/A" → 0.0 (zero-coupon); a 0 rate forces
+    # frequency 0 so no phantom accrual is computed for a non-coupon bond.
+    coupon_rate = pd.to_numeric(row.get("coupon_rate"), errors="coerce")
+    coupon_rate = 0.0 if pd.isna(coupon_rate) else float(coupon_rate)
+    if coupon_rate == 0.0:
+        coupon_freq = 0
+
+    # first_coupon_date: blank / "#N/A" → maturity_date
+    fcd = _one(row.get("first_coupon_date"))
+    first_coupon = maturity if pd.isna(fcd) else fcd.date()
+
+    # day_count_convention: blank / None → 30/360 (irrelevant for zero-coupon)
+    dcc_raw = row.get("day_count_convention")
+    dcc_str = str(dcc_raw).strip() if pd.notna(dcc_raw) else ""
+    dcc = normalise_day_count(dcc_str) if dcc_str else "30/360"
+
+    return BondStatic(
+        cusip=str(row.get("cusip", "")),
+        name="" if pd.isna(row.get("name")) else str(row.get("name", "")).strip(),
+        currency="" if pd.isna(row.get("currency")) else str(row.get("currency", "")).strip(),
+        country="" if pd.isna(row.get("country")) else str(row.get("country", "")).strip(),
+        coupon_rate=coupon_rate,
+        coupon_frequency=coupon_freq,
+        day_count_convention=dcc,
+        maturity_date=maturity,
+        first_coupon_date=first_coupon,
+        bbg_ticker="" if pd.isna(row.get("bbg_ticker")) else str(row.get("bbg_ticker", "")),
+        instrument_type="" if pd.isna(row.get("instrument_type")) else str(row.get("instrument_type", "")),
+    )
+
+
 def _validate_bonds(df: pd.DataFrame) -> list[str]:
     """Return human-readable problems; empty list means every row is valid."""
     problems, _ = _validate_bonds_detailed(df)
@@ -113,53 +170,7 @@ def _validate_bonds_detailed(df: pd.DataFrame) -> tuple[list[str], list]:
     for i, row in df.iterrows():
         n = i + 1
         try:
-            # coupon_frequency: "#N/A" from Bloomberg → 0 (non-coupon bearing)
-            raw_freq = row.get("coupon_frequency")
-            try:
-                coupon_freq = int(round(float(raw_freq)))
-            except (ValueError, TypeError):
-                coupon_freq = 0
-
-            # coupon_rate: blank / None / "#N/A" → 0.0 (zero-coupon)
-            raw_rate = row.get("coupon_rate")
-            try:
-                coupon_rate = float(raw_rate)
-            except (ValueError, TypeError):
-                coupon_rate = 0.0
-            if pd.isna(coupon_rate):
-                coupon_rate = 0.0
-            if coupon_rate == 0.0 and coupon_freq != 0:
-                coupon_freq = 0
-
-            maturity = _one(row["maturity_date"]).date()
-
-            # first_coupon_date: "#N/A" from Bloomberg → use maturity_date
-            raw_fcd = row.get("first_coupon_date")
-            fcd_parsed = _one(raw_fcd)
-            if pd.isna(fcd_parsed) or (isinstance(raw_fcd, str) and raw_fcd.strip() in ("#N/A", "N/A", "")):
-                first_coupon = maturity
-            else:
-                first_coupon = fcd_parsed.date()
-
-            # day_count_convention: blank / None → default to 30/360
-            raw_dcc = row.get("day_count_convention")
-            dcc = normalise_day_count(str(raw_dcc).strip()) if pd.notna(raw_dcc) and str(raw_dcc).strip() else ""
-            if not dcc:
-                dcc = "30/360"
-
-            BondStatic(
-                cusip=str(row["cusip"]),
-                name=str(row.get("name", "")),
-                currency=str(row.get("currency", "")),
-                country=str(row.get("country", "")) if pd.notna(row.get("country", "")) else "",
-                coupon_rate=coupon_rate,
-                coupon_frequency=coupon_freq,
-                day_count_convention=dcc,
-                maturity_date=maturity,
-                first_coupon_date=first_coupon,
-                bbg_ticker="" if pd.isna(row.get("bbg_ticker")) else str(row.get("bbg_ticker", "")),
-                instrument_type="" if pd.isna(row.get("instrument_type")) else str(row.get("instrument_type", "")),
-            )
+            parse_bond_static_row(row)
         except (ValueError, KeyError, TypeError, AttributeError) as exc:
             problems.append(f"Row {n} ({row.get('cusip')}): {exc}")
             bad_index.append(i)

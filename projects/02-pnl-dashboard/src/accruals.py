@@ -12,7 +12,8 @@ import pandas as pd
 
 import config
 from config import get_logger
-from models import Position, BondStatic, normalise_day_count
+from models import Position, BondStatic
+from data_io import parse_bond_static_row
 
 log = get_logger(__name__)
 
@@ -23,76 +24,16 @@ def load_bonds_static(path: Path | None = None) -> dict[str, BondStatic]:
     if not path.exists() or path.stat().st_size == 0:
         return {}
 
-    df = pd.read_csv(path, dtype={"cusip": str}, parse_dates=["maturity_date"])
-    # first_coupon_date is intentionally NOT in parse_dates: Bloomberg returns "#N/A"
-    # for zero-coupon / bullet bonds, and we need the raw string so the fallback
-    # logic below can detect it.  If the column exists, parse it ourselves.
-    if "first_coupon_date" in df.columns:
-        df["first_coupon_date"] = pd.to_datetime(df["first_coupon_date"], errors="coerce")
+    df = pd.read_csv(path, dtype={"cusip": str})
     result: dict[str, BondStatic] = {}
     for _, row in df.iterrows():
         cusip = str(row.get("cusip", ""))
-        # Only block on fields that have NO fallback path. maturity_date is the
-        # one field we cannot synthesise. Everything else (coupon_rate #N/A → 0,
-        # coupon_frequency #N/A → 0, first_coupon_date #N/A → maturity_date) is
-        # handled below and must NOT cause a skip here.
-        if pd.isna(row.get("maturity_date")):
-            log.warning("bonds_static row for %s missing required field 'maturity_date' — row skipped",
-                        cusip)
-            continue
+        # All field fallbacks (blank/None/#N/A → sane defaults) live in
+        # parse_bond_static_row so the loader and the editor validator stay in
+        # sync. maturity_date is the only field with no fallback; a missing value
+        # raises and the row is skipped.
         try:
-            # coupon_frequency: Bloomberg can return "#N/A" for non-coupon bonds → 0
-            raw_freq = row.get("coupon_frequency")
-            try:
-                coupon_freq = int(round(float(raw_freq)))
-            except (ValueError, TypeError):
-                coupon_freq = 0
-
-            # coupon_rate: blank / None / "#N/A" → 0.0 (treat as zero-coupon) so the
-            # bond still loads rather than vanishing from the dashboard.
-            raw_rate = row.get("coupon_rate")
-            try:
-                coupon_rate = float(raw_rate)
-            except (ValueError, TypeError):
-                coupon_rate = 0.0
-            if pd.isna(coupon_rate):
-                coupon_rate = 0.0
-            if coupon_rate == 0.0 and coupon_freq != 0:
-                # Missing/zero coupon with a stated frequency: keep it consistent
-                # as a non-coupon-bearing bond so no phantom accrual is computed.
-                coupon_freq = 0
-
-            maturity = row["maturity_date"].date()
-
-            # first_coupon_date: Bloomberg returns "#N/A" for zero-coupon / bullet
-            # → fall back to maturity_date so accrual calculations are consistent.
-            raw_fcd = row.get("first_coupon_date")
-            if pd.isna(raw_fcd) if not isinstance(raw_fcd, str) else str(raw_fcd).strip() in ("#N/A", "N/A", ""):
-                first_coupon = maturity
-            else:
-                first_coupon = pd.to_datetime(raw_fcd).date() if not hasattr(raw_fcd, "date") else raw_fcd.date()
-
-            # day_count_convention: blank / None → default to 30/360 so the bond
-            # still loads (irrelevant for zero-coupon bonds; a sane default otherwise).
-            raw_dcc = row.get("day_count_convention")
-            dcc = normalise_day_count(str(raw_dcc).strip()) if pd.notna(raw_dcc) and str(raw_dcc).strip() else ""
-            if not dcc:
-                log.warning("bonds_static row for %s missing day_count_convention — defaulting to 30/360", cusip)
-                dcc = "30/360"
-
-            bond = BondStatic(
-                cusip=cusip,
-                name="" if pd.isna(row.get("name")) else str(row.get("name", "")).strip(),
-                currency="" if pd.isna(row.get("currency")) else str(row.get("currency", "")).strip(),
-                country="" if pd.isna(row.get("country")) else str(row.get("country", "")).strip(),
-                coupon_rate=coupon_rate,
-                coupon_frequency=coupon_freq,
-                day_count_convention=dcc,
-                maturity_date=maturity,
-                first_coupon_date=first_coupon,
-                bbg_ticker="" if pd.isna(row.get("bbg_ticker")) else str(row.get("bbg_ticker", "")),
-                instrument_type="" if pd.isna(row.get("instrument_type")) else str(row.get("instrument_type", "")),
-            )
+            bond = parse_bond_static_row(row)
         except (ValueError, KeyError, TypeError) as exc:
             log.warning("Skipping invalid bonds_static row for %s: %s", cusip, exc)
             continue
