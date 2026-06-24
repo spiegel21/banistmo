@@ -90,7 +90,9 @@ HTML = f"""<!doctype html>
    padding:16px 20px; margin:8px 0 0; }}
  .lead b {{ color:var(--accent); }}
  figure {{ background:var(--card); border:1px solid var(--line); border-radius:12px;
-   padding:16px; margin:16px 0; }}
+   padding:16px; margin:16px 0; break-inside:avoid; page-break-inside:avoid; }}
+ h2 {{ break-after:avoid; }}
+ @page {{ size:A4; margin:14mm 12mm; background:var(--bg); }}
  figure h3 {{ margin:0 0 10px; font-size:16px; }}
  figure img {{ width:100%; border-radius:8px; display:block; background:#fff; }}
  figcaption {{ color:var(--mut); font-size:13px; margin-top:10px; }}
@@ -164,6 +166,21 @@ best tradeable edge.</p>
 {fig("05_signal_equity.png", "Cumulative P&L of the two clean tradeable signals",
      "Both grind upward through the flat regime (Mar–Sep 2025) and accelerate into the trend — "
      "the order-flow signal (green) has standalone value beyond simply riding the appreciation.")}
+
+<h2>5 · Strategy deep-dive</h2>
+{fig("s_comparison.png", "Signals side-by-side — Sharpe, hit rate, average P&L",
+     "The order-flow and momentum signals clear 50% hit comfortably; the opening-gap fade is "
+     "shown for completeness but its headline stats are inflated by the shared-open artifact.")}
+{fig("s_mechanics.png", "Why the order-flow edge exists",
+     "Left: today's volume z-score vs the NEXT session's move — a clean negative slope, so heavy "
+     "days keep pushing the colón stronger tomorrow. Right: bucketed, the gradient is monotonic — "
+     "very-heavy days → next-session appreciation, very-light days → depreciation.")}
+{fig("s1_orderflow_tearsheet.png", "Order-flow continuation — full tearsheet",
+     "Equity, drawdown, monthly P&L, and the daily-P&L distribution. Smooth equity, only one "
+     "losing month (Feb-25), shallow drawdowns, and a right-skewed daily distribution.")}
+{fig("s2_momentum_tearsheet.png", "Overnight momentum — full tearsheet",
+     "Fewer trades (only >1σ session moves qualify) but a higher per-trade edge; the same "
+     "trend/order-flow driver underlies both strategies.")}
 
 <h2>How to trade it</h2>
 <ul class="find">
