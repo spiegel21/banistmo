@@ -27,6 +27,12 @@ MANUAL_PRICES_PATH = PRICES_DIR / "manual_prices.csv"
 MANUAL_HISTORY_PATH = PRICES_DIR / "manual_price_history.csv"
 BLOOMBERG_TEMPLATE_PATH = TEMPLATES_DIR / "bloomberg_prices.xlsx"
 
+# Number of security rows the Bloomberg Live MTM / Static sheets carry. This is
+# the single source of truth: the template generator sizes both sheets to it and
+# the importer scans exactly this many rows, so raising it lifts the cap on how
+# many bonds can be priced/loaded in one pass. Override via PNL_BBG_TEMPLATE_ROWS.
+BLOOMBERG_TEMPLATE_ROWS = int(os.environ.get("PNL_BBG_TEMPLATE_ROWS", "100"))
+
 # Timestamped copies of any file the UI overwrites are kept here.
 BACKUPS_DIR = DATA_DIR / "backups"
 

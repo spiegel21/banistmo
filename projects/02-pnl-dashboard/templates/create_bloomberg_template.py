@@ -8,16 +8,22 @@ Col A in Live MTM and Static holds the FULL Bloomberg ticker written by the
 dashboard (e.g. "912828Z78 Govt").  BDP formulas reference A{row} directly —
 no ticker suffix is appended in the formula itself.
 """
+import sys
 from pathlib import Path
 from openpyxl import Workbook
 from openpyxl.styles import Font, PatternFill, Alignment
 from openpyxl.utils import get_column_letter
 
+# Single source of truth for the row count lives in src/config.py so the
+# generator and the importer can never drift out of sync.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
+import config  # noqa: E402
+
 OUTPUT = Path(__file__).parent / "bloomberg_prices.xlsx"
 
 HEADER_FILL = PatternFill(start_color="1F4E79", end_color="1F4E79", fill_type="solid")
 HEADER_FONT = Font(color="FFFFFF", bold=True)
-N_ROWS = 50               # max number of securities on Live MTM / Static sheets
+N_ROWS = config.BLOOMBERG_TEMPLATE_ROWS   # securities on Live MTM / Static sheets
 
 
 def _header(ws, col, text):
@@ -129,7 +135,7 @@ def create_history_sheet(wb: Workbook) -> None:
     for cell in (ws["A1"], ws["A2"], ws["B2"]):
         cell.font = Font(bold=True)
 
-    for i in range(10):   # placeholder widths for up to 10 bonds
+    for i in range(N_ROWS):   # placeholder widths, one column-pair per bond
         ws.column_dimensions[get_column_letter(2 * i + 1)].width = 22
         ws.column_dimensions[get_column_letter(2 * i + 2)].width = 14
 
