@@ -90,6 +90,28 @@ def test_zero_coupon_accrual_breakdown_no_zerodivision():
     assert row["last_coupon_date"] == b.first_coupon_date.isoformat()
 
 
+def test_accrual_stops_at_maturity():
+    """A matured bond must report zero accrual — without the maturity clamp the
+    day count grows without bound for every day past maturity, inflating accrued
+    interest and dirty-price MTM for a position that was never redeemed."""
+    b = _bond("30/360")   # matures 2030-06-15
+    # On the maturity date itself: redeemed, no carry.
+    assert days_accrued(b, date(2030, 6, 15)) == 0
+    assert accrued_interest(1_000_000, b, date(2030, 6, 15)) == pytest.approx(0.0)
+    # Two years past maturity: still zero, not ~2 years of phantom accrual.
+    assert days_accrued(b, date(2032, 6, 15)) == 0
+    assert accrued_interest(1_000_000, b, date(2032, 6, 15)) == pytest.approx(0.0)
+    # Sanity: the day before maturity it is still accruing normally (> 0).
+    assert accrued_interest(1_000_000, b, date(2030, 6, 14)) > 0
+
+
+def test_is_matured_helper():
+    b = _bond("30/360")   # matures 2030-06-15
+    assert not b.is_matured(date(2030, 6, 14))
+    assert b.is_matured(date(2030, 6, 15))      # on maturity → matured
+    assert b.is_matured(date(2031, 1, 1))
+
+
 def test_invalid_frequency_rejected():
     with pytest.raises(ValueError):
         _bond("Act/360", freq=3)

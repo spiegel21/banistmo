@@ -173,3 +173,13 @@ class BondStatic:
                 f"{self.cusip}: coupon_rate {self.coupon_rate!r} should be a decimal "
                 f"(e.g. 0.05 for 5%), got a value outside [0, 1)"
             )
+
+    def is_matured(self, as_of: date) -> bool:
+        """True once the bond has reached or passed maturity (redeemed at par).
+
+        On and after the maturity date the bond no longer accrues interest and
+        has no remaining cash flows; callers use this to stop carry/MTM and to
+        flag still-open positions that should have been redeemed. A missing
+        maturity_date is treated as "not matured" (unknown, never guessed).
+        """
+        return self.maturity_date is not None and as_of >= self.maturity_date
