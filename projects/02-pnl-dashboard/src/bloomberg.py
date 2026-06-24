@@ -210,13 +210,23 @@ def prepare_template(
     and/or read_static_from_template().
     """
     from openpyxl import load_workbook
-    wb = load_workbook(str(wb_path))
     cusips_str = [str(c) for c in cusips]
+    # The template carries BDP formulas for exactly BLOOMBERG_TEMPLATE_ROWS rows;
+    # tickers written past that would have no formula and be silently unpriced.
+    # Fail loudly rather than drop bonds — regenerate a larger template instead.
+    if len(cusips_str) > config.BLOOMBERG_TEMPLATE_ROWS:
+        raise ValueError(
+            f"{len(cusips_str)} securities exceed the template's "
+            f"{config.BLOOMBERG_TEMPLATE_ROWS} rows. Raise PNL_BBG_TEMPLATE_ROWS "
+            f"(or config.BLOOMBERG_TEMPLATE_ROWS) and regenerate the template with "
+            f"`python templates/create_bloomberg_template.py`."
+        )
+    wb = load_workbook(str(wb_path))
     for sheet_name in (_BDP_SHEET, "Static"):
         if sheet_name not in wb.sheetnames:
             continue
         ws = wb[sheet_name]
-        for row in range(2, 52):
+        for row in range(2, config.BLOOMBERG_TEMPLATE_ROWS + 2):
             ws.cell(row=row, column=1).value = None
         for i, cusip in enumerate(cusips_str):
             ticker = _ticker_for(cusip, bonds_static)
@@ -251,7 +261,7 @@ def read_prices_from_template(wb_path: Path = TEMPLATE_PATH) -> dict[str, float]
     # If Bloomberg is still refreshing, block the import immediately rather than
     # importing partial/garbage data.
     refreshing_rows = [
-        r for r in range(2, 52)
+        r for r in range(2, config.BLOOMBERG_TEMPLATE_ROWS + 2)
         if _is_bloomberg_refreshing(ws.cell(row=r, column=1).value)
         or _is_bloomberg_refreshing(ws.cell(row=r, column=2).value)
     ]
@@ -262,10 +272,10 @@ def read_prices_from_template(wb_path: Path = TEMPLATE_PATH) -> dict[str, float]
             "then Save and Close Excel before importing."
         )
 
-    row_cusips = _row_cusips(_BDP_SHEET, 50)
+    row_cusips = _row_cusips(_BDP_SHEET, config.BLOOMBERG_TEMPLATE_ROWS)
 
     prices = {}
-    for row in range(2, 52):
+    for row in range(2, config.BLOOMBERG_TEMPLATE_ROWS + 2):
         raw = ws.cell(row=row, column=1).value
         price = ws.cell(row=row, column=2).value
         if not raw:
@@ -864,7 +874,7 @@ def read_static_from_template(wb_path: Path = TEMPLATE_PATH) -> pd.DataFrame:
     n_cols = len(headers)
     refreshing_cells = [
         f"row {r} col {c}"
-        for r in range(2, 52)
+        for r in range(2, config.BLOOMBERG_TEMPLATE_ROWS + 2)
         for c in range(1, n_cols + 1)
         if _is_bloomberg_refreshing(ws.cell(row=r, column=c).value)
     ]
@@ -876,10 +886,10 @@ def read_static_from_template(wb_path: Path = TEMPLATE_PATH) -> pd.DataFrame:
             "then Save and Close Excel before importing."
         )
 
-    row_cusips = _row_cusips("Static", 50)
+    row_cusips = _row_cusips("Static", config.BLOOMBERG_TEMPLATE_ROWS)
 
     records = []
-    for row in range(2, 52):
+    for row in range(2, config.BLOOMBERG_TEMPLATE_ROWS + 2):
         raw_a = ws.cell(row=row, column=1).value
         if not raw_a:
             continue
