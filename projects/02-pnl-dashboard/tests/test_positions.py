@@ -13,6 +13,37 @@ def test_side_signs_nominal():
     assert (buys["nominal"] > 0).all()
 
 
+def test_side_signs_net():
+    t = load_trades()
+    # net is signed on load: buys negative (cash out), sells positive (cash in)
+    assert (t[t["side"] == "buy"]["net"] < 0).all()
+    assert (t[t["side"] == "sell"]["net"] > 0).all()
+
+
+def test_net_signed_from_absolute_csv(tmp_path):
+    """A trades.csv storing net as an absolute (positive) value is signed on load."""
+    import pandas as pd
+    from position_manager import load_trades
+
+    p = tmp_path / "trades.csv"
+    pd.DataFrame([
+        dict(Timestamp="2025-01-05T09:00", cusip="037833100", side="buy",
+             nominal=1_000_000, principal=985000, net=986000, accrued=1000,
+             price=98.5, yield_closed=5.1, trade_date="2025-01-03",
+             settle_date="2025-01-07", trader="ALICE", portfolio="HY"),
+        dict(Timestamp="2025-03-05T09:00", cusip="037833100", side="sell",
+             nominal=600_000, principal=600000, net=601000, accrued=1000,
+             price=100.0, yield_closed=4.5, trade_date="2025-03-03",
+             settle_date="2025-03-05", trader="BOB", portfolio="HY"),
+    ]).to_csv(p, index=False)
+
+    t = load_trades(p)
+    buy = t[t["side"] == "buy"].iloc[0]
+    sell = t[t["side"] == "sell"].iloc[0]
+    assert buy["net"] == pytest.approx(-986000)   # absolute in CSV → negative on load
+    assert sell["net"] == pytest.approx(601000)
+
+
 def test_net_position_all():
     pos = compute_positions(load_all_trades())
     # 300k initial + 1M + 0.5M - 0.6M = 1.2M

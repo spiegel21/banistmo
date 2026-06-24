@@ -61,6 +61,16 @@ def test_trade_clean_row_no_findings():
     assert f == []
 
 
+def test_trade_absolute_net_not_flagged():
+    # net is stored UNSIGNED in the CSV (sign applied on load), so a positive
+    # net on a buy is correct and must not be flagged.
+    raw = pd.DataFrame([dict(
+        cusip="037833100", side="buy", nominal=1000, price=100, principal=1000,
+        net=1000, accrued=0, trade_date="2025-01-01", settle_date="2025-01-03")])
+    f = rec.check_trades(raw, {"037833100": _bond()})
+    assert f == []
+
+
 def test_bond_missing_name_and_classification():
     b = _bond(name="", instrument_type="", country_of_risk="", country="",
               sector="", market="", currency="", rating_sp="")
