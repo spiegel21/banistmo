@@ -715,7 +715,6 @@ with tab_debug:
             held_cusips=_held_cusips,
             current_prices=prices,
             price_history=_ph,
-            as_of=as_of,
         )
 
     d1, d2, d3, d4 = st.columns(4)

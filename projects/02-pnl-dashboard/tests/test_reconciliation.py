@@ -101,44 +101,6 @@ def test_price_stale_detection():
     assert any("stale" in x["issue"] for x in f)
 
 
-def test_matured_held_bond_flagged():
-    b = _bond(maturity_date=date(2024, 6, 15))   # already matured vs as_of below
-    f = rec.check_matured_bonds({b.cusip}, {b.cusip: b}, as_of=date(2026, 1, 1))
-    assert len(f) == 1
-    assert f[0]["field"] == "maturity_date"
-    assert f[0]["severity"] == "warning"
-    assert "matured" in f[0]["issue"]
-
-
-def test_matured_on_maturity_date_flagged():
-    # On the maturity date the bond has redeemed → still flag the open position.
-    b = _bond(maturity_date=date(2026, 1, 1))
-    f = rec.check_matured_bonds({b.cusip}, {b.cusip: b}, as_of=date(2026, 1, 1))
-    assert len(f) == 1
-
-
-def test_live_bond_not_flagged():
-    b = _bond(maturity_date=date(2030, 6, 15))
-    f = rec.check_matured_bonds({b.cusip}, {b.cusip: b}, as_of=date(2026, 1, 1))
-    assert f == []
-
-
-def test_matured_but_not_held_not_flagged():
-    # Only held positions matter — a reference-only matured bond is not noise.
-    b = _bond(maturity_date=date(2024, 6, 15))
-    f = rec.check_matured_bonds(set(), {b.cusip: b}, as_of=date(2026, 1, 1))
-    assert f == []
-
-
-def test_run_all_checks_includes_matured(tmp_path):
-    held_b = _bond(maturity_date=date(2024, 6, 15))
-    df, summary = rec.run_all_checks(
-        raw_trades=pd.DataFrame(), bonds_static={held_b.cusip: held_b},
-        held_cusips={held_b.cusip}, current_prices={held_b.cusip: 100.0},
-        price_history=pd.DataFrame(), as_of=date(2026, 1, 1))
-    assert any(x == "maturity_date" for x in df["field"])
-
-
 def test_run_all_checks_summary_shape():
     raw = pd.DataFrame([dict(
         cusip="037833100", side="buy", nominal=1000, price=100, principal=1000,

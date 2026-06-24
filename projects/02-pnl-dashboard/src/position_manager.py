@@ -14,9 +14,12 @@ import pandas as pd
 
 import config
 from config import DEFAULT_PORTFOLIO, get_logger
-from models import Position
+from models import BondStatic, Position
 
 log = get_logger(__name__)
+
+_QTY_EPS = 1e-6  # net nominal smaller than this is treated as flat (fully closed)
+REDEMPTION_TRADER = "redemption"  # marker on synthetic par-redemption trades
 
 _DTYPES = {
     "cusip": str,
@@ -124,19 +127,113 @@ def load_initial_positions(initial_path: Path | None = None) -> pd.DataFrame:
     return result
 
 
+def synthesize_redemptions(
+    trades_df: pd.DataFrame,
+    bonds_static: dict[str, BondStatic] | None = None,
+    as_of: date | None = None,
+) -> pd.DataFrame:
+    """Par-redemption trades for bonds that have matured on/before ``as_of``.
+
+    A bond redeems at par (100) on its maturity date, but that redemption is
+    never sent as a trade confirmation, so a position would otherwise live on
+    forever. We synthesize the redemption as a sell-at-100 of the full net
+    nominal held at maturity (a buy-at-100 to cover a short), dated on the
+    maturity date. Injected into the trade stream it:
+
+      - closes the position (net nominal → 0), so it drops out of MTM/exposure;
+      - realizes the pull-to-par P&L through the normal WAVG machinery; and
+      - books the face value as cash leaving the bond — it is now cash on the
+        balance sheet, not a position.
+
+    One redemption per (portfolio, cusip) holding a non-zero net nominal at
+    maturity. Bonds with no/blank maturity, or maturing after ``as_of``, are
+    left open. Returns an empty frame (same columns as ``trades_df``) when
+    nothing has matured.
+    """
+    empty = pd.DataFrame(columns=trades_df.columns)
+    if trades_df is None or trades_df.empty:
+        return empty
+    if bonds_static is None:
+        from accruals import load_bonds_static
+        bonds_static = load_bonds_static()
+    as_of = as_of or date.today()
+
+    keys = ["portfolio", "cusip"] if "portfolio" in trades_df.columns else ["cusip"]
+    rows = []
+    for key_vals, group in trades_df.groupby(keys):
+        if not isinstance(key_vals, tuple):
+            key_vals = (key_vals,)
+        key_map = dict(zip(keys, key_vals))
+        cusip = str(key_map["cusip"])
+
+        bond = bonds_static.get(cusip)
+        if bond is None or bond.maturity_date is None or not bond.is_matured(as_of):
+            continue
+
+        mat = pd.Timestamp(bond.maturity_date)
+        # Net nominal still held at maturity (only trades dated on/before it).
+        net_nominal = float(group.loc[group["trade_date"] <= mat, "nominal"].sum())
+        if abs(net_nominal) < _QTY_EPS:
+            continue
+
+        face = abs(net_nominal)                       # principal at par = face value
+        is_long = net_nominal > 0
+        rows.append({
+            "Timestamp": "",
+            "cusip": cusip,
+            "side": "sell" if is_long else "buy",     # close the position
+            "nominal": -net_nominal,                  # signed, flattens the book
+            "principal": face,                        # price 100 → 100 * face / 100
+            "net": face if is_long else -face,        # cash in for a long redemption
+            "accrued": 0.0,                           # carry already stopped at maturity
+            "price": 100.0,                           # redeemed at par
+            "yield_closed": float("nan"),
+            "trade_date": mat,
+            "settle_date": mat,
+            "trader": REDEMPTION_TRADER,
+            "portfolio": key_map.get("portfolio", DEFAULT_PORTFOLIO),
+        })
+
+    if not rows:
+        return empty
+    out = pd.DataFrame(rows)
+    # Align to the incoming frame's columns (fill any extras pandas added on concat).
+    for col in trades_df.columns:
+        if col not in out.columns:
+            out[col] = ""
+    return out[list(trades_df.columns)]
+
+
 def load_all_trades(
     trades_path: Path | None = None,
     initial_path: Path | None = None,
+    redeem_matured: bool = True,
+    as_of: date | None = None,
 ) -> pd.DataFrame:
-    """Initial positions + live trades, sorted by trade_date. Single source of truth."""
+    """Initial positions + live trades, sorted by trade_date. Single source of truth.
+
+    When ``redeem_matured`` is True (default), par-redemption trades are appended
+    for every bond that has matured on/before ``as_of`` (today if None), so
+    matured positions close themselves and their proceeds move off the book as
+    cash. Set it False to get the raw booked stream only.
+    """
     trades = load_trades(trades_path)
     initial = load_initial_positions(initial_path)
     if initial.empty:
-        return trades
-    if trades.empty:
-        return initial.sort_values("trade_date").reset_index(drop=True)
-    combined = pd.concat([initial, trades], ignore_index=True)
-    return combined.sort_values("trade_date").reset_index(drop=True)
+        combined = trades
+    elif trades.empty:
+        combined = initial.sort_values("trade_date").reset_index(drop=True)
+    else:
+        combined = pd.concat([initial, trades], ignore_index=True)
+        combined = combined.sort_values("trade_date").reset_index(drop=True)
+
+    if redeem_matured and not combined.empty:
+        redemptions = synthesize_redemptions(combined, as_of=as_of)
+        if not redemptions.empty:
+            combined = pd.concat([combined, redemptions], ignore_index=True)
+            combined = combined.sort_values("trade_date").reset_index(drop=True)
+
+    return combined
 
 
 def compute_positions(

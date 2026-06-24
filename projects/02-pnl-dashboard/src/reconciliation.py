@@ -21,7 +21,6 @@ defaults) so they are pure and unit-testable.
 """
 from __future__ import annotations
 
-from datetime import date
 from pathlib import Path
 
 import pandas as pd
@@ -205,39 +204,6 @@ def check_bonds(bonds_static: dict[str, BondStatic], held_cusips: set[str] | Non
     return findings
 
 
-# ── maturity checks ───────────────────────────────────────────────────────────
-
-def check_matured_bonds(
-    held_cusips: set[str],
-    bonds_static: dict[str, BondStatic],
-    as_of: date | None = None,
-) -> list[dict]:
-    """Flag held positions whose bond has already matured.
-
-    Positions are rebuilt from the trade stream and never close themselves: if
-    the redemption at maturity was never booked as a trade, the position lives
-    on forever. Such a position keeps being marked at a (now stale) price while
-    accrual correctly stops at maturity — the P&L is wrong until the redemption
-    is recorded. Surfacing it here is the trigger for the user to book that
-    redemption (a sell at par on the maturity date).
-    """
-    findings: list[dict] = []
-    as_of = as_of or date.today()
-    for cusip in sorted(held_cusips):
-        bond = bonds_static.get(cusip)
-        if bond is None or bond.maturity_date is None:
-            continue
-        if bond.is_matured(as_of):
-            name = (bond.name or "").strip() or cusip
-            findings.append(_finding(
-                "warning", "Bond Static", "bonds_static.csv", cusip, "maturity_date",
-                f"{name} matured on {bond.maturity_date} but the position is still open "
-                f"as of {as_of} — it is still being marked to a stale price",
-                "Book the redemption (a sell at par on the maturity date) so the "
-                "position closes; accrual and remaining cash flows already stop at maturity."))
-    return findings
-
-
 # ── price checks ──────────────────────────────────────────────────────────────
 
 def check_prices(
@@ -315,7 +281,6 @@ def run_all_checks(
     held_cusips: set[str] | None = None,
     current_prices: dict[str, float] | None = None,
     price_history: pd.DataFrame | None = None,
-    as_of: date | None = None,
 ) -> tuple[pd.DataFrame, dict[str, int]]:
     """Run every check and return (findings_df, summary_counts_by_severity).
 
@@ -341,7 +306,6 @@ def run_all_checks(
     findings: list[dict] = []
     findings += check_trades(raw_trades, bonds_static)
     findings += check_bonds(bonds_static, held_cusips)
-    findings += check_matured_bonds(held_cusips, bonds_static, as_of)
     findings += check_prices(held_cusips, current_prices, price_history, bonds_static)
 
     df = pd.DataFrame(findings, columns=FINDING_COLUMNS)
