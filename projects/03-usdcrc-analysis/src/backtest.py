@@ -3,8 +3,8 @@
 Reality checks layered in after seeing the 18-month sample was a favourable window:
   * 11.5 years spanning multiple regimes (2017 & 2022-23 colon sell-offs, COVID,
     the 2024-26 appreciation).
-  * Realistic execution cost: 0.65 CRC of slippage PER SIDE, applied on every
-    change in position (~13-14 bps at a ~475 spot).
+  * Realistic execution cost: 0.65 CRC of slippage per ROUND TRIP (0.325/side),
+    applied on every change in position (~13.7 bps round-trip at a ~475 spot).
   * Strategies are long/short USD (position in {-1,0,+1}); both sides reported.
 
 Key question: which edges survive the full history AND the real slippage?
@@ -32,7 +32,8 @@ plt.rcParams.update({
 })
 NAVY, GREEN, RED, GREY, ORANGE = "#1f3b73", "#2e8b57", "#c0392b", "#7f8c8d", "#e08a2b"
 ANN = np.sqrt(252)
-COST_CRC = 0.65          # slippage per side, in colones, against spot
+COST_CRC_RT = 0.65        # slippage per ROUND TRIP, in colones (user-specified)
+COST_CRC = COST_CRC_RT / 2   # => per side = 0.325 CRC (~6.8 bps at a ~475 spot)
 OOS_FRAC = 0.60
 N_TRIALS = 8
 RNG = np.random.default_rng(42)
@@ -155,7 +156,7 @@ def chart_net_compare(df, res, strats):
         ax.plot(df.date, np.nancumsum(net), color=color, lw=1.5,
                 label=f"{name} (net Sh {res[name]['sharpe']}, {res[name]['roundtrips_yr']} rt/yr)")
     ax.axhline(0, color="k", lw=0.6)
-    ax.set_title("Net-of-slippage cumulative P&L (bps) — 0.65 CRC per side, 2015-2026")
+    ax.set_title("Net-of-slippage cumulative P&L (bps) — 0.65 CRC round-trip, 2015-2026")
     ax.set_ylabel("cum P&L (bps)")
     ax.legend(loc="upper left", fontsize=9)
     fig.tight_layout()
@@ -164,16 +165,16 @@ def chart_net_compare(df, res, strats):
 
 
 def chart_slippage(df, res, strats):
-    costs = np.linspace(0, 1.2, 25)
+    rt_costs = np.linspace(0, 2.4, 25)            # round-trip CRC on the x-axis
     fig, ax = plt.subplots(figsize=(9, 4.4))
     for name, pos, color in strats:
-        srs = [sharpe(bt(pos, df, c)[0]) for c in costs]
-        ax.plot(costs, srs, color=color, lw=1.8, label=name)
-    ax.axvline(COST_CRC, color=RED, ls="--", lw=1)
-    ax.text(COST_CRC + 0.02, ax.get_ylim()[1] * 0.85, "your 0.65 CRC", color=RED, fontsize=9)
+        srs = [sharpe(bt(pos, df, c / 2)[0]) for c in rt_costs]   # per-side = rt/2
+        ax.plot(rt_costs, srs, color=color, lw=1.8, label=name)
+    ax.axvline(COST_CRC_RT, color=RED, ls="--", lw=1)
+    ax.text(COST_CRC_RT + 0.03, ax.get_ylim()[1] * 0.85, "your 0.65 CRC RT", color=RED, fontsize=9)
     ax.axhline(0, color=GREY, lw=0.8)
-    ax.set_title("Net Sharpe vs slippage per side (CRC) — daily signals die fast, slow trend is robust")
-    ax.set_xlabel("slippage per side (CRC)")
+    ax.set_title("Net Sharpe vs round-trip slippage (CRC) — daily signals die fast, slow trend is robust")
+    ax.set_xlabel("slippage per round trip (CRC)")
     ax.set_ylabel("net Sharpe")
     ax.legend()
     fig.tight_layout()
@@ -308,9 +309,11 @@ def main():
     df = frame()
     res = {"_meta": {
         "n_days": int(len(df)), "date_min": str(df.date.min().date()),
-        "date_max": str(df.date.max().date()), "cost_crc_per_side": COST_CRC,
-        "cost_bps_at_475": round(COST_CRC / 475 * 1e4, 1), "oos_frac": OOS_FRAC,
-        "n_trials": N_TRIALS,
+        "date_max": str(df.date.max().date()),
+        "cost_crc_roundtrip": COST_CRC_RT, "cost_crc_per_side": COST_CRC,
+        "cost_bps_rt_at_475": round(COST_CRC_RT / 475 * 1e4, 1),
+        "cost_bps_side_at_475": round(COST_CRC / 475 * 1e4, 1),
+        "oos_frac": OOS_FRAC, "n_trials": N_TRIALS,
     }}
     of = sig_orderflow(df)
     don = sig_donchian(df, 40)
@@ -322,6 +325,12 @@ def main():
     chart_regime_corr(df, res)
     chart_net_compare(df, res, strats)
     chart_slippage(df, res, strats)
+
+    # Recent signal-rich regime (2019+): where the order-flow edge actually lives.
+    recent = (df.date >= "2019-01-01").values
+    for name, pos, _ in strats:
+        net, _t = bt(pos, df)
+        res[name]["recent_2019"] = block(net[recent])
     chart_tearsheet(df, don, res, "Donchian-40")
     chart_longshort(df, don, res, "Donchian-40")
     chart_oos(df, don, res, "Donchian-40")

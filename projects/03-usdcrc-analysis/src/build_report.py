@@ -32,8 +32,8 @@ def fig(name, title, cap):
 
 KPIS = [
     (f"{M['n_days']:,}", "trading days", f"{M['date_min']} → {M['date_max']} (11.5 yrs)"),
-    ("13.7 bps", "slippage per side", f"{M['cost_crc_per_side']} CRC at a ~475 spot"),
-    (f"{OF['gross_sharpe']} → {OF['sharpe']}", "order-flow gross → net", "real signal, killed by cost"),
+    (f"{M['cost_bps_rt_at_475']} bps", "slippage round-trip", f"{M['cost_crc_roundtrip']} CRC at a ~475 spot"),
+    (f"{OF['gross_sharpe']} → {OF['sharpe']}", "order-flow gross → net", f"only {OF['recent_2019']['sharpe']} net even in 2019+"),
     (f"{DONF['sharpe']}", "trend net Sharpe", f"long/short USD, {DONF['roundtrips_yr']} rt/yr"),
     (f"+{DONF['ann_bps']:.0f} bps/yr", "trend net return", f"max DD {DONF['maxdd_bps']/100:.1f}%"),
     (f"{IS['sharpe']} / {OOS['sharpe']}", "trend IS / OOS Sharpe", "edge lives in trending regimes"),
@@ -49,17 +49,17 @@ def kpi_html():
 def strat_table():
     rows = [("Order-flow daily", OF), ("Donchian-40 trend", DON), ("SMA-120 trend", R["SMA-120 trend"])]
     out = ['<table><tr><th>Long/short strategy</th><th class="num">Gross Sh</th>'
-           '<th class="num">Net Sh</th><th class="num">Net bps/yr</th>'
+           '<th class="num">Net Sh (full)</th><th class="num">Net Sh (2019+)</th>'
            '<th class="num">Round-trips/yr</th><th class="num">Max DD</th><th>Verdict</th></tr>']
     verdict = {
-        "Order-flow daily": '<span class="no">Dead — cost &gt; edge</span>',
-        "Donchian-40 trend": '<span class="ok">Survives</span>',
-        "SMA-120 trend": '<span class="mb">Marginal</span>',
+        "Order-flow daily": '<span class="mb">Marginal / regime-only, high turnover</span>',
+        "Donchian-40 trend": '<span class="ok">Survives — robust</span>',
+        "SMA-120 trend": '<span class="ok">Survives</span>',
     }
     for name, b in rows:
         out.append(
             f'<tr><td>{name}</td><td class="num">{b["gross_sharpe"]}</td>'
-            f'<td class="num">{b["sharpe"]}</td><td class="num">{b["ann_bps"]:.0f}</td>'
+            f'<td class="num">{b["sharpe"]}</td><td class="num">{b["recent_2019"]["sharpe"]}</td>'
             f'<td class="num">{b["roundtrips_yr"]}</td><td class="num">{b["maxdd_bps"]/100:.1f}%</td>'
             f'<td>{verdict[name]}</td></tr>')
     out.append("</table>")
@@ -120,24 +120,26 @@ HTML = f"""<!doctype html>
 <header>
   <h1>USD/CRC · MONEX — Long/Short Quant Report (full history, net of real slippage)</h1>
   <div class="sub">{M['n_days']:,} sessions · {M['date_min']} → {M['date_max']} · execution cost
-    {M['cost_crc_per_side']} CRC/side (~{M['cost_bps_at_475']} bps) · long/short USD positions</div>
+    {M['cost_crc_roundtrip']} CRC round-trip (~{M['cost_bps_rt_at_475']} bps) · long/short USD positions</div>
 </header>
 
 <p class="lead">This revises the earlier 18-month study with <b>11.5 years of data</b> and your
-<b>real slippage of 0.65 CRC per side</b>. Both change the conclusion. The 18-month sample was a
-favourable window with an untradeable VWAP fill; on the full history and real costs, the
-high-frequency edge does not survive — but a <b>slow trend-following long/short</b> does, with a
-believable net Sharpe near 1.</p>
+<b>real slippage of 0.65 CRC round-trip</b> (0.325/side). Both change the conclusion. The 18-month
+sample was a favourable window with an untradeable VWAP fill; on the full history and real costs the
+high-frequency order-flow edge is at best marginal — but a <b>slow trend-following long/short</b>
+clears it comfortably, with a believable net Sharpe near 1.1 and only a few trades a year.</p>
 
 <div class="verdict"><ul>
  <li><span class="mb"><b>REVISION —</b> the earlier "Sharpe ~5" was a mirage.</span> It came from an
    18-month window (the colón only became signal-rich after 2018) and from marking P&L at the VWAP,
    which you cannot actually trade at.</li>
- <li><span class="no"><b>DEAD —</b> daily order-flow loses money net of your cost.</span> The signal is
-   <i>real</i> (gross next-day Sharpe {OF['gross_sharpe']}, positive every year since 2017), but it
-   flips position ~{OF['roundtrips_yr']}×/yr and the ~5 bps/trade edge is smaller than your ~13.7
-   bps/side slippage → <b>net Sharpe {OF['sharpe']}</b>. It only pays if you are the liquidity
-   <i>provider</i>, not the taker.</li>
+ <li><span class="mb"><b>MARGINAL —</b> daily order-flow only works in the recent regime, with heavy turnover.</span>
+   The signal is <i>real</i> (gross next-day Sharpe {OF['gross_sharpe']}, positive every year since 2017),
+   but it flips ~{OF['roundtrips_yr']}×/yr. Net of your 0.65 CRC round-trip it is only
+   <b>{OF['sharpe']} over the full history</b> (−{abs(OF['maxdd_bps'])/100:.0f}% drawdown) and
+   <b>{OF['recent_2019']['sharpe']} even in the signal-rich 2019+ regime</b> — no better than the trend
+   strategy but with 30× the trading. It is not worth running as a taker; it pays cleanly only if you
+   are the liquidity <i>provider</i> capturing the spread.</li>
  <li><span class="ok"><b>SURVIVES —</b> a slow trend-following long/short USD.</span> Donchian-40
    breakout: <b>net Sharpe {DONF['sharpe']}</b>, {DONF['roundtrips_yr']} round-trips/yr,
    +{DONF['ann_bps']:.0f} bps/yr, max drawdown {DONF['maxdd_bps']/100:.1f}%. Both the long-USD and
@@ -181,14 +183,16 @@ believable net Sharpe near 1.</p>
 <h2><span class="n">B1.</span> What 0.65 CRC/side does to each long/short strategy</h2>
 {strat_table()}
 {fig("bt_net_compare.png", "Net-of-slippage cumulative P&L — the whole story in one chart",
-     "Order-flow (orange) bleeds steadily to −10,000 bps purely on transaction cost. The trend strategies "
-     "(green/navy) are flat through the 2015–21 quiet years, then earn +~4,000 bps in the trending era. "
-     "Frequency, not signal quality, is what kills order-flow.")}
+     "Order-flow (orange) loses through the dead/pegged 2015–18 years on turnover cost, then recovers in "
+     "the signal-rich 2019+ regime — ending roughly flat over the full history. The trend strategies "
+     "(green/navy) are quiet through 2015–21, then earn +~4,500 bps in the trending era. The trend edge is "
+     "far more robust across regimes.")}
 
 <h2><span class="n">B2.</span> Sensitivity to the slippage assumption</h2>
-{fig("bt_slippage.png", "Net Sharpe vs slippage per side",
-     "Daily order-flow crosses below zero almost immediately; the trend strategy stays positive well past "
-     "your 0.65 CRC. The deployable edge is the one that barely cares about the exact cost.")}
+{fig("bt_slippage.png", "Net Sharpe vs round-trip slippage",
+     "Daily order-flow's net Sharpe sits near zero and falls fast as cost rises; the trend strategy stays "
+     "clearly positive past your 0.65 CRC round-trip. The deployable edge is the one that barely cares "
+     "about the exact cost.")}
 
 <div class="part">Part C · The deployable strategy — trend long/short USD</div>
 <h2><span class="n">C1.</span> Net-of-cost tearsheet</h2>
@@ -223,21 +227,20 @@ believable net Sharpe near 1.</p>
  <li><b>As a treasury / hedging overlay (most likely your case):</b> yes, useful. If you already run
    USD/CRC exposure, a slow trend filter that tells you when to be long vs short USD — trading only a few
    times a year — is a cheap, robust improvement over a static hedge, and it survived 11.5 years and real costs.</li>
- <li><b>Do NOT deploy the daily order-flow signal as a taker.</b> It is real but you will pay it all away
-   in slippage. The only way to monetise it is as a market-maker / internaliser capturing the spread you
-   are currently paying.</li>
+ <li><b>Don't run the daily order-flow signal as a taker.</b> Even at your 0.65 CRC round-trip it nets
+   only ~1.0 Sharpe in its best (2019+) regime and ~0.2 over the full history, with a −31% drawdown and
+   ~40× the turnover of the trend book — strictly worse risk-adjusted. It is genuinely valuable only as a
+   market-maker / internaliser capturing the spread you currently pay.</li>
  <li><span class="no"><b>Dominant risk:</b></span> the BCCR. A re-peg flattens the trend edge; a policy
    break / intervention is the fat tail this sample can't price. Size for survival, keep the lookback slow,
    and re-estimate continuously.</li>
 </ul>
 
 <footer>
-  <b>Caveats.</b> P&amp;L is net of your stated 0.65 CRC/side slippage but gross of financing/borrow and
-  any market impact; the colón is not freely shortable for all participants. Tests assume you can hold a
-  signed USD position at MONEX. Your slippage example described price <i>improvement</i> (buy below /
-  sell above spot); this report models the economically standard <i>adverse</i> 0.65 CRC — tell me if you
-  meant otherwise and the cost layer flips. The "best board offers" block in the export was empty, so VWAP
-  / close are the price proxies.<br><br>
+  <b>Caveats.</b> P&amp;L is net of your stated 0.65 CRC round-trip slippage (0.325/side) but gross of
+  financing/borrow and any market impact; the colón is not freely shortable for all participants. Tests
+  assume you can hold a signed USD position at MONEX. The "best board offers" block in the export was
+  empty, so VWAP / close are the price proxies.<br><br>
   Reproducible: <code>parse_monex → analyze → eda → strategies → backtest → build_report</code>, then
   <code>weasyprint</code> for the PDF. Strategy numbers are read live from <code>backtest_results.json</code>.
 </footer>

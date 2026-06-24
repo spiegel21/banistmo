@@ -1,22 +1,23 @@
 # USD/CRC (MONEX) — Long/Short findings (full history, net of real slippage)
 
 **Data:** BCCR MONEX export, **2,663 trading days, 2014-12-08 → 2026-06-19** (11.5 yrs).
-**Execution cost:** 0.65 CRC slippage per side (~13.7 bps at a ~475 spot), adverse.
+**Execution cost:** 0.65 CRC slippage per **round trip** (0.325/side, ~13.7 bps RT at a ~475 spot).
 Reproduce: `parse_monex → analyze → eda → strategies → backtest → build_report`.
 
 ## The headline revision
 
 An earlier 18-month study showed a ~Sharpe-5 daily order-flow strategy. With 11.5
-years of data and the real 0.65 CRC/side slippage, that result does **not** hold:
+years of data and the real 0.65 CRC round-trip slippage, that result does **not** hold:
 
 1. **The 18-month "Sharpe ~5" was a mirage** — a favourable post-2018 window, marked
    at an untradeable VWAP fill.
 2. **Daily order-flow is a real signal but uneconomic for a taker.** Gross next-day
-   close-to-close Sharpe is 2.8 (positive every year since 2017), but it flips ~95×/yr
-   and the ~5 bps/trade edge is smaller than the ~13.7 bps/side cost → **net Sharpe −2.1**.
-   It only pays if you are the liquidity *provider*.
+   close-to-close Sharpe is 2.8 (positive every year since 2017), but it flips ~95×/yr.
+   Net of your 0.65 CRC round-trip it is only **Sharpe 0.22 over the full history**
+   (−31% drawdown) and **~0.97 even in the signal-rich 2019+ regime** — no better than the
+   trend book with ~40× the turnover. It pays cleanly only as a liquidity *provider*.
 3. **A slow trend-following long/short USD survives.** Donchian-40 breakout: **net
-   Sharpe 1.04**, 2.5 round-trips/yr, +452 bps/yr, max drawdown −12.9%. Both long-USD
+   Sharpe 1.11**, 2.5 round-trips/yr, +482 bps/yr, max drawdown −12.4%. Both long-USD
    (+1,621 bps) and short-USD (+3,158 bps) legs are positive; permutation p≈0.
 4. **But it only earns when the colón trends.** In-sample (2015–21, mostly the pegged
    years) net Sharpe was 0.28; out-of-sample (2021–26) 1.83. A BCCR re-peg flattens the
@@ -39,9 +40,9 @@ testing is what separated them.
 - **Daily order-flow as a taker:** no — you pay the edge away in slippage. Monetisable only
   as a market-maker capturing the spread you currently pay.
 
-## Note on the slippage convention
+## Slippage convention
 
-Your example described price *improvement* (buy below / sell above spot), which is
-impossible for a price-taker. This report models the economically standard *adverse* 0.65
-CRC per side. If you meant something else, the cost layer flips and the order-flow
-conclusion changes — flag it and it's a one-line change.
+Modeled as 0.65 CRC adverse per **round trip** (0.325 per side), per your clarification.
+Halving the earlier per-side assumption lifts daily order-flow from net −2.1 to ~0.2
+(full) / ~1.0 (2019+) Sharpe — still strictly worse than the trend book on risk-adjusted
+terms and turnover, so the deployable answer is unchanged.
