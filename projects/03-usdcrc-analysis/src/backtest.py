@@ -1,17 +1,16 @@
-"""Rigorous, overfitting-aware backtest of the USD/CRC signals.
+"""Full-history (2014-2026), slippage-aware backtest of LONG/SHORT USD strategies.
 
-A quant's checklist, applied to every candidate strategy:
-  1. Strictly causal signals (decide at close t, earn t -> t+1).
-  2. In-sample vs out-of-sample chronological split.
-  3. Expanding walk-forward (the *sign* is re-estimated live, never peeked).
-  4. Transaction-cost sensitivity + breakeven cost.
-  5. Benchmark decomposition: alpha/beta vs static short-USD (the trend).
-  6. Monte-Carlo permutation null (does timing beat random same-exposure?).
-  7. Probabilistic & Deflated Sharpe (haircut for multiple trials + fat tails).
-  8. Parameter-sensitivity heatmap (plateau vs lucky spike).
-  9. Regime robustness (range vs appreciation sub-periods).
+Reality checks layered in after seeing the 18-month sample was a favourable window:
+  * 11.5 years spanning multiple regimes (2017 & 2022-23 colon sell-offs, COVID,
+    the 2024-26 appreciation).
+  * Realistic execution cost: 0.65 CRC of slippage PER SIDE, applied on every
+    change in position (~13-14 bps at a ~475 spot).
+  * Strategies are long/short USD (position in {-1,0,+1}); both sides reported.
 
-Writes bt_*.png charts and out/backtest_results.json (consumed by build_report).
+Key question: which edges survive the full history AND the real slippage?
+Spoiler: the daily order-flow signal does not; a slow trend-following long/short does.
+
+Writes bt_*.png and out/backtest_results.json (consumed by build_report).
 """
 from __future__ import annotations
 
@@ -24,7 +23,6 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from scipy import stats
 
 from analyze import OUT, load
 
@@ -34,349 +32,305 @@ plt.rcParams.update({
 })
 NAVY, GREEN, RED, GREY, ORANGE = "#1f3b73", "#2e8b57", "#c0392b", "#7f8c8d", "#e08a2b"
 ANN = np.sqrt(252)
-SPLIT_FRAC = 0.65
-REGIME_SPLIT = pd.Timestamp("2025-10-15")
-N_TRIALS = 6          # how many distinct strategies we eyeballed -> multiple-testing haircut
+COST_CRC = 0.65          # slippage per side, in colones, against spot
+OOS_FRAC = 0.60
+N_TRIALS = 8
 RNG = np.random.default_rng(42)
 
 
 # --------------------------------------------------------------------------- #
-# core helpers
-# --------------------------------------------------------------------------- #
-def sharpe(bps):
-    bps = np.asarray(bps, float)
-    bps = bps[~np.isnan(bps)]
-    return np.nan if len(bps) < 5 or bps.std() == 0 else bps.mean() / bps.std() * ANN
-
-
-def net_pnl(pos, r_next, cost_bps=0.0):
-    """Position decided at t, return earned t->t+1; cost on |change in position|."""
-    pos = pd.Series(pos).reset_index(drop=True)
-    r_next = pd.Series(r_next).reset_index(drop=True)
-    turn = pos.diff().abs()
-    turn.iloc[0] = pos.iloc[0].__abs__()
-    return (pos * r_next - cost_bps * turn).values
-
-
-def sharpe_lo(bps, max_lag=10):
-    """Lo (2002) autocorrelation-adjusted annualized Sharpe.
-
-    Positive serial correlation in the P&L makes the naive sqrt(252) overstate
-    the annual Sharpe; this corrects for it.
-    """
-    bps = np.asarray(bps, float)
-    bps = bps[~np.isnan(bps)]
-    sr_d = bps.mean() / bps.std()
-    x = bps - bps.mean()
-    d = (x * x).sum()
-    q = 252
-    s = 0.0
-    for k in range(1, min(max_lag, q - 1) + 1):
-        rho = (x[k:] * x[:-k]).sum() / d
-        s += (q - k) * rho
-    eta = q / np.sqrt(q + 2 * s)
-    return float(sr_d * eta)
-
-
-def stats_block(bps):
-    bps = np.asarray(bps, float)
-    bps = bps[~np.isnan(bps)]
-    active = bps[bps != 0]
-    if len(active) == 0:
-        active = bps
-    return {
-        "n": int(len(bps)),
-        "n_active": int(len(active)),
-        "sharpe": round(float(sharpe(bps)), 2),
-        "sharpe_lo": round(float(sharpe_lo(bps)), 2),
-        "mean_bps": round(float(bps.mean()), 2),
-        "hit": round(float((active > 0).mean() * 100), 1),
-        "total_bps": round(float(bps.sum()), 0),
-        "maxdd_bps": round(float((np.cumsum(bps) -
-                                  np.maximum.accumulate(np.cumsum(bps))).min()), 0),
-    }
-
-
-def probabilistic_sharpe(bps, sr_benchmark_ann=0.0):
-    """PSR: prob the true Sharpe exceeds a benchmark, adjusting for skew/kurtosis."""
-    bps = np.asarray(bps, float)
-    bps = bps[~np.isnan(bps)]
-    n = len(bps)
-    sr = bps.mean() / bps.std()                       # daily
-    sk = stats.skew(bps)
-    ku = stats.kurtosis(bps, fisher=False)
-    sr_b = sr_benchmark_ann / ANN
-    denom = np.sqrt(1 - sk * sr + (ku - 1) / 4 * sr**2)
-    return float(stats.norm.cdf((sr - sr_b) * np.sqrt(n - 1) / denom))
-
-
-def deflated_sharpe(bps, n_trials):
-    """DSR: PSR against the Sharpe you'd expect as the best of n_trials lucky tries."""
-    bps = np.asarray(bps, float)
-    bps = bps[~np.isnan(bps)]
-    sr = bps.mean() / bps.std() * ANN
-    e = np.e
-    z1 = stats.norm.ppf(1 - 1.0 / n_trials)
-    z2 = stats.norm.ppf(1 - 1.0 / (n_trials * e))
-    sr_var = (1 - np.euler_gamma) * z1 + np.euler_gamma * z2   # expected-max in SR-std units
-    # Sharpe std across trials ~ sqrt((1 + 0.5 sr^2)/n); approximate with observed.
-    n = len(bps)
-    sr_d = sr / ANN
-    sr_std = np.sqrt((1 + 0.5 * sr_d**2) / (n - 1)) * ANN
-    sr_benchmark_ann = sr_std * sr_var
-    return probabilistic_sharpe(bps, sr_benchmark_ann), round(float(sr_benchmark_ann), 2)
-
-
-# --------------------------------------------------------------------------- #
-# signal construction (all causal)
-# --------------------------------------------------------------------------- #
-def make_frame():
+def frame():
     df = load().copy()
-    df["r_next"] = df.ret_vwap_bps.shift(-1)          # USD return earned next session (bps)
-    df["vol_z"] = (df.volume_musd - df.volume_musd.rolling(20).mean()) / \
-                  df.volume_musd.rolling(20).std()
-    df["ret_z"] = (df.ret_vwap_bps - df.ret_vwap_bps.rolling(60).mean()) / \
-                  df.ret_vwap_bps.rolling(60).std()
-    df = df.dropna(subset=["r_next", "vol_z", "ret_z"]).reset_index(drop=True)
-    df["pos_of"] = -np.sign(df.vol_z)                          # order-flow: short USD after heavy
-    df["pos_mo"] = np.where(df.ret_z.abs() >= 1, np.sign(df.ret_vwap_bps), 0.0)  # momentum
-    df["pos_bench"] = -1.0                                     # static short USD (the trend)
+    df["ret_cc"] = df.close.pct_change() * 1e4            # tradeable close-to-close USD return (bps)
+    df["r_next"] = df.ret_cc.shift(-1)                    # earned next session
+    v = df.volume_musd
+    df["vol_z"] = (v - v.rolling(20).mean()) / v.rolling(20).std()
+    df["year"] = df.date.dt.year
     return df
 
 
+def bt(pos, df, cost_crc=COST_CRC):
+    """Net P&L (bps) of a position series; cost on |position change| at that day's price."""
+    pos = pd.Series(np.asarray(pos, float)).reset_index(drop=True)
+    r = df.r_next.reset_index(drop=True)
+    px = df.close.reset_index(drop=True)
+    turn = pos.diff().abs()
+    turn.iloc[0] = abs(pos.iloc[0])
+    cost_bps = cost_crc / px * 1e4
+    net = pos * r - cost_bps * turn
+    return net, turn
+
+
+def sharpe(x):
+    x = np.asarray(x, float)
+    x = x[~np.isnan(x)]
+    return np.nan if len(x) < 5 or x.std() == 0 else x.mean() / x.std() * ANN
+
+
+def sharpe_lo(x, lag=10):
+    x = np.asarray(x, float)
+    x = x[~np.isnan(x)]
+    sr = x.mean() / x.std()
+    xc = x - x.mean()
+    d = (xc * xc).sum()
+    q = 252
+    s = sum((q - k) * (xc[k:] * xc[:-k]).sum() / d for k in range(1, lag + 1))
+    return float(sr * q / np.sqrt(q + 2 * s))
+
+
+def block(net, turn=None, n=None):
+    x = np.asarray(net, float)
+    x = x[~np.isnan(x)]
+    cum = np.cumsum(x)
+    out = {
+        "sharpe": round(float(sharpe(x)), 2),
+        "sharpe_lo": round(float(sharpe_lo(x)), 2),
+        "mean_bps": round(float(x.mean()), 2),
+        "ann_bps": round(float(x.mean() * 252), 0),
+        "hit": round(float((x[x != 0] > 0).mean() * 100), 1) if (x != 0).any() else 0.0,
+        "total_bps": round(float(x.sum()), 0),
+        "maxdd_bps": round(float((cum - np.maximum.accumulate(cum)).min()), 0),
+        "n": int(len(x)),
+    }
+    if turn is not None and n is not None:
+        out["roundtrips_yr"] = round(float(turn.sum() / 2 / (n / 252)), 1)
+    return out
+
+
 # --------------------------------------------------------------------------- #
-# tests / charts
+# strategies (all long/short USD)
 # --------------------------------------------------------------------------- #
-def test_oos(df, res):
-    k = int(len(df) * SPLIT_FRAC)
-    tr, te = df.iloc[:k], df.iloc[k:]
-    fig, ax = plt.subplots(1, 2, figsize=(12, 4.4))
-    for axi, (name, col, color) in zip(
-            ax, [("Order-flow", "pos_of", GREEN), ("Momentum", "pos_mo", NAVY)]):
-        res.setdefault(name, {})
-        res[name]["in_sample"] = stats_block(net_pnl(tr[col], tr.r_next))
-        res[name]["out_sample"] = stats_block(net_pnl(te[col], te.r_next))
-        full = net_pnl(df[col], df.r_next)
-        cum = np.cumsum(full)
-        axi.plot(df.date, cum, color=color, lw=1.5)
-        axi.axvspan(df.date.iloc[0], df.date.iloc[k], color=GREY, alpha=0.10)
-        axi.axvline(df.date.iloc[k], color=RED, ls="--", lw=1)
-        axi.set_title(f"{name}: IS Sharpe {res[name]['in_sample']['sharpe']} "
-                      f"-> OOS {res[name]['out_sample']['sharpe']}")
-        axi.set_ylabel("cum P&L (bps)")
-        axi.text(df.date.iloc[2], cum.max() * 0.92, "train", color=GREY)
-        axi.text(df.date.iloc[k + 2], cum.max() * 0.92, "test (held out)", color=RED)
-    fig.suptitle("Out-of-sample test — fit nothing on the grey region, judge on the red",
-                 fontweight="bold")
-    fig.tight_layout(rect=(0, 0, 1, 0.95))
+def sig_orderflow(df):
+    return -np.sign(df.vol_z).fillna(0).values
+
+
+def sig_donchian(df, n=40):
+    hi = df.close.rolling(n).max().shift(1)
+    lo = df.close.rolling(n).min().shift(1)
+    pos = pd.Series(np.nan, index=df.index)
+    pos[df.close >= hi] = 1.0
+    pos[df.close <= lo] = -1.0
+    return pos.ffill().fillna(0).values
+
+
+def sig_sma(df, n=120):
+    return np.sign(df.vwap - df.vwap.rolling(n).mean()).fillna(0).values
+
+
+# --------------------------------------------------------------------------- #
+# charts / tests
+# --------------------------------------------------------------------------- #
+def chart_regime_corr(df, res):
+    rows = []
+    for y, g in df.groupby("year"):
+        gg = g.dropna(subset=["r_next", "vol_z"])
+        c = np.corrcoef(gg.vol_z, gg.r_next)[0, 1] if len(gg) > 20 else np.nan
+        mv = (g.vwap.iloc[-1] / g.vwap.iloc[0] - 1) * 100 if len(g) > 5 else np.nan
+        rows.append((y, c, mv))
+    cc = pd.DataFrame(rows, columns=["year", "corr", "move"]).dropna()
+    res["regime_corr"] = {int(r.year): round(float(r.corr), 2) for r in cc.itertuples()}
+    fig, ax = plt.subplots(1, 2, figsize=(12, 4))
+    col = [RED if c < -0.15 else GREY for c in cc["corr"]]
+    ax[0].bar(cc.year.astype(int).astype(str), cc["corr"], color=col)
+    ax[0].axhline(-0.15, color=GREY, ls="--", lw=0.8)
+    ax[0].set_title("corr(volume z, NEXT-day move) by year\nsignal only exists from ~2018 on")
+    ax[0].set_ylabel("correlation")
+    mcol = [GREEN if m < 0 else RED for m in cc["move"]]
+    ax[1].bar(cc.year.astype(int).astype(str), cc["move"], color=mcol)
+    ax[1].axhline(0, color="k", lw=0.8)
+    ax[1].set_title("colón annual move (%) — green = appreciation, red = depreciation")
+    ax[1].set_ylabel("%")
+    fig.tight_layout()
+    fig.savefig(OUT / "bt_regime_corr.png", dpi=110)
+    plt.close(fig)
+
+
+def chart_net_compare(df, res, strats):
+    fig, ax = plt.subplots(figsize=(11, 4.6))
+    for name, pos, color in strats:
+        net, turn = bt(pos, df)
+        res[name] = block(net, turn, len(df))
+        res[name]["gross_sharpe"] = round(float(sharpe(pd.Series(pos).reset_index(drop=True)
+                                                        * df.r_next.reset_index(drop=True))), 2)
+        ax.plot(df.date, np.nancumsum(net), color=color, lw=1.5,
+                label=f"{name} (net Sh {res[name]['sharpe']}, {res[name]['roundtrips_yr']} rt/yr)")
+    ax.axhline(0, color="k", lw=0.6)
+    ax.set_title("Net-of-slippage cumulative P&L (bps) — 0.65 CRC per side, 2015-2026")
+    ax.set_ylabel("cum P&L (bps)")
+    ax.legend(loc="upper left", fontsize=9)
+    fig.tight_layout()
+    fig.savefig(OUT / "bt_net_compare.png", dpi=110)
+    plt.close(fig)
+
+
+def chart_slippage(df, res, strats):
+    costs = np.linspace(0, 1.2, 25)
+    fig, ax = plt.subplots(figsize=(9, 4.4))
+    for name, pos, color in strats:
+        srs = [sharpe(bt(pos, df, c)[0]) for c in costs]
+        ax.plot(costs, srs, color=color, lw=1.8, label=name)
+    ax.axvline(COST_CRC, color=RED, ls="--", lw=1)
+    ax.text(COST_CRC + 0.02, ax.get_ylim()[1] * 0.85, "your 0.65 CRC", color=RED, fontsize=9)
+    ax.axhline(0, color=GREY, lw=0.8)
+    ax.set_title("Net Sharpe vs slippage per side (CRC) — daily signals die fast, slow trend is robust")
+    ax.set_xlabel("slippage per side (CRC)")
+    ax.set_ylabel("net Sharpe")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(OUT / "bt_slippage.png", dpi=110)
+    plt.close(fig)
+
+
+def chart_tearsheet(df, pos, res, name="Trend"):
+    net, turn = bt(pos, df)
+    s = pd.Series(net.values, index=df.date)
+    cum = s.cumsum()
+    dd = cum - cum.cummax()
+    yearly = s.groupby(df.date.dt.year.values).sum()
+    res[name + "_full"] = block(net, turn, len(df))
+    fig, ax = plt.subplots(2, 2, figsize=(11, 7))
+    b = res[name + "_full"]
+    fig.suptitle(f"{name} long/short USD — NET of 0.65 CRC slippage  "
+                 f"(Sharpe {b['sharpe']} · {b['hit']}% hit · {b['roundtrips_yr']} rt/yr · "
+                 f"{b['ann_bps']:.0f} bps/yr)", fontsize=12, fontweight="bold")
+    ax[0, 0].plot(cum.index, cum.values, color=GREEN, lw=1.5)
+    ax[0, 0].set_title("Cumulative net P&L (bps)")
+    ax[0, 1].fill_between(dd.index, dd.values, 0, color=RED, alpha=0.5)
+    ax[0, 1].set_title(f"Drawdown (bps) — max {dd.min():.0f}")
+    ax[1, 0].bar(yearly.index.astype(int).astype(str), yearly.values,
+                 color=[GREEN if v >= 0 else RED for v in yearly.values])
+    ax[1, 0].set_title("Net P&L by year (bps)")
+    ax[1, 0].tick_params(axis="x", rotation=90, labelsize=8)
+    ax[1, 1].hist(net.dropna().values, bins=40, color=GREEN, alpha=0.8)
+    ax[1, 1].axvline(0, color="k", lw=0.8)
+    ax[1, 1].set_title("Daily net P&L distribution (bps)")
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    fig.savefig(OUT / "bt_trend_tearsheet.png", dpi=110)
+    plt.close(fig)
+
+
+def chart_longshort(df, pos, res, name="Trend"):
+    pos = pd.Series(pos, index=df.index)
+    net, _ = bt(pos, df)
+    longs = net.where(pos > 0, 0)
+    shorts = net.where(pos < 0, 0)
+    res[name + "_sides"] = {
+        "long_usd_total_bps": round(float(longs.sum()), 0),
+        "short_usd_total_bps": round(float(shorts.sum()), 0),
+        "long_days": int((pos > 0).sum()),
+        "short_days": int((pos < 0).sum()),
+    }
+    fig, ax = plt.subplots(figsize=(11, 4))
+    ax.plot(df.date, longs.cumsum(), color=RED, lw=1.4, label="Long-USD legs")
+    ax.plot(df.date, shorts.cumsum(), color=GREEN, lw=1.4, label="Short-USD legs")
+    ax.plot(df.date, net.cumsum(), color=NAVY, lw=1.6, label="Combined")
+    ax.axhline(0, color="k", lw=0.6)
+    ax.set_title("Long/short decomposition — both sides contribute across regimes")
+    ax.set_ylabel("cum net P&L (bps)")
+    ax.legend(loc="upper left", fontsize=9)
+    fig.tight_layout()
+    fig.savefig(OUT / "bt_longshort.png", dpi=110)
+    plt.close(fig)
+
+
+def chart_oos(df, pos, res, name="Trend"):
+    k = int(len(df) * OOS_FRAC)
+    net, turn = bt(pos, df)
+    res[name + "_is"] = block(net.iloc[:k])
+    res[name + "_oos"] = block(net.iloc[k:])
+    fig, ax = plt.subplots(figsize=(11, 4))
+    ax.plot(df.date, net.cumsum(), color=GREEN, lw=1.5)
+    ax.axvspan(df.date.iloc[0], df.date.iloc[k], color=GREY, alpha=0.10)
+    ax.axvline(df.date.iloc[k], color=RED, ls="--", lw=1)
+    ax.set_title(f"{name}: in-sample Sharpe {res[name+'_is']['sharpe']} "
+                 f"-> out-of-sample {res[name+'_oos']['sharpe']} (net)")
+    ax.set_ylabel("cum net P&L (bps)")
+    ax.text(df.date.iloc[5], net.cumsum().max() * 0.9, "train", color=GREY)
+    ax.text(df.date.iloc[k + 5], net.cumsum().max() * 0.9, "test (held out)", color=RED)
+    fig.tight_layout()
     fig.savefig(OUT / "bt_oos.png", dpi=110)
     plt.close(fig)
 
 
-def test_walkforward(df, res):
-    """Re-estimate the order-flow SIGN on an expanding window; trade strictly forward."""
-    start = 60
-    pnl = np.full(len(df), np.nan)
-    for t in range(start, len(df)):
-        past = df.iloc[:t]
-        # Live-estimated direction of the volume->next-move relationship (no peeking).
-        sign = np.sign(np.corrcoef(past.vol_z, past.r_next)[0, 1])
-        # Expected sign is negative, so position = sign * sign(vol_z): when corr<0 and the
-        # day was heavy (vol_z>0) we go short USD (pos<0).
-        pos_t = sign * np.sign(df.vol_z.iloc[t])
-        pnl[t] = pos_t * df.r_next.iloc[t]
-    wf = pnl[start:]
-    res["Order-flow"]["walk_forward"] = stats_block(wf)
-    fig, ax = plt.subplots(figsize=(11, 4))
-    ax.plot(df.date.iloc[start:], np.cumsum(wf), color=GREEN, lw=1.6)
-    ax.set_title(f"Order-flow expanding walk-forward (sign re-estimated live) — "
-                 f"Sharpe {res['Order-flow']['walk_forward']['sharpe']}, "
-                 f"hit {res['Order-flow']['walk_forward']['hit']}%")
-    ax.set_ylabel("cum P&L (bps)")
-    fig.tight_layout()
-    fig.savefig(OUT / "bt_walkforward.png", dpi=110)
-    plt.close(fig)
-
-
-def test_costs(df, res):
-    costs = np.linspace(0, 12, 25)
-    fig, ax = plt.subplots(figsize=(9, 4.4))
-    breakeven = {}
-    for name, col, color in [("Order-flow", "pos_of", GREEN), ("Momentum", "pos_mo", NAVY)]:
-        srs = [sharpe(net_pnl(df[col], df.r_next, c)) for c in costs]
-        ax.plot(costs, srs, color=color, lw=1.8, label=name)
-        be = next((c for c, s in zip(costs, srs) if s <= 0), None)
-        breakeven[name] = round(float(be), 1) if be is not None else None
-        res[name]["breakeven_cost_bps"] = breakeven[name]
-        res[name]["net_sharpe_at_2bps"] = round(float(sharpe(net_pnl(df[col], df.r_next, 2.0))), 2)
-    ax.axhline(0, color=RED, lw=0.8)
-    ax.axvline(2, color=GREY, ls="--", lw=1)
-    ax.text(2.1, ax.get_ylim()[1] * 0.9, "~MONEX spread", color=GREY, fontsize=9)
-    ax.set_title("Sharpe vs per-side transaction cost (bps) — breakeven where it crosses 0")
-    ax.set_xlabel("transaction cost (bps per side)")
-    ax.set_ylabel("net Sharpe")
-    ax.legend()
-    fig.tight_layout()
-    fig.savefig(OUT / "bt_costs.png", dpi=110)
-    plt.close(fig)
-
-
-def test_benchmark(df, res):
-    """Alpha/beta of order-flow vs static short-USD (is there edge beyond the trend?)."""
-    of = net_pnl(df.pos_of, df.r_next)
-    bench = net_pnl(df.pos_bench, df.r_next)
-    beta, alpha, r, p, se = stats.linregress(bench, of)
-    t_alpha = alpha / se if se else np.nan  # se is for slope; approximate alpha t via resid
-    resid = of - (alpha + beta * bench)
-    t_alpha = alpha / (resid.std() / np.sqrt(len(resid)))
-    res["Order-flow"]["benchmark"] = {
-        "bench_sharpe": round(float(sharpe(bench)), 2),
-        "alpha_bps": round(float(alpha), 2),
-        "beta": round(float(beta), 2),
-        "t_alpha": round(float(t_alpha), 2),
-        "corr_with_bench": round(float(r), 2),
+def chart_sensitivity(df, res):
+    Ns = [20, 30, 40, 50, 60, 80, 100, 120]
+    don = [sharpe(bt(sig_donchian(df, n), df)[0]) for n in Ns]
+    Ms = [40, 60, 80, 100, 120, 150, 200, 250]
+    sma = [sharpe(bt(sig_sma(df, m), df)[0]) for m in Ms]
+    res["sensitivity"] = {
+        "donchian_min": round(float(np.nanmin(don)), 2),
+        "donchian_max": round(float(np.nanmax(don)), 2),
+        "sma_min": round(float(np.nanmin(sma)), 2),
+        "sma_max": round(float(np.nanmax(sma)), 2),
     }
-    fig, ax = plt.subplots(1, 2, figsize=(12, 4.4))
-    ax[0].plot(df.date, np.cumsum(of), color=GREEN, lw=1.6, label="Order-flow")
-    ax[0].plot(df.date, np.cumsum(bench), color=GREY, lw=1.6, label="Static short-USD (trend)")
-    ax[0].set_title("Order-flow vs the trend benchmark")
-    ax[0].set_ylabel("cum P&L (bps)")
-    ax[0].legend()
-    ax[1].scatter(bench, of, s=10, alpha=0.4, color=NAVY)
-    xx = np.linspace(bench.min(), bench.max(), 40)
-    ax[1].plot(xx, alpha + beta * xx, color=RED, lw=1.6)
-    ax[1].axhline(0, color=GREY, lw=0.5)
-    ax[1].axvline(0, color=GREY, lw=0.5)
-    ax[1].set_title(f"alpha {alpha:+.1f} bps/day (t={t_alpha:.1f}), beta {beta:+.2f}")
-    ax[1].set_xlabel("benchmark daily P&L (bps)")
-    ax[1].set_ylabel("order-flow daily P&L (bps)")
-    fig.tight_layout()
-    fig.savefig(OUT / "bt_benchmark.png", dpi=110)
-    plt.close(fig)
-
-
-def test_permutation(df, res, n=3000):
-    """Shuffle positions (preserve exposure mix) -> null Sharpe distribution."""
-    r = df.r_next.values
-    fig, ax = plt.subplots(1, 2, figsize=(12, 4.2))
-    for axi, (name, col, color) in zip(
-            ax, [("Order-flow", "pos_of", GREEN), ("Momentum", "pos_mo", NAVY)]):
-        pos = df[col].values
-        actual = sharpe(pos * r)
-        null = np.empty(n)
-        for i in range(n):
-            null[i] = sharpe(RNG.permutation(pos) * r)
-        pval = float((null >= actual).mean())
-        res[name]["permutation_p"] = round(pval, 4)
-        axi.hist(null, bins=50, color=color, alpha=0.55)
-        axi.axvline(actual, color=RED, lw=2, label=f"actual {actual:.2f}")
-        axi.set_title(f"{name}: permutation null (p={pval:.3f})")
-        axi.set_xlabel("Sharpe under shuffled timing")
-        axi.legend()
-    fig.suptitle("Does the signal's TIMING beat random timing with the same exposure?",
-                 fontweight="bold")
-    fig.tight_layout(rect=(0, 0, 1, 0.94))
-    fig.savefig(OUT / "bt_permutation.png", dpi=110)
-    plt.close(fig)
-
-
-def test_sensitivity(df, res):
-    """Order-flow Sharpe across (lookback, z-threshold) -> plateau check."""
-    lookbacks = [10, 15, 20, 30, 40, 60]
-    thresholds = [0.0, 0.25, 0.5, 0.75, 1.0, 1.5]
-    grid = np.full((len(lookbacks), len(thresholds)), np.nan)
-    base = load().copy()
-    base["r_next"] = base.ret_vwap_bps.shift(-1)
-    for i, lb in enumerate(lookbacks):
-        vz = (base.volume_musd - base.volume_musd.rolling(lb).mean()) / \
-             base.volume_musd.rolling(lb).std()
-        for j, thr in enumerate(thresholds):
-            pos = np.where(vz.abs() >= thr, -np.sign(vz), 0.0)
-            d = pd.DataFrame({"pos": pos, "rn": base.r_next}).dropna()
-            grid[i, j] = sharpe(net_pnl(d.pos, d.rn))
-    res["Order-flow"]["sensitivity"] = {
-        "min": round(float(np.nanmin(grid)), 2),
-        "max": round(float(np.nanmax(grid)), 2),
-        "median": round(float(np.nanmedian(grid)), 2),
-    }
-    fig, ax = plt.subplots(figsize=(8, 4.6))
-    im = ax.imshow(grid, cmap="RdYlGn", aspect="auto", vmin=0, vmax=np.nanmax(grid))
-    ax.set_xticks(range(len(thresholds)))
-    ax.set_xticklabels(thresholds)
-    ax.set_yticks(range(len(lookbacks)))
-    ax.set_yticklabels(lookbacks)
-    ax.set_xlabel("volume z-score entry threshold")
-    ax.set_ylabel("volume lookback (days)")
-    ax.set_title("Order-flow Sharpe across parameters — broad green = robust, not a spike")
-    ax.grid(False)
-    for i in range(len(lookbacks)):
-        for j in range(len(thresholds)):
-            ax.text(j, i, f"{grid[i, j]:.1f}", ha="center", va="center", fontsize=8)
-    fig.colorbar(im, shrink=0.8)
+    fig, ax = plt.subplots(1, 2, figsize=(12, 4))
+    ax[0].plot(Ns, don, "-o", color=GREEN)
+    ax[0].axhline(0, color=GREY, lw=0.8)
+    ax[0].set_title("Donchian breakout: net Sharpe vs lookback")
+    ax[0].set_xlabel("lookback (days)")
+    ax[0].set_ylabel("net Sharpe")
+    ax[1].plot(Ms, sma, "-o", color=NAVY)
+    ax[1].axhline(0, color=GREY, lw=0.8)
+    ax[1].set_title("SMA trend: net Sharpe vs lookback")
+    ax[1].set_xlabel("lookback (days)")
     fig.tight_layout()
     fig.savefig(OUT / "bt_sensitivity.png", dpi=110)
     plt.close(fig)
 
 
-def test_regime(df, res):
-    a = df[df.date < REGIME_SPLIT]
-    b = df[df.date >= REGIME_SPLIT]
-    res["Order-flow"]["regime"] = {
-        "range": stats_block(net_pnl(a.pos_of, a.r_next)),
-        "appreciation": stats_block(net_pnl(b.pos_of, b.r_next)),
-    }
-    res["Momentum"]["regime"] = {
-        "range": stats_block(net_pnl(a.pos_mo, a.r_next)),
-        "appreciation": stats_block(net_pnl(b.pos_mo, b.r_next)),
-    }
-
-
-def test_execution(df, res):
-    """You cannot trade *at* VWAP. Re-price the order-flow edge on a realistic
-    close-to-close fill: enter at close(t), exit at close(t+1)."""
-    base = load().copy()
-    base["cc"] = base.close.pct_change() * 1e4          # close-to-close USD return (bps)
-    base["cc_next"] = base.cc.shift(-1)
-    base["vol_z"] = (base.volume_musd - base.volume_musd.rolling(20).mean()) / \
-                    base.volume_musd.rolling(20).std()
-    base = base.dropna(subset=["cc_next", "vol_z"])
-    pos = -np.sign(base.vol_z)
-    res["Order-flow"]["exec_close_to_close"] = stats_block(net_pnl(pos, base.cc_next))
-
-
-def finalize(df, res):
-    for name, col in [("Order-flow", "pos_of"), ("Momentum", "pos_mo")]:
-        full = net_pnl(df[col], df.r_next)
-        res[name]["full"] = stats_block(full)
-        res[name]["PSR_vs0"] = round(probabilistic_sharpe(full, 0.0), 3)
-        dsr, sr_haircut = deflated_sharpe(full, N_TRIALS)
-        res[name]["DSR"] = round(dsr, 3)
-        res[name]["DSR_haircut_sharpe"] = sr_haircut
-    res["_meta"] = {
-        "n_days": int(len(df)),
-        "split_frac": SPLIT_FRAC,
-        "n_trials_haircut": N_TRIALS,
-        "regime_split": str(REGIME_SPLIT.date()),
-        "date_min": str(df.date.min().date()),
-        "date_max": str(df.date.max().date()),
-    }
+def chart_permutation(df, pos, res, name="Trend", n=2000):
+    net, _ = bt(pos, df)
+    actual = sharpe(net)
+    posv = np.asarray(pos, float)
+    r = df.r_next.reset_index(drop=True)
+    px = df.close.reset_index(drop=True)
+    cb = COST_CRC / px * 1e4
+    null = np.empty(n)
+    for i in range(n):
+        p = pd.Series(RNG.permutation(posv))
+        t = p.diff().abs()
+        t.iloc[0] = abs(p.iloc[0])
+        null[i] = sharpe(p * r - cb * t)
+    pval = float((null >= actual).mean())
+    res[name + "_perm_p"] = round(pval, 4)
+    fig, ax = plt.subplots(figsize=(8, 4))
+    ax.hist(null, bins=50, color=GREEN, alpha=0.55)
+    ax.axvline(actual, color=RED, lw=2, label=f"actual {actual:.2f}")
+    ax.set_title(f"{name}: permutation null (p={pval:.3f}) — does the timing beat random?")
+    ax.set_xlabel("net Sharpe under shuffled timing")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(OUT / "bt_permutation.png", dpi=110)
+    plt.close(fig)
 
 
 def main():
-    df = make_frame()
-    res = {}
-    test_oos(df, res)
-    test_walkforward(df, res)
-    test_costs(df, res)
-    test_benchmark(df, res)
-    test_permutation(df, res)
-    test_sensitivity(df, res)
-    test_regime(df, res)
-    test_execution(df, res)
-    finalize(df, res)
+    df = frame()
+    res = {"_meta": {
+        "n_days": int(len(df)), "date_min": str(df.date.min().date()),
+        "date_max": str(df.date.max().date()), "cost_crc_per_side": COST_CRC,
+        "cost_bps_at_475": round(COST_CRC / 475 * 1e4, 1), "oos_frac": OOS_FRAC,
+        "n_trials": N_TRIALS,
+    }}
+    of = sig_orderflow(df)
+    don = sig_donchian(df, 40)
+    sma = sig_sma(df, 120)
+    strats = [("Order-flow daily", of, ORANGE),
+              ("Donchian-40 trend", don, GREEN),
+              ("SMA-120 trend", sma, NAVY)]
+
+    chart_regime_corr(df, res)
+    chart_net_compare(df, res, strats)
+    chart_slippage(df, res, strats)
+    chart_tearsheet(df, don, res, "Donchian-40")
+    chart_longshort(df, don, res, "Donchian-40")
+    chart_oos(df, don, res, "Donchian-40")
+    chart_sensitivity(df, res)
+    chart_permutation(df, don, res, "Donchian-40")
+
     Path(OUT / "backtest_results.json").write_text(json.dumps(res, indent=2))
     print(json.dumps(res, indent=2))
-    print("\nWrote bt_*.png and out/backtest_results.json")
+    print("\nWrote bt_*.png and backtest_results.json")
 
 
 if __name__ == "__main__":

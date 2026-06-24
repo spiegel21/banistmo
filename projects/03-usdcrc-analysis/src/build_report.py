@@ -1,8 +1,8 @@
-"""Build the self-contained visual HTML report (charts embedded as base64),
-organised as a quant would: EXPLORE -> HYPOTHESISE -> TEST -> VERDICT.
+"""Build the self-contained visual HTML report (charts embedded as base64).
 
-Reads out/backtest_results.json for the rigorous test numbers.
-Run after analyze.py, eda.py, strategies.py and backtest.py.
+Full-history (2014-2026), slippage-aware story:
+  EXPLORE -> COST REALITY -> DEPLOYABLE STRATEGY -> VERDICT.
+Reads out/backtest_results.json. Run after analyze/eda/strategies/backtest.
 """
 from __future__ import annotations
 
@@ -13,69 +13,55 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "out"
 R = json.loads((OUT / "backtest_results.json").read_text())
-OF, MO, META = R["Order-flow"], R["Momentum"], R["_meta"]
+M = R["_meta"]
+OF = R["Order-flow daily"]
+DON = R["Donchian-40 trend"]
+DONF = R["Donchian-40_full"]
+SIDES = R["Donchian-40_sides"]
+IS, OOS = R["Donchian-40_is"], R["Donchian-40_oos"]
 
 
-def img(name: str) -> str:
-    b = base64.b64encode((OUT / name).read_bytes()).decode()
-    return f"data:image/png;base64,{b}"
+def img(name):
+    return "data:image/png;base64," + base64.b64encode((OUT / name).read_bytes()).decode()
 
 
-def fig(name, title, caption):
-    return f"""<figure><h3>{title}</h3><img src="{img(name)}" alt="{title}"/>
-      <figcaption>{caption}</figcaption></figure>"""
+def fig(name, title, cap):
+    return (f'<figure><h3>{title}</h3><img src="{img(name)}" alt="{title}"/>'
+            f'<figcaption>{cap}</figcaption></figure>')
 
 
 KPIS = [
-    ("−10.1%", "colón appreciation", "504.99 → 454.10 ₡ over the sample"),
-    ("−0.45", "bps / $M", "same-day move vs volume · p≈1e-13"),
-    ("−0.3 to −0.5", "rolling corr(vol,move)", "never crosses zero in 18 months"),
-    (f"{OF['exec_close_to_close']['sharpe']}", "deployable Sharpe", "order-flow, close-to-close, gross"),
-    (f"+{OF['benchmark']['alpha_bps']}", "bps/day alpha vs trend", f"t = {OF['benchmark']['t_alpha']} · beta {OF['benchmark']['beta']}"),
-    (f"{OF['breakeven_cost_bps']} bps", "breakeven cost", "vs ~2 bps MONEX spread"),
+    (f"{M['n_days']:,}", "trading days", f"{M['date_min']} → {M['date_max']} (11.5 yrs)"),
+    ("13.7 bps", "slippage per side", f"{M['cost_crc_per_side']} CRC at a ~475 spot"),
+    (f"{OF['gross_sharpe']} → {OF['sharpe']}", "order-flow gross → net", "real signal, killed by cost"),
+    (f"{DONF['sharpe']}", "trend net Sharpe", f"long/short USD, {DONF['roundtrips_yr']} rt/yr"),
+    (f"+{DONF['ann_bps']:.0f} bps/yr", "trend net return", f"max DD {DONF['maxdd_bps']/100:.1f}%"),
+    (f"{IS['sharpe']} / {OOS['sharpe']}", "trend IS / OOS Sharpe", "edge lives in trending regimes"),
 ]
 
 
 def kpi_html():
-    return "".join(
-        f'<div class="kpi"><div class="kpi-v">{v}</div>'
-        f'<div class="kpi-l">{lab}</div><div class="kpi-s">{s}</div></div>'
-        for v, lab, s in KPIS
-    )
+    return "".join(f'<div class="kpi"><div class="kpi-v">{v}</div>'
+                   f'<div class="kpi-l">{lab}</div><div class="kpi-s">{s}</div></div>'
+                   for v, lab, s in KPIS)
 
 
-def test_table():
-    """Rigorous side-by-side test results for the two candidate strategies."""
-    rows = [
-        ("In-sample Sharpe (VWAP basis)", "in_sample", "sharpe", ""),
-        ("Out-of-sample Sharpe", "out_sample", "sharpe", "OOS ≥ IS = no decay"),
-        ("Walk-forward Sharpe (live sign)", "walk_forward", "sharpe", "sign re-estimated daily"),
-        ("Close-to-close Sharpe (realistic fill)", "exec_close_to_close", "sharpe", "the deployable number"),
-        ("Mean P&L (bps/day, close-to-close)", "exec_close_to_close", "mean_bps", ""),
-        ("Hit rate (close-to-close)", "exec_close_to_close", "hit", "%"),
-        ("Max drawdown (bps, close-to-close)", "exec_close_to_close", "maxdd_bps", ""),
-        ("Autocorr-adjusted Sharpe (Lo)", "full", "sharpe_lo", "≥ naive ⇒ not inflated"),
-    ]
-    out = ['<table><tr><th>Test</th><th class="num">Order-flow</th>'
-           '<th class="num">Momentum</th><th>Note</th></tr>']
-    for label, blk, key, note in rows:
-        ov = OF.get(blk, {}).get(key, "—")
-        mv = MO.get(blk, {}).get(key, "—")
-        out.append(f'<tr><td>{label}</td><td class="num">{ov}</td>'
-                   f'<td class="num">{mv}</td><td class="muted">{note}</td></tr>')
-    # scalar rows
-    scal = [
-        ("Alpha vs trend (bps/day)", f"+{OF['benchmark']['alpha_bps']} (t={OF['benchmark']['t_alpha']})", "trend-coupled"),
-        ("Beta to static short-USD", f"{OF['benchmark']['beta']}", "≈ trend"),
-        ("Permutation p-value", f"{OF['permutation_p']}", f"{MO['permutation_p']}"),
-        ("Deflated Sharpe (6-trial haircut)", f"{OF['DSR']}", f"{MO['DSR']}"),
-        ("Breakeven cost (bps/side)", f"{OF['breakeven_cost_bps']}", f"{MO['breakeven_cost_bps']}"),
-        ("Range-regime Sharpe", f"{OF['regime']['range']['sharpe']}", f"{MO['regime']['range']['sharpe']}"),
-        ("Appreciation-regime Sharpe", f"{OF['regime']['appreciation']['sharpe']}", f"{MO['regime']['appreciation']['sharpe']}"),
-    ]
-    for label, ov, mv in scal:
-        out.append(f'<tr><td>{label}</td><td class="num">{ov}</td>'
-                   f'<td class="num">{mv}</td><td class="muted"></td></tr>')
+def strat_table():
+    rows = [("Order-flow daily", OF), ("Donchian-40 trend", DON), ("SMA-120 trend", R["SMA-120 trend"])]
+    out = ['<table><tr><th>Long/short strategy</th><th class="num">Gross Sh</th>'
+           '<th class="num">Net Sh</th><th class="num">Net bps/yr</th>'
+           '<th class="num">Round-trips/yr</th><th class="num">Max DD</th><th>Verdict</th></tr>']
+    verdict = {
+        "Order-flow daily": '<span class="no">Dead — cost &gt; edge</span>',
+        "Donchian-40 trend": '<span class="ok">Survives</span>',
+        "SMA-120 trend": '<span class="mb">Marginal</span>',
+    }
+    for name, b in rows:
+        out.append(
+            f'<tr><td>{name}</td><td class="num">{b["gross_sharpe"]}</td>'
+            f'<td class="num">{b["sharpe"]}</td><td class="num">{b["ann_bps"]:.0f}</td>'
+            f'<td class="num">{b["roundtrips_yr"]}</td><td class="num">{b["maxdd_bps"]/100:.1f}%</td>'
+            f'<td>{verdict[name]}</td></tr>')
     out.append("</table>")
     return "".join(out)
 
@@ -83,7 +69,7 @@ def test_table():
 HTML = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>USD/CRC (MONEX) — Quant Report</title>
+<title>USD/CRC (MONEX) — Long/Short Quant Report</title>
 <style>
  :root {{ --bg:#0f1419; --card:#1a212b; --ink:#e8edf2; --mut:#8a97a6;
    --accent:#37b87c; --warn:#e0a83d; --bad:#e05d5d; --line:#2a3441; --blue:#4a90d9; }}
@@ -92,7 +78,7 @@ HTML = f"""<!doctype html>
    font:15px/1.55 -apple-system,Segoe UI,Roboto,Helvetica,Arial,sans-serif; }}
  .wrap {{ max-width:1040px; margin:0 auto; padding:32px 20px 80px; }}
  header {{ border-bottom:1px solid var(--line); padding-bottom:20px; margin-bottom:26px; }}
- h1 {{ font-size:29px; margin:0 0 6px; letter-spacing:-.5px; }}
+ h1 {{ font-size:28px; margin:0 0 6px; letter-spacing:-.5px; }}
  .sub {{ color:var(--mut); font-size:14px; }}
  .part {{ font-size:12px; text-transform:uppercase; letter-spacing:2px; color:var(--blue);
    margin:46px 0 2px; font-weight:700; }}
@@ -100,7 +86,7 @@ HTML = f"""<!doctype html>
  h2 .n {{ color:var(--accent); }}
  .kpis {{ display:grid; grid-template-columns:repeat(3,1fr); gap:12px; }}
  .kpi {{ background:var(--card); border:1px solid var(--line); border-radius:12px; padding:15px; }}
- .kpi-v {{ font-size:23px; font-weight:700; letter-spacing:-.5px; }}
+ .kpi-v {{ font-size:21px; font-weight:700; letter-spacing:-.5px; }}
  .kpi-l {{ font-size:13px; margin-top:2px; }}
  .kpi-s {{ font-size:12px; color:var(--mut); margin-top:4px; }}
  .lead {{ background:var(--card); border-left:3px solid var(--accent); border-radius:0 10px 10px 0;
@@ -115,12 +101,10 @@ HTML = f"""<!doctype html>
  figure h3 {{ margin:0 0 10px; font-size:16px; }}
  figure img {{ width:100%; border-radius:8px; display:block; background:#fff; }}
  figcaption {{ color:var(--mut); font-size:13px; margin-top:10px; }}
- table {{ width:100%; border-collapse:collapse; margin:8px 0; font-size:13.5px;
-   break-inside:avoid; }}
- th,td {{ text-align:left; padding:9px 11px; border-bottom:1px solid var(--line); vertical-align:top; }}
- th {{ color:var(--mut); font-weight:600; font-size:11.5px; text-transform:uppercase; letter-spacing:.5px; }}
+ table {{ width:100%; border-collapse:collapse; margin:8px 0; font-size:13px; break-inside:avoid; }}
+ th,td {{ text-align:left; padding:9px 10px; border-bottom:1px solid var(--line); vertical-align:top; }}
+ th {{ color:var(--mut); font-weight:600; font-size:11px; text-transform:uppercase; letter-spacing:.5px; }}
  td.num, th.num {{ text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }}
- .muted {{ color:var(--mut); font-size:12px; }}
  ul.find {{ list-style:none; padding:0; margin:0; }}
  ul.find li {{ background:var(--card); border:1px solid var(--line); border-radius:10px;
    padding:13px 16px; margin-bottom:10px; }}
@@ -134,147 +118,128 @@ HTML = f"""<!doctype html>
 <body><div class="wrap">
 
 <header>
-  <h1>USD/CRC · MONEX — Quant Report: pricing model, opportunities &amp; overfitting tests</h1>
-  <div class="sub">BCCR MONEX daily data · {META['n_days']} usable sessions ·
-    {META['date_min']} → {META['date_max']} · methodology: explore → hypothesise → test out-of-sample</div>
+  <h1>USD/CRC · MONEX — Long/Short Quant Report (full history, net of real slippage)</h1>
+  <div class="sub">{M['n_days']:,} sessions · {M['date_min']} → {M['date_max']} · execution cost
+    {M['cost_crc_per_side']} CRC/side (~{M['cost_bps_at_475']} bps) · long/short USD positions</div>
 </header>
 
-<p class="lead">Approach: first <b>look</b> at the data to spot candidate edges, then <b>test them
-adversarially</b> — out-of-sample split, expanding walk-forward, transaction costs, a trend
-benchmark, a permutation null, and a multiple-testing (deflated-Sharpe) haircut — before believing
-any of them. The headline edge survives all of these; one runner-up is mostly the trend in disguise.</p>
+<p class="lead">This revises the earlier 18-month study with <b>11.5 years of data</b> and your
+<b>real slippage of 0.65 CRC per side</b>. Both change the conclusion. The 18-month sample was a
+favourable window with an untradeable VWAP fill; on the full history and real costs, the
+high-frequency edge does not survive — but a <b>slow trend-following long/short</b> does, with a
+believable net Sharpe near 1.</p>
 
 <div class="verdict"><ul>
- <li><span class="ok"><b>PASS —</b> Order-flow continuation is a real edge.</span> Out-of-sample Sharpe
-   ({OF['out_sample']['sharpe']}) ≥ in-sample ({OF['in_sample']['sharpe']}); walk-forward
-   {OF['walk_forward']['sharpe']}; permutation p={OF['permutation_p']}; deflated Sharpe {OF['DSR']};
-   positive in <i>both</i> regimes; and <b>+{OF['benchmark']['alpha_bps']} bps/day alpha vs the
-   trend (t={OF['benchmark']['t_alpha']}, beta {OF['benchmark']['beta']})</b> — not just shorting USD downhill.</li>
- <li><span class="mb"><b>CAUTION —</b> the realistic number is lower than the headline.</span> You cannot trade
-   <i>at</i> the VWAP; on close-to-close fills the Sharpe is <b>{OF['exec_close_to_close']['sharpe']}</b>
-   (≈{OF['exec_close_to_close']['mean_bps']} bps/day), not ~5. Still strong, and breakeven cost is
-   {OF['breakeven_cost_bps']} bps vs a ~2 bps spread.</li>
- <li><span class="mb"><b>CAUTION —</b> momentum is largely the trend.</span> It only trades on big-move days and is
-   highly trend-coupled; treat as a beta expression, not independent alpha.</li>
- <li><span class="no"><b>RISK —</b> biggest risk is unmodellable here.</span> 18 months, one managed-float regime.
-   High Sharpe in a low-vol managed currency carries <b>peg/policy-break tail risk</b> a short sample
-   cannot show. Size for that, not for the backtest Sharpe.</li>
+ <li><span class="mb"><b>REVISION —</b> the earlier "Sharpe ~5" was a mirage.</span> It came from an
+   18-month window (the colón only became signal-rich after 2018) and from marking P&L at the VWAP,
+   which you cannot actually trade at.</li>
+ <li><span class="no"><b>DEAD —</b> daily order-flow loses money net of your cost.</span> The signal is
+   <i>real</i> (gross next-day Sharpe {OF['gross_sharpe']}, positive every year since 2017), but it
+   flips position ~{OF['roundtrips_yr']}×/yr and the ~5 bps/trade edge is smaller than your ~13.7
+   bps/side slippage → <b>net Sharpe {OF['sharpe']}</b>. It only pays if you are the liquidity
+   <i>provider</i>, not the taker.</li>
+ <li><span class="ok"><b>SURVIVES —</b> a slow trend-following long/short USD.</span> Donchian-40
+   breakout: <b>net Sharpe {DONF['sharpe']}</b>, {DONF['roundtrips_yr']} round-trips/yr,
+   +{DONF['ann_bps']:.0f} bps/yr, max drawdown {DONF['maxdd_bps']/100:.1f}%. Both the long-USD and
+   short-USD legs make money; permutation p={R['Donchian-40_perm_p']}.</li>
+ <li><span class="mb"><b>CAVEAT —</b> it only earns when the colón trends.</span> In-sample (2015–21,
+   mostly the pegged years) net Sharpe was just {IS['sharpe']}; out-of-sample (2021–26, two-way regimes)
+   {OOS['sharpe']}. If the BCCR re-pins the rate, trend-following goes flat — it won't bleed, but it
+   won't earn. Managed-float tail risk remains the dominant danger.</li>
 </ul></div>
 
-<div class="part">Part A · Explore — seeing the opportunity</div>
-<h2><span class="n">A1.</span> Price, regimes &amp; order flow</h2>
-{fig("eda_price_volume.png", "Session VWAP with regime shading + signed daily volume",
-     "The colón was range-bound (~500–511) then entered a sustained appreciation. The volume bars are "
-     "coloured by that day's direction — heavy bars skew green (appreciation), the first visual hint that "
-     "volume carries directional information.")}
+<div class="part">Part A · Explore — 11.5 years, multiple regimes</div>
+<h2><span class="n">A1.</span> Price &amp; order flow across regimes</h2>
+{fig("eda_price_volume.png", "Session VWAP and signed daily volume, 2014–2026",
+     "The colón was effectively pinned/quiet in 2015–17, then traded two-way: depreciation spikes "
+     "(2018, 2020, COVID) and a long appreciation 2022–26. A single strategy must cope with all of these.")}
 
-<h2><span class="n">A2.</span> Return character — fat tails, momentum, vol clustering</h2>
-{fig("eda_returns.png", "Daily-move distribution, QQ plot, and autocorrelation functions",
-     "Moves are fat-tailed (leptokurtic). The ACF shows a real, significant lag-1 of ~+0.37 in market "
-     "moves (trending), and |moves| are autocorrelated (volatility clusters). These motivate momentum and "
-     "regime-aware sizing — and warn that naive Sharpe annualisation must be autocorrelation-checked.")}
+<h2><span class="n">A2.</span> The signal is regime-dependent (the key overfitting lesson)</h2>
+{fig("bt_regime_corr.png", "Volume→direction correlation by year, and the colón's annual move",
+     "Left: the volume→next-day-move correlation was ~0 in 2015–17 and only emerged from 2018 on. The "
+     "original 18-month study sat entirely inside the favourable post-2018 regime — which is exactly how "
+     "a real edge and an overfit one can look identical on a short sample. Right: the two-way moves a "
+     "long/short strategy has to navigate.")}
 
-<h2><span class="n">A3.</span> Seasonality — dispersion, not just averages</h2>
-{fig("eda_seasonality.png", "Daily-move boxplots by month and by day-of-week",
-     "February/April lean to appreciation, December to depreciation; Wednesday is the softest weekday. "
-     "But the boxes overlap heavily — seasonality is a tilt, not a standalone signal.")}
-
-<h2><span class="n">A4.</span> The core relationship: volume ⇒ direction</h2>
-{fig("eda_volume_return.png", "Volume vs same-day move, vs next-day move, and rolling correlation",
-     "Left/middle: more volume ⇒ colón strength, both same-day (−0.45 bps/$M) and — crucially for trading — "
-     "NEXT-day (−0.35 bps/$M). Right: the rolling 60-day correlation stays between −0.3 and −0.5 and NEVER "
-     "crosses zero in 18 months. That stability is what separates a signal from a fluke.")}
-{fig("s_mechanics.png", "Order-flow mechanics — next-session move by volume bucket",
-     "Bucketed, the gradient is monotonic: very-heavy days → next-session appreciation, very-light days → "
-     "depreciation. A clean, interpretable mechanism (USD-supply pressure that bleeds out gradually under "
-     "the managed-float anchor).")}
-
-<h2><span class="n">A5.</span> Calendar &amp; volume-profile context</h2>
+<h2><span class="n">A3.</span> The order-flow relationship &amp; return character</h2>
 <div class="cols">
-{fig("eda_calendar.png", "Day-of-week × month heatmaps (move & volume)",
-     "Where in the calendar appreciation and volume concentrate — useful as a sizing tilt overlay.")}
-{fig("03_volume_profile.png", "Volume at each price level",
-     "Point of control 507 ₡; 70% value area 453–510. Current price sits at the bottom edge — "
-     "price-discovery territory, not a range to fade.")}
+{fig("eda_volume_return.png", "Volume vs same-day & next-day move + rolling correlation",
+     "Heavy volume ⇒ colón strength, contemporaneously and next-day — a genuine order-flow signal "
+     "(USD supply). This is real; the problem is monetising it net of cost.")}
+{fig("eda_returns.png", "Return distribution, QQ, and autocorrelations",
+     "Fat tails and volatility clustering — the tails are what a managed-float blow-up would live in, "
+     "and a short sample never shows them.")}
 </div>
 
-<div class="part">Part B · Hypothesise</div>
-<h2>Candidate edges the exploration suggests</h2>
-<ul class="find">
- <li><b>H1 — Order-flow continuation.</b> Heavy-volume (USD-supply) days are followed by further colón
-   strength next session; fade-by-supply. Short USD after heavy days, long after light days.</li>
- <li><b>H2 — Overnight momentum.</b> The +0.37 lag-1 autocorrelation says big moves continue; follow a
-   &gt;1σ session move into the next session.</li>
- <li><b>H3 — Seasonal tilt.</b> Lean short-USD in the first half of the month / Feb &amp; Apr, lighter in Dec.
-   (Treated as an overlay, not tested as a standalone strategy — the boxplots show too much overlap.)</li>
-</ul>
+<h2><span class="n">A4.</span> Seasonality &amp; volume profile (context overlays)</h2>
+<div class="cols">
+{fig("eda_calendar.png", "Day-of-week × month heatmaps", "Calendar tilts in move and volume — a sizing overlay, not a standalone edge.")}
+{fig("03_volume_profile.png", "Volume at each price level", "Where the market has traded over 11.5 years; congestion vs discovery zones.")}
+</div>
 
-<div class="part">Part C · Test — adversarial, overfitting-aware</div>
-<h2><span class="n">C1.</span> All tests at a glance</h2>
-{test_table()}
+<div class="part">Part B · The cost reality</div>
+<h2><span class="n">B1.</span> What 0.65 CRC/side does to each long/short strategy</h2>
+{strat_table()}
+{fig("bt_net_compare.png", "Net-of-slippage cumulative P&L — the whole story in one chart",
+     "Order-flow (orange) bleeds steadily to −10,000 bps purely on transaction cost. The trend strategies "
+     "(green/navy) are flat through the 2015–21 quiet years, then earn +~4,000 bps in the trending era. "
+     "Frequency, not signal quality, is what kills order-flow.")}
 
-<h2><span class="n">C2.</span> Out-of-sample (fit on grey, judge on red)</h2>
-{fig("bt_oos.png", "In-sample vs out-of-sample equity",
-     "Order-flow's out-of-sample Sharpe (" + str(OF['out_sample']['sharpe']) + ") matches/exceeds in-sample "
-     "(" + str(OF['in_sample']['sharpe']) + ") — the classic no-overfitting signature. Momentum holds too but "
-     "on far fewer trades.")}
+<h2><span class="n">B2.</span> Sensitivity to the slippage assumption</h2>
+{fig("bt_slippage.png", "Net Sharpe vs slippage per side",
+     "Daily order-flow crosses below zero almost immediately; the trend strategy stays positive well past "
+     "your 0.65 CRC. The deployable edge is the one that barely cares about the exact cost.")}
 
-<h2><span class="n">C3.</span> Expanding walk-forward (no peeking at the sign)</h2>
-{fig("bt_walkforward.png", "Order-flow with the signal direction re-estimated live each day",
-     "Even when the volume→move direction is estimated only from past data at every step, the equity curve "
-     "is smooth (Sharpe " + str(OF['walk_forward']['sharpe']) + ") — the edge is not an artefact of "
-     "full-sample hindsight.")}
+<div class="part">Part C · The deployable strategy — trend long/short USD</div>
+<h2><span class="n">C1.</span> Net-of-cost tearsheet</h2>
+{fig("bt_trend_tearsheet.png", "Donchian-40 breakout long/short USD — net of 0.65 CRC slippage",
+     "Equity, drawdown, P&L by year and the daily-return distribution. Flat 2015–21, then the bulk of the "
+     "P&L in the trending 2022–26 years. Drawdowns are real (max " + f"{DONF['maxdd_bps']/100:.1f}%" + ").")}
 
-<h2><span class="n">C4.</span> Transaction-cost sensitivity</h2>
-{fig("bt_costs.png", "Net Sharpe vs per-side cost",
-     "Order-flow breaks even only around " + str(OF['breakeven_cost_bps']) + " bps/side — comfortably above a "
-     "~2 bps MONEX spread, so the edge is not eaten by costs.")}
+<h2><span class="n">C2.</span> It is genuinely two-way (long &amp; short both work)</h2>
+{fig("bt_longshort.png", "Long-USD vs short-USD leg contribution",
+     "Long-USD legs +" + f"{SIDES['long_usd_total_bps']:.0f}" + " bps, short-USD legs +" +
+     f"{SIDES['short_usd_total_bps']:.0f}" + " bps. Both sides are positive across the sample, so this is a "
+     "real long/short — not a one-directional bet dressed up.")}
 
-<h2><span class="n">C5.</span> Is it just the appreciation trend? (alpha/beta)</h2>
-{fig("bt_benchmark.png", "Order-flow vs static short-USD benchmark",
-     "The strategy compounds even through the flat regime where the trend made nothing. Regressed on the "
-     "trend it shows +" + str(OF['benchmark']['alpha_bps']) + " bps/day alpha (t=" + str(OF['benchmark']['t_alpha']) +
-     ") with beta " + str(OF['benchmark']['beta']) + " — the edge is orthogonal to the trend, not a leveraged bet on it.")}
-
-<h2><span class="n">C6.</span> Permutation null — does the timing beat luck?</h2>
-{fig("bt_permutation.png", "Sharpe under 3,000 shuffles of the position timing",
-     "Holding the exposure mix fixed and shuffling WHEN the positions occur destroys the edge: the actual "
-     "Sharpe sits far in the right tail (p=" + str(OF['permutation_p']) + "). The skill is in the timing.")}
-
-<h2><span class="n">C7.</span> Parameter sensitivity — plateau, not a spike</h2>
-{fig("bt_sensitivity.png", "Order-flow Sharpe across lookback × threshold",
-     "Every parameter combination is green (Sharpe " + str(OF['sensitivity']['min']) + "–" +
-     str(OF['sensitivity']['max']) + ", median " + str(OF['sensitivity']['median']) + "). A broad plateau means "
-     "the result doesn't depend on a lucky knob setting — the hallmark of a non-overfit signal.")}
-
-<h2><span class="n">C8.</span> Deployable tearsheet</h2>
-{fig("s1_orderflow_tearsheet.png", "Order-flow continuation — full tearsheet",
-     "Equity, drawdown, monthly P&L and the daily-return distribution. Only one losing month, shallow "
-     "drawdowns, right-skewed daily P&L.")}
+<h2><span class="n">C3.</span> Out-of-sample &amp; robustness</h2>
+{fig("bt_oos.png", "In-sample (2015–21) vs out-of-sample (2021–26), net",
+     "Net Sharpe " + str(IS['sharpe']) + " in-sample → " + str(OOS['sharpe']) + " out-of-sample. The OOS "
+     "period is stronger because it contained the trends; the honest read is 'pays when the colón moves'.")}
+{fig("bt_sensitivity.png", "Net Sharpe vs lookback (Donchian & SMA)",
+     "Positive across a broad band of lookbacks (Donchian " + str(R['sensitivity']['donchian_min']) + "–" +
+     str(R['sensitivity']['donchian_max']) + "), so it isn't a single lucky parameter — but it is not a "
+     "high-Sharpe machine either.")}
+{fig("bt_permutation.png", "Permutation null (net)",
+     "Shuffling the timing of the same positions destroys the edge (p=" + str(R['Donchian-40_perm_p']) +
+     "), so the entry/exit timing carries genuine information.")}
 
 <div class="part">Part D · Verdict &amp; deployment</div>
-<h2>How to actually run it — and what will kill it</h2>
+<h2>Is it worth pursuing?</h2>
 <ul class="find">
- <li><b>Trade:</b> at each close compute the 20-day volume z-score; go short USD into the next session
-   after heavy days, long after light days. Overlay the seasonal tilt for sizing.</li>
- <li><b>Expected (gross, realistic fill):</b> ≈{OF['exec_close_to_close']['mean_bps']} bps/day, Sharpe
-   ≈{OF['exec_close_to_close']['sharpe']}, max drawdown ≈{abs(OF['exec_close_to_close']['maxdd_bps'])/100:.1f}% over the sample.
-   Net of a ~2 bps spread it stays clearly positive (breakeven {OF['breakeven_cost_bps']} bps).</li>
- <li><b>Why it should persist:</b> structural USD oversupply shows up as volume, and the managed-float
-   anchor releases that pressure gradually rather than gapping — a genuine microstructure mechanism.</li>
- <li><span class="no"><b>Dominant risk:</b></span> regime/peg-break tail. A managed currency can trend
-   quietly for years then jump; an 18-month sample cannot price that. Cap position size to survive a
-   multi-σ policy shock, and re-estimate the sign continuously (the walk-forward already does).</li>
+ <li><b>As a standalone speculative book:</b> marginal. Net Sharpe ~1 with ~13% drawdowns and a known
+   tail risk is not compelling on its own, and you need an instrument that lets you be long <i>and</i>
+   short USD/CRC at 0.65 CRC slippage.</li>
+ <li><b>As a treasury / hedging overlay (most likely your case):</b> yes, useful. If you already run
+   USD/CRC exposure, a slow trend filter that tells you when to be long vs short USD — trading only a few
+   times a year — is a cheap, robust improvement over a static hedge, and it survived 11.5 years and real costs.</li>
+ <li><b>Do NOT deploy the daily order-flow signal as a taker.</b> It is real but you will pay it all away
+   in slippage. The only way to monetise it is as a market-maker / internaliser capturing the spread you
+   are currently paying.</li>
+ <li><span class="no"><b>Dominant risk:</b></span> the BCCR. A re-peg flattens the trend edge; a policy
+   break / intervention is the fat tail this sample can't price. Size for survival, keep the lookback slow,
+   and re-estimate continuously.</li>
 </ul>
 
 <footer>
-  <b>Caveats.</b> All P&amp;L is gross of MONEX spread/brokerage/settlement; the colón is not freely
-  shortable for most participants (a directional/hedging edge, not arbitrage). Tests are on a single
-  18-month managed-float regime; the deflated Sharpe haircuts for {META['n_trials_haircut']} eyeballed
-  trials but cannot price regime risk. The "best board offers" block in the export was empty, so VWAP/close
-  are the price proxies.<br><br>
+  <b>Caveats.</b> P&amp;L is net of your stated 0.65 CRC/side slippage but gross of financing/borrow and
+  any market impact; the colón is not freely shortable for all participants. Tests assume you can hold a
+  signed USD position at MONEX. Your slippage example described price <i>improvement</i> (buy below /
+  sell above spot); this report models the economically standard <i>adverse</i> 0.65 CRC — tell me if you
+  meant otherwise and the cost layer flips. The "best board offers" block in the export was empty, so VWAP
+  / close are the price proxies.<br><br>
   Reproducible: <code>parse_monex → analyze → eda → strategies → backtest → build_report</code>, then
-  <code>weasyprint</code> for the PDF. Numbers in this report are read live from <code>backtest_results.json</code>.
+  <code>weasyprint</code> for the PDF. Strategy numbers are read live from <code>backtest_results.json</code>.
 </footer>
 
 </div></body></html>"""

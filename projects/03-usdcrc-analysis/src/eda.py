@@ -39,13 +39,8 @@ def acf(x, n):
 
 def price_volume(df):
     fig, ax = plt.subplots(2, 1, figsize=(11, 7), height_ratios=[2, 1], sharex=True)
-    ax[0].plot(df.date, df.vwap, color=NAVY, lw=1.3)
-    ax[0].axvspan(df.date.min(), REGIME_SPLIT, color=GREY, alpha=0.08)
-    ax[0].axvspan(REGIME_SPLIT, df.date.max(), color=GREEN, alpha=0.07)
-    ax[0].text(df.date.min(), df.vwap.max(), "  range regime", va="top", color=GREY, fontsize=10)
-    ax[0].text(REGIME_SPLIT, df.vwap.max(), "  appreciation regime", va="top",
-               color=GREEN, fontsize=10)
-    ax[0].set_title("USD/CRC session VWAP — two visually distinct regimes")
+    ax[0].plot(df.date, df.vwap, color=NAVY, lw=1.1)
+    ax[0].set_title("USD/CRC session VWAP, 2014–2026 — pegged/quiet (2015–17) then two-way regimes")
     ax[0].set_ylabel("colones / US$")
 
     col = np.where(df.ret_vwap_bps >= 0, RED, GREEN)  # red = colon weaker, green = stronger
