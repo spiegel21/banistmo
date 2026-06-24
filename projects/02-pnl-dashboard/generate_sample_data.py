@@ -84,6 +84,8 @@ def _days_in_month(year: int, month: int) -> int:
 
 
 def _coupon_dates(bond: _Bond) -> list[date]:
+    if not bond.coupon_frequency:   # non-coupon-bearing: no schedule
+        return []
     months = 12 // bond.coupon_frequency
     dates: list[date] = []
     d = bond.first_coupon_date
@@ -97,6 +99,8 @@ def _coupon_dates(bond: _Bond) -> list[date]:
 
 
 def _prev_period_start(bond: _Bond) -> date:
+    if not bond.coupon_frequency:   # no period to step back to
+        return bond.first_coupon_date
     months = 12 // bond.coupon_frequency
     m = bond.first_coupon_date.month - months
     y = bond.first_coupon_date.year + (m - 1) // 12

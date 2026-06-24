@@ -3,7 +3,24 @@ from datetime import date
 import pytest
 
 from models import BondStatic
-from accruals import accrued_interest, days_accrued, last_coupon_date, load_bonds_static
+from accruals import (
+    accrued_interest,
+    coupon_amount_per_period,
+    days_accrued,
+    last_coupon_date,
+    load_bonds_static,
+    next_coupon_date,
+)
+
+
+def _zero_coupon_bond():
+    """Non-coupon-bearing bond: coupon_frequency 0, as produced by the parser
+    for a blank/zero coupon."""
+    return BondStatic(
+        cusip="ZC", name="zero", currency="USD", country="US",
+        coupon_rate=0.0, coupon_frequency=0, day_count_convention="30/360",
+        maturity_date=date(2030, 6, 15), first_coupon_date=date(2030, 6, 15),
+    )
 
 
 def _bond(dcc, freq=2):
@@ -37,6 +54,40 @@ def test_last_coupon_date_on_coupon():
 def test_zero_at_coupon_date():
     b = _bond("Act/360")
     assert accrued_interest(1_000_000, b, date(2025, 6, 15)) == pytest.approx(0.0)
+
+
+def test_zero_coupon_last_coupon_date_no_zerodivision():
+    """Regression: last_coupon_date on a non-coupon-bearing bond must not raise
+    ZeroDivisionError (coupon_frequency 0 → 12 // 0 in _prev_period_start)."""
+    b = _zero_coupon_bond()
+    # Falls through to _prev_period_start; returns first_coupon_date safely.
+    assert last_coupon_date(b, date(2026, 6, 1)) == b.first_coupon_date
+
+
+def test_zero_coupon_helpers_are_safe():
+    """All accrual helpers must return benign values (no raise) for a
+    zero-coupon bond, across the fields that could divide by zero."""
+    b = _zero_coupon_bond()
+    assert next_coupon_date(b, date(2026, 6, 1)) is None
+    assert days_accrued(b, date(2026, 6, 1)) == 0
+    assert accrued_interest(1_000_000, b, date(2026, 6, 1)) == 0.0
+    assert coupon_amount_per_period(1_000_000, b) == 0.0
+
+
+def test_zero_coupon_accrual_breakdown_no_zerodivision():
+    """history.accrual_breakdown calls last_coupon_date() directly; it must not
+    crash when a held position is a zero-coupon bond."""
+    from history import accrual_breakdown
+    from models import Position
+
+    b = _zero_coupon_bond()
+    positions = {"ZC": Position(cusip="ZC", net_nominal=1_000_000, wavg_price=99.0,
+                                book_value=-990_000, last_settle=date(2026, 1, 2))}
+    df = accrual_breakdown(positions, {"ZC": b}, date(2026, 6, 1))
+    row = df[df["cusip"] == "ZC"].iloc[0]
+    assert row["days_accrued"] == 0
+    assert row["accrued_total"] == 0.0
+    assert row["last_coupon_date"] == b.first_coupon_date.isoformat()
 
 
 def test_invalid_frequency_rejected():
