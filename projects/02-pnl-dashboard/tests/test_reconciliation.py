@@ -64,12 +64,15 @@ def test_trade_clean_row_no_findings():
 def test_bond_missing_name_and_classification():
     b = _bond(name="", instrument_type="", country_of_risk="", country="",
               sector="", market="", currency="", rating_sp="")
-    f = rec.check_bonds({b.cusip: b}, held_cusips={b.cusip})
+    # opt into the stricter checks to validate every dimension is reported
+    f = rec.check_bonds({b.cusip: b}, held_cusips={b.cusip},
+                        require_ratings=True, require_market=True)
     fields = {x["field"] for x in f}
     assert "name" in fields
     assert "instrument_type" in fields
     assert "country_of_risk" in fields
     assert "sector" in fields
+    assert "market" in fields
     assert "rating" in fields
     # held bond with missing classification escalates to needs_input
     assert any(x["field"] == "country_of_risk" and x["severity"] == "needs_input" for x in f)
@@ -82,6 +85,38 @@ def test_bond_fully_populated_minimal_findings():
     assert f == []
 
 
+def test_bond_missing_ratings_and_market_ignored_by_default():
+    # Ratings and the Local/Global market dimension are optional reference data
+    # (often blank on Bloomberg's Static sheet) → not flagged by default.
+    b = _bond(rating_sp="", rating_moody="", rating_fitch="",
+              market="", currency="", country="")  # market → Unknown
+    f = rec.check_bonds({b.cusip: b}, held_cusips={b.cusip})
+    fields = {x["field"] for x in f}
+    assert "rating" not in fields
+    assert "market" not in fields
+    # the genuinely required dimensions are still present, so no other findings
+    assert f == []
+
+
+def test_bond_zero_coupon_na_fields_load_clean(tmp_path):
+    # A zero-coupon bond whose Static sheet has "#N/A Field not Applicable" in
+    # coupon_frequency / first_coupon_date must load and raise no findings.
+    import data_io
+    row = pd.Series({
+        "cusip": "111111111", "name": "ZERO 2030", "currency": "USD",
+        "country": "US", "coupon_rate": "#N/A Field not Applicable",
+        "coupon_frequency": "#N/A Field not Applicable",
+        "day_count_convention": "", "maturity_date": "2030-01-15",
+        "first_coupon_date": "#N/A Field not Applicable", "bbg_ticker": "111111111 Corp",
+        "instrument_type": "Corporate", "country_of_risk": "US", "sector": "Tech",
+    })
+    bond = data_io.parse_bond_static_row(row)
+    assert bond.coupon_frequency == 0
+    assert bond.coupon_rate == 0.0
+    f = rec.check_bonds({bond.cusip: bond}, held_cusips={bond.cusip})
+    assert f == []
+
+
 def test_price_missing_weird_and_nonpositive():
     held = {"A", "B", "C"}
     prices = {"B": 5.0, "C": -3.0}  # A missing, B too low, C negative
@@ -90,6 +125,33 @@ def test_price_missing_weird_and_nonpositive():
     assert ("A", "warning") in by_key       # missing
     assert any(x["key"] == "B" and "plausible" in x["issue"] for x in f)
     assert any(x["key"] == "C" and x["severity"] == "error" for x in f)
+
+
+def test_price_matured_bond_not_flagged_for_missing_price():
+    # An expired bond returns no live price (Bloomberg #N/A); it should be
+    # skipped, not flagged as "missing price".
+    matured = _bond(cusip="MAT000000", maturity_date=date(2024, 1, 1),
+                    first_coupon_date=date(2020, 1, 1))
+    live = _bond(cusip="LIVE00000", maturity_date=date(2030, 1, 1))
+    held = {"MAT000000", "LIVE00000"}
+    f = rec.check_prices(held, {}, pd.DataFrame(),
+                         {"MAT000000": matured, "LIVE00000": live},
+                         as_of=date(2026, 6, 24))
+    keys = {x["key"] for x in f}
+    assert "MAT000000" not in keys      # matured → skipped
+    assert "LIVE00000" in keys          # live bond still flagged for no price
+
+
+def test_trade_incomplete_bond_static_row_message():
+    # CUSIP exists in the file (known_cusips) but failed to load → the fix should
+    # tell the user to complete the row, not to add a brand-new bond.
+    raw = pd.DataFrame([dict(
+        cusip="037833100", side="buy", nominal=1000, price=100, principal=1000,
+        net=-1000, accrued=0, trade_date="2025-01-01", settle_date="2025-01-03")])
+    f = rec.check_trades(raw, {}, known_cusips={"037833100"})
+    incomplete = [x for x in f if x["field"] == "cusip"]
+    assert incomplete and "incomplete" in incomplete[0]["issue"]
+    assert "maturity_date" in incomplete[0]["suggested_fix"]
 
 
 def test_price_stale_detection():
