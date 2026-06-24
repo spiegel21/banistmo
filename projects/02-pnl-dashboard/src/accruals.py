@@ -156,8 +156,17 @@ def _days_30_360(start: date, end: date) -> int:
 
 
 def days_accrued(bond: BondStatic, as_of: date) -> int:
-    """Days since last coupon using the bond's day-count convention."""
+    """Days since last coupon using the bond's day-count convention.
+
+    A matured bond (as_of on/after maturity) has redeemed at par — the final
+    coupon was paid at maturity, so there is no further carry. Without this
+    clamp ``last_coupon_date`` returns the last coupon and the day count would
+    grow without bound for every day past maturity, inflating accrued interest
+    and dirty-price MTM for a position that was never closed out.
+    """
     if not bond.coupon_frequency:
+        return 0
+    if bond.is_matured(as_of):
         return 0
     lcd = last_coupon_date(bond, as_of)
     if bond.day_count_convention == "30/360":
