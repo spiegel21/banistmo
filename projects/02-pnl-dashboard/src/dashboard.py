@@ -704,7 +704,9 @@ with tab_debug:
     st.caption(
         "Every trade, bond, and price that is broken or incomplete, in one place. "
         "**Errors** block correct P&L, **warnings** look suspicious (e.g. weird prices), "
-        "**needs-input** marks missing manual fields (name, country of risk, rating…)."
+        "**needs-input** marks missing manual fields (name, country of risk, sector…). "
+        "Optional reference data — credit ratings and the Local/Global market flag — "
+        "is not flagged; matured bonds are excluded from price checks."
     )
 
     _held_cusips = {c for c, p in positions.items() if p.net_nominal != 0}

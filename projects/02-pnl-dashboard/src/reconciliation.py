@@ -21,6 +21,7 @@ defaults) so they are pure and unit-testable.
 """
 from __future__ import annotations
 
+from datetime import date
 from pathlib import Path
 
 import pandas as pd
@@ -46,12 +47,6 @@ STALE_REPEAT_DAYS = 5
 
 FINDING_COLUMNS = ["severity", "category", "source", "key", "field", "issue", "suggested_fix"]
 
-# Static fields we expect a fully-classified bond to carry. Missing → needs_input.
-_REQUIRED_BOND_FIELDS = ["maturity_date", "day_count_convention"]
-_CLASSIFICATION_FIELDS = [
-    "name", "instrument_type", "country_of_risk", "sector", "market",
-]
-
 
 def _finding(severity, category, source, key, field, issue, suggested_fix) -> dict:
     return {
@@ -62,11 +57,21 @@ def _finding(severity, category, source, key, field, issue, suggested_fix) -> di
 
 # ── trade checks ──────────────────────────────────────────────────────────────
 
-def check_trades(raw_trades: pd.DataFrame, bonds_static: dict[str, BondStatic]) -> list[dict]:
+def check_trades(
+    raw_trades: pd.DataFrame,
+    bonds_static: dict[str, BondStatic],
+    known_cusips: set[str] | None = None,
+) -> list[dict]:
     """Validate the raw trades CSV: structure, parseability, and economics.
 
     Operates on the *raw* frame (strings as written) so parse failures are
     caught rather than hidden by a tolerant loader.
+
+    ``known_cusips`` is the set of CUSIPs that *physically appear* in
+    bonds_static.csv (before parsing/validation). It lets us tell a genuinely
+    missing bond apart from one whose row exists but failed to load (e.g. a
+    blank ``maturity_date``) — the two need different fixes, so conflating them
+    sends the user to add a bond that is already there.
     """
     findings: list[dict] = []
     if raw_trades is None or raw_trades.empty:
@@ -82,10 +87,20 @@ def check_trades(raw_trades: pd.DataFrame, bonds_static: dict[str, BondStatic]) 
                 "error", "Trade", "trades.csv", key, "cusip",
                 "CUSIP is blank", "Add the 9-char CUSIP in Data Editor ▸ Trades."))
         elif cusip not in bonds_static:
-            findings.append(_finding(
-                "warning", "Trade", "trades.csv", cusip, "cusip",
-                f"Trade references CUSIP {cusip} with no bond static row",
-                "Add the bond in Data Editor ▸ Bond Static (or run Bloomberg import)."))
+            if known_cusips is not None and cusip in known_cusips:
+                # Row is present but did not load — almost always a missing
+                # maturity_date (the one field with no fallback in the loader).
+                findings.append(_finding(
+                    "warning", "Trade", "trades.csv", cusip, "cusip",
+                    f"Bond static row for {cusip} exists but is incomplete "
+                    f"(it failed to load — usually a missing maturity_date)",
+                    "Complete the bond's static fields in Data Editor ▸ Bond Static "
+                    "(maturity_date is required)."))
+            else:
+                findings.append(_finding(
+                    "warning", "Trade", "trades.csv", cusip, "cusip",
+                    f"Trade references CUSIP {cusip} with no bond static row",
+                    "Add the bond in Data Editor ▸ Bond Static (or run Bloomberg import)."))
 
         side = str(row.get("side", "")).strip().lower()
         if side not in ("buy", "sell"):
@@ -161,14 +176,37 @@ def check_trades(raw_trades: pd.DataFrame, bonds_static: dict[str, BondStatic]) 
 
 # ── bond static checks ────────────────────────────────────────────────────────
 
-def check_bonds(bonds_static: dict[str, BondStatic], held_cusips: set[str] | None = None) -> list[dict]:
+# Classification dimensions checked by default. ``market`` is intentionally
+# excluded: it is derived heuristically (domestic-vs-hard currency) and is often
+# left blank on the Bloomberg Static sheet, so flagging it is noise. Credit
+# ratings are likewise optional (see ``require_ratings``). Both can be re-enabled
+# by the caller when a stricter, fully-classified book is required.
+_REQUIRED_CLASSIFICATION = ("instrument_type", "country_of_risk", "sector")
+
+
+def check_bonds(
+    bonds_static: dict[str, BondStatic],
+    held_cusips: set[str] | None = None,
+    *,
+    require_ratings: bool = False,
+    require_market: bool = False,
+) -> list[dict]:
     """Flag bonds missing required or classification fields (needs manual input).
 
     If ``held_cusips`` is given, missing fields on held bonds are escalated
     (they directly affect live P&L/exposure); reference-only bonds stay low-key.
+
+    ``require_ratings`` / ``require_market`` are off by default: credit ratings
+    and the Local/Global market dimension are treated as optional reference data
+    (commonly blank on the Bloomberg Static sheet) and are not flagged unless the
+    caller opts in.
     """
     findings: list[dict] = []
     held = held_cusips or set()
+
+    fields = list(_REQUIRED_CLASSIFICATION)
+    if require_market:
+        fields.append("market")
 
     for cusip, bond in bonds_static.items():
         # Name missing — the most common "bond doesn't show a name" case.
@@ -187,7 +225,7 @@ def check_bonds(bonds_static: dict[str, BondStatic], held_cusips: set[str] | Non
 
         # classification dimensions (Unknown after derivation → needs input)
         derived = classify(bond)
-        for fld in ("instrument_type", "country_of_risk", "sector", "market"):
+        for fld in fields:
             if derived.get(fld) == UNKNOWN:
                 sev = "needs_input" if cusip in held else "warning"
                 findings.append(_finding(
@@ -195,7 +233,9 @@ def check_bonds(bonds_static: dict[str, BondStatic], held_cusips: set[str] | Non
                     f"{fld.replace('_', ' ')} could not be determined",
                     f"Set {fld} in Data Editor ▸ Bond Static (or fetch from Bloomberg)."))
 
-        if not any(getattr(bond, r, "") for r in ("rating_sp", "rating_moody", "rating_fitch")):
+        if require_ratings and not any(
+            getattr(bond, r, "") for r in ("rating_sp", "rating_moody", "rating_fitch")
+        ):
             findings.append(_finding(
                 "needs_input", "Bond Static", "bonds_static.csv", cusip, "rating",
                 "No credit rating on file (S&P / Moody's / Fitch)",
@@ -211,16 +251,26 @@ def check_prices(
     current_prices: dict[str, float],
     price_history: pd.DataFrame,
     bonds_static: dict[str, BondStatic] | None = None,
+    as_of: date | None = None,
 ) -> list[dict]:
-    """Flag missing, implausible ('weird'), and stale prices for held bonds."""
+    """Flag missing, implausible ('weird'), and stale prices for held bonds.
+
+    Bonds that have matured on/before ``as_of`` are skipped: a redeemed/expired
+    bond has no live market price (Bloomberg returns #N/A for it), so flagging a
+    "missing price" for it would be a false positive.
+    """
     findings: list[dict] = []
     bonds_static = bonds_static or {}
+    as_of = as_of or date.today()
 
     def _name(c: str) -> str:
         b = bonds_static.get(c)
         return (b.name if b and b.name else c)
 
     for cusip in sorted(held_cusips):
+        bond = bonds_static.get(cusip)
+        if bond is not None and bond.is_matured(as_of):
+            continue  # matured/expired → no live price expected
         px = current_prices.get(cusip)
         if px is None:
             findings.append(_finding(
@@ -247,8 +297,14 @@ def check_prices(
                 f"[{PRICE_MIN_PLAUSIBLE:g}, {PRICE_MAX_PLAUSIBLE:g}] for a bond",
                 "Verify — could be a yield/spread mis-mapped into the price cell."))
 
-    # stale detection from price history: same px repeated across recent dates
-    findings.extend(_check_stale(held_cusips, price_history, bonds_static))
+    # stale detection from price history: same px repeated across recent dates.
+    # Matured bonds are excluded — a redeemed bond's last price legitimately
+    # carries forward and is not "stale".
+    live_cusips = {
+        c for c in held_cusips
+        if not (bonds_static.get(c) and bonds_static[c].is_matured(as_of))
+    }
+    findings.extend(_check_stale(live_cusips, price_history, bonds_static))
     return findings
 
 
@@ -303,8 +359,10 @@ def run_all_checks(
         from bloomberg import load_price_history
         price_history = load_price_history()
 
+    known_cusips = _read_known_cusips()
+
     findings: list[dict] = []
-    findings += check_trades(raw_trades, bonds_static)
+    findings += check_trades(raw_trades, bonds_static, known_cusips=known_cusips)
     findings += check_bonds(bonds_static, held_cusips)
     findings += check_prices(held_cusips, current_prices, price_history, bonds_static)
 
@@ -319,6 +377,19 @@ def _read_raw_trades(path: Path | None = None) -> pd.DataFrame:
     if not path.exists() or path.stat().st_size == 0:
         return pd.DataFrame()
     return pd.read_csv(path, dtype={"cusip": str})
+
+
+def _read_known_cusips(path: Path | None = None) -> set[str]:
+    """CUSIPs physically present in bonds_static.csv, regardless of whether the
+    row parses into a valid BondStatic. Used to distinguish a missing bond from
+    an incomplete one in the trade checks."""
+    path = Path(path) if path is not None else config.BONDS_STATIC_PATH
+    if not path.exists() or path.stat().st_size == 0:
+        return set()
+    df = pd.read_csv(path, dtype={"cusip": str})
+    if "cusip" not in df.columns:
+        return set()
+    return {str(c).strip() for c in df["cusip"].dropna() if str(c).strip()}
 
 
 def _close(actual: float, expected: float) -> bool:

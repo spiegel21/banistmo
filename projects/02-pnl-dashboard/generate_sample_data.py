@@ -74,6 +74,30 @@ _SPOT_PRICES: dict[str, float] = {
     "25714PEF1":  96.36,
 }
 
+# Enterprise reference/classification data per bond. This is *static* reference
+# data (not market data), so it belongs in the committed bonds_static.csv —
+# leaving it blank makes every held bond fail to load (maturity_date missing)
+# and floods the Debug view with "no bond static row" warnings. Credit ratings
+# are intentionally left blank: they are authoritative agency data the user must
+# supply (Bloomberg RTG_* or manual entry).
+class _Static(NamedTuple):
+    name: str
+    instrument_type: str
+    issuer: str
+    sector: str
+    seniority: str
+    market: str          # Local / Global
+
+
+_STATIC_BY_CUSIP: dict[str, _Static] = {
+    "25714PFB9": _Static("Sample HY Corp 5.5% 2028", "Corporate",
+                         "Sample HY Issuer", "Financials", "Sr Unsecured", "Local"),
+    "195325ER2": _Static("Sample HY Corp 6.0% 2031", "Corporate",
+                         "Sample Energy Issuer", "Energy", "Sr Unsecured", "Local"),
+    "25714PEF1": _Static("Sample IG Corp 5.0% 2030", "Corporate",
+                         "Sample IG Issuer", "Financials", "Sr Unsecured", "Local"),
+}
+
 
 # ── accruals helpers (mirrors accruals.py — standalone, no src/ import) ───────
 
@@ -140,20 +164,37 @@ def _t2_settle(trade_date: date) -> date:
 
 
 # ── bonds_static ──────────────────────────────────────────────────────────────
-# Only the CUSIP column is written. All other fields (name, coupon, maturity,
-# day-count, etc.) are left blank and populated via Bloomberg Static sheet.
+# Full static reference data (indenture terms + enterprise classification) is
+# written so every held bond loads cleanly and the Debug view is meaningful.
+# Only the credit ratings are left blank — those are authoritative agency data
+# the user supplies via Bloomberg (RTG_SP/RTG_MOODY/RTG_FITCH) or manual entry.
 
 def build_bonds_static() -> pd.DataFrame:
-    return pd.DataFrame([
-        {
+    rows = []
+    for b in BONDS:
+        s = _STATIC_BY_CUSIP[b.cusip]
+        rows.append({
             "cusip": b.cusip,
-            "name": "", "currency": "", "country": "",
-            "coupon_rate": "", "coupon_frequency": "",
-            "day_count_convention": "", "maturity_date": "",
-            "first_coupon_date": "", "bbg_ticker": "",
-        }
-        for b in BONDS
-    ])
+            "name": s.name,
+            "currency": b.currency,
+            "country": b.country,
+            "coupon_rate": b.coupon_rate,
+            "coupon_frequency": b.coupon_frequency,
+            "day_count_convention": b.day_count_convention,
+            "maturity_date": b.maturity_date.isoformat(),
+            "first_coupon_date": b.first_coupon_date.isoformat(),
+            "bbg_ticker": f"{b.cusip} Corp",
+            "instrument_type": s.instrument_type,
+            "issuer": s.issuer,
+            "country_of_risk": b.country,
+            "sector": s.sector,
+            "seniority": s.seniority,
+            "market": s.market,
+            "rating_sp": "",        # ← authoritative agency data; user must supply
+            "rating_moody": "",
+            "rating_fitch": "",
+        })
+    return pd.DataFrame(rows)
 
 
 # ── initial positions ─────────────────────────────────────────────────────────
@@ -233,6 +274,45 @@ def build_trades() -> pd.DataFrame:
     return pd.DataFrame(rows)
 
 
+# ── manual prices (offline / no-Bloomberg fallback) ───────────────────────────
+# Bloomberg is the source of truth for prices in production, but for an offline
+# demo the import step falls back to these manual files (see CLAUDE.md). Writing
+# them here means the dashboard shows live P&L out of the box instead of "—",
+# and the Debug view stops flagging "no current price" for every held bond.
+
+def _recent_business_days(end: date, n: int) -> list[date]:
+    days: list[date] = []
+    d = end
+    while len(days) < n:
+        if d.weekday() < 5:        # Mon–Fri
+            days.append(d)
+        d -= timedelta(days=1)
+    return sorted(days)
+
+
+def build_manual_prices(as_of: date) -> pd.DataFrame:
+    """Current clean price per CUSIP (cusip, px_last, date)."""
+    rows = [{"cusip": c, "px_last": round(px, 4), "date": as_of.isoformat()}
+            for c, px in _SPOT_PRICES.items()]
+    return pd.DataFrame(rows, columns=["cusip", "px_last", "date"])
+
+
+def build_manual_price_history(as_of: date, days: int = 10) -> pd.DataFrame:
+    """A short daily price path per CUSIP (date, cusip, px_last).
+
+    Values drift gently into each bond's spot price, so they are all distinct —
+    the Debug view's stale-price heuristic is not tripped.
+    """
+    bdays = _recent_business_days(as_of, days)
+    rows = []
+    for cusip, spot in _SPOT_PRICES.items():
+        for i, d in enumerate(bdays):
+            drift = (len(bdays) - 1 - i) * 0.05      # ~5bp/day up toward spot
+            rows.append({"date": d.isoformat(), "cusip": cusip,
+                         "px_last": round(spot - drift, 4)})
+    return pd.DataFrame(rows, columns=["date", "cusip", "px_last"])
+
+
 # ── main ──────────────────────────────────────────────────────────────────────
 
 def main() -> None:
@@ -256,16 +336,29 @@ def main() -> None:
           f"({trades_df['portfolio'].nunique()} portfolio(s), "
           f"{trades_df['cusip'].nunique()} CUSIP(s))")
 
+    # manual prices — offline fallback so P&L shows without Bloomberg
+    as_of = date.today()
+    mp_df = build_manual_prices(as_of)
+    mp_df.to_csv(PRICES_DIR / "manual_prices.csv", index=False)
+    print(f"  prices/manual_prices.csv          {len(mp_df)} current price(s) as of {as_of}")
+
+    mph_df = build_manual_price_history(as_of)
+    mph_df.to_csv(PRICES_DIR / "manual_price_history.csv", index=False)
+    print(f"  prices/manual_price_history.csv   {len(mph_df)} history row(s)")
+
     print()
     print(f"All files written to {DATA_DIR.resolve()}")
     print()
-    print("Next steps:")
+    print("The dashboard now works offline (manual prices). For live Bloomberg prices:")
     print("  1. streamlit run src/dashboard.py")
     print("  2. Sidebar → Today's Prices:")
     print("       ① Prepare & open template → Bloomberg populates → ③ Import prices & static")
     print("  3. Sidebar → Price History:")
     print("       ① Prepare & open history template → Bloomberg populates → ③ Import history")
     print("       (P&L recomputes automatically after import)")
+    print()
+    print("Optional (not flagged in Debug): credit ratings and the Local/Global")
+    print("market flag. Add ratings (Bloomberg RTG_* or manual) for richer risk reporting.")
 
 
 if __name__ == "__main__":
