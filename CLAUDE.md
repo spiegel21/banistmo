@@ -124,7 +124,7 @@ Trade confirmation fields (exact headers from `data/trades.csv`, written by the 
 | `side` | `buy` or `sell`; `load_trades()` normalises to signed nominal |
 | `nominal` | Face value (always positive in CSV; sign applied by `load_trades`) |
 | `principal` | `price × \|nominal\| / 100` |
-| `net` | Cash actually exchanged (`principal + accrued`); negative for buys |
+| `net` | Cash actually exchanged (`principal + accrued`); stored unsigned in CSV, signed on load (negative for buys, positive for sells) |
 | `accrued` | Interest accrued from last coupon to settle date |
 | `price` | Quoted clean price (% of par, e.g. `98.5`) |
 | `yield_closed` | YTM at trade time; may be `None` (ignored in all calculations) |
@@ -154,7 +154,7 @@ sovereign/corp and local/global when they are blank.
 
 - Positions are always recomputed from full trade history. `portfolio.csv` is a cache only.
 - After `load_trades()`, `nominal > 0` = long, `nominal < 0` = short/sell.
-- `net` for a buy is negative (cash leaves); for a sell it is positive.
+- `net` is stored unsigned in the CSV and signed on load (like `nominal`): after `load_trades()` it is negative for a buy (cash leaves) and positive for a sell.
 - Bloomberg prices are clean prices (% of par). Dirty price = clean + accrued today.
 - `trade_date` (not `Timestamp`) is the effective date for all portfolio history.
 - Total P&L = Realized + Price MTM + Accrued (three non-overlapping components).

@@ -150,7 +150,9 @@ def check_trades(
                     f"({expected_principal:,.2f})",
                     "Re-check the parsed price/nominal/principal for this clip."))
 
-        # net ≈ ±(principal + accrued); sign by side
+        # |net| ≈ principal + accrued. net is stored UNSIGNED in the CSV (the
+        # sign is applied on load by side, like nominal), so only the magnitude
+        # is validated here — a positive net on a buy is correct, not an error.
         if "principal" in nums and "net" in nums:
             accr = nums.get("accrued", 0.0)
             expected_net_abs = abs(nums["principal"]) + accr
@@ -160,16 +162,6 @@ def check_trades(
                     f"|net| {abs(nums['net']):,.2f} ≠ principal+accrued "
                     f"({expected_net_abs:,.2f})",
                     "Verify accrued and net cash on the confirmation."))
-            if side == "buy" and nums["net"] > 0:
-                findings.append(_finding(
-                    "warning", "Trade", "trades.csv", key, "net",
-                    "net is positive for a buy (cash should leave: negative)",
-                    "Buys should store a negative net."))
-            elif side == "sell" and nums["net"] < 0:
-                findings.append(_finding(
-                    "warning", "Trade", "trades.csv", key, "net",
-                    "net is negative for a sell (cash should arrive: positive)",
-                    "Sells should store a positive net."))
 
     return findings
 

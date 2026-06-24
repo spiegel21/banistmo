@@ -6,7 +6,8 @@ overwriting it, so a bad edit is always recoverable. Validation runs before any
 backup or write, so a rejected save leaves the file untouched.
 
 On-disk conventions (must match the readers in position_manager / bloomberg):
-  - trades.csv          : nominal stored UNSIGNED; sign applied on load by side
+  - trades.csv          : nominal and net stored UNSIGNED; sign applied on load
+                          by side (buy: nominal +, net −; sell: nominal −, net +)
   - dates               : written ISO (YYYY-MM-DD)
   - cusip               : string (leading zeros preserved)
 """
@@ -203,6 +204,7 @@ def save_trades(df: pd.DataFrame) -> Path | None:
     out["cusip"] = out["cusip"].astype(str)
     out["side"] = out["side"].astype(str).str.lower().str.strip()
     out["nominal"] = pd.to_numeric(out["nominal"], errors="coerce").abs()  # store unsigned
+    out["net"] = pd.to_numeric(out["net"], errors="coerce").abs()          # store unsigned (sign applied on load)
     for col in ("trade_date", "settle_date"):
         out[col] = _iso(out[col])
     for col in TRADES_COLUMNS:

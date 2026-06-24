@@ -62,6 +62,10 @@ def load_trades(trades_path: Path | None = None) -> pd.DataFrame:
     if invalid.any():
         log.warning("%d trade(s) with side not in {buy, sell}; treated as sell", invalid.sum())
     df["nominal"] = df["nominal"].abs() * df["side"].map({"buy": 1}).fillna(-1)
+    # net cash is stored UNSIGNED in the CSV (same as nominal); apply the sign by
+    # side here so buys are negative (cash out) and sells positive (cash in).
+    # abs() first makes this idempotent for rows that are already signed.
+    df["net"] = df["net"].abs() * df["side"].map({"buy": -1}).fillna(1)
 
     if "yield_closed" in df.columns:
         df["yield_closed"] = pd.to_numeric(df["yield_closed"], errors="coerce")
