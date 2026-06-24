@@ -1,0 +1,162 @@
+{
+  "Order-flow": {
+    "in_sample": {
+      "n": 196,
+      "n_active": 196,
+      "sharpe": 4.47,
+      "sharpe_lo": 5.72,
+      "mean_bps": 6.39,
+      "hit": 62.2,
+      "total_bps": 1253.0,
+      "maxdd_bps": -120.0
+    },
+    "out_sample": {
+      "n": 106,
+      "n_active": 106,
+      "sharpe": 5.36,
+      "sharpe_lo": 7.12,
+      "mean_bps": 10.2,
+      "hit": 56.6,
+      "total_bps": 1082.0,
+      "maxdd_bps": -101.0
+    },
+    "walk_forward": {
+      "n": 242,
+      "n_active": 242,
+      "sharpe": 4.58,
+      "sharpe_lo": 5.07,
+      "mean_bps": 7.76,
+      "hit": 59.9,
+      "total_bps": 1877.0,
+      "maxdd_bps": -120.0
+    },
+    "breakeven_cost_bps": 10.0,
+    "net_sharpe_at_2bps": 3.77,
+    "benchmark": {
+      "bench_sharpe": 2.01,
+      "alpha_bps": 8.34,
+      "beta": -0.18,
+      "t_alpha": 5.76,
+      "corr_with_bench": -0.19
+    },
+    "permutation_p": 0.0,
+    "sensitivity": {
+      "min": 2.92,
+      "max": 5.16,
+      "median": 4.51
+    },
+    "regime": {
+      "range": {
+        "n": 133,
+        "n_active": 133,
+        "sharpe": 5.74,
+        "sharpe_lo": 7.28,
+        "mean_bps": 6.52,
+        "hit": 65.4,
+        "total_bps": 867.0,
+        "maxdd_bps": -65.0
+      },
+      "appreciation": {
+        "n": 169,
+        "n_active": 169,
+        "sharpe": 4.55,
+        "sharpe_lo": 5.11,
+        "mean_bps": 8.68,
+        "hit": 56.2,
+        "total_bps": 1468.0,
+        "maxdd_bps": -120.0
+      }
+    },
+    "exec_close_to_close": {
+      "n": 342,
+      "n_active": 338,
+      "sharpe": 2.77,
+      "sharpe_lo": 2.91,
+      "mean_bps": 4.77,
+      "hit": 56.8,
+      "total_bps": 1631.0,
+      "maxdd_bps": -207.0
+    },
+    "full": {
+      "n": 302,
+      "n_active": 302,
+      "sharpe": 4.78,
+      "sharpe_lo": 5.41,
+      "mean_bps": 7.73,
+      "hit": 60.3,
+      "total_bps": 2334.0,
+      "maxdd_bps": -120.0
+    },
+    "PSR_vs0": 1.0,
+    "DSR": 1.0,
+    "DSR_haircut_sharpe": 1.22
+  },
+  "Momentum": {
+    "in_sample": {
+      "n": 196,
+      "n_active": 63,
+      "sharpe": 4.87,
+      "sharpe_lo": 3.26,
+      "mean_bps": 5.22,
+      "hit": 73.0,
+      "total_bps": 1023.0,
+      "maxdd_bps": -51.0
+    },
+    "out_sample": {
+      "n": 106,
+      "n_active": 29,
+      "sharpe": 3.71,
+      "sharpe_lo": 3.57,
+      "mean_bps": 5.12,
+      "hit": 72.4,
+      "total_bps": 543.0,
+      "maxdd_bps": -87.0
+    },
+    "breakeven_cost_bps": null,
+    "net_sharpe_at_2bps": 3.79,
+    "permutation_p": 0.0,
+    "regime": {
+      "range": {
+        "n": 133,
+        "n_active": 34,
+        "sharpe": 5.15,
+        "sharpe_lo": 3.83,
+        "mean_bps": 3.64,
+        "hit": 79.4,
+        "total_bps": 484.0,
+        "maxdd_bps": -39.0
+      },
+      "appreciation": {
+        "n": 169,
+        "n_active": 58,
+        "sharpe": 4.39,
+        "sharpe_lo": 3.31,
+        "mean_bps": 6.4,
+        "hit": 69.0,
+        "total_bps": 1082.0,
+        "maxdd_bps": -87.0
+      }
+    },
+    "full": {
+      "n": 302,
+      "n_active": 92,
+      "sharpe": 4.36,
+      "sharpe_lo": 3.18,
+      "mean_bps": 5.19,
+      "hit": 72.8,
+      "total_bps": 1566.0,
+      "maxdd_bps": -87.0
+    },
+    "PSR_vs0": 1.0,
+    "DSR": 1.0,
+    "DSR_haircut_sharpe": 1.21
+  },
+  "_meta": {
+    "n_days": 302,
+    "split_frac": 0.65,
+    "n_trials_haircut": 6,
+    "regime_split": "2025-10-15",
+    "date_min": "2025-03-04",
+    "date_max": "2026-06-18"
+  }
+}
