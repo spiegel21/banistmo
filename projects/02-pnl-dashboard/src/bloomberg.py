@@ -26,6 +26,7 @@ import pandas as pd
 
 import config
 from config import get_logger
+from security_id import alias_map, canonical_id, canonicalize_series
 
 log = get_logger(__name__)
 
@@ -454,6 +455,7 @@ def load_price_history(path: Path = PRICE_HISTORY_PATH) -> pd.DataFrame:
     if not Path(path).exists() or Path(path).stat().st_size == 0:
         return pd.DataFrame(columns=["date", "cusip", "px_last"])
     df = pd.read_csv(path, dtype={"cusip": str})
+    df["cusip"] = canonicalize_series(df["cusip"], alias_map())
     df["date"] = pd.to_datetime(df["date"])
     df["px_last"] = pd.to_numeric(df["px_last"], errors="coerce")
     return df
@@ -477,11 +479,12 @@ def load_latest_prices() -> dict[str, float]:
     """Load the most recently saved BDP snapshot (Bloomberg or manual)."""
     snapshots = sorted(PRICES_DIR.glob("prices_*.csv"))
     if snapshots:
+        amap = alias_map()
         prices = {}
         with open(snapshots[-1], newline="") as f:
             reader = csv.DictReader(f)
             for row in reader:
-                prices[row["cusip"]] = float(row["px_last"])
+                prices[canonical_id(row["cusip"], amap)] = float(row["px_last"])
         return prices
     return _load_manual_prices(cusips=[])
 
@@ -589,6 +592,7 @@ def find_price_gaps(
     if PRICE_HISTORY_PATH.exists() and PRICE_HISTORY_PATH.stat().st_size > 0:
         try:
             hist = pd.read_csv(PRICE_HISTORY_PATH, dtype={"cusip": str})
+            hist["cusip"] = canonicalize_series(hist["cusip"], alias_map())
             have = set(zip(hist["cusip"].astype(str), hist["date"].astype(str)))
         except Exception:
             pass
@@ -903,15 +907,15 @@ def read_static_from_template(wb_path: Path = TEMPLATE_PATH) -> pd.DataFrame:
                 continue
             val = ws.cell(row=row, column=col_idx).value
 
-            if field in ("name", "currency", "country", "issuer", "country_of_risk",
-                         "sector", "seniority", "market", "rating_sp",
-                         "rating_moody", "rating_fitch"):
+            if field in ("name", "currency", "country", "isin", "issuer",
+                         "country_of_risk", "sector", "seniority", "market",
+                         "rating_sp", "rating_moody", "rating_fitch"):
                 # Plain string fields: None (openpyxl renders #N/A errors as None)
                 # or non-string values → empty string.
                 val = "" if val is None else str(val).strip()
                 if val.upper() in ("#N/A", "N/A"):
                     val = ""
-                if field == "country_of_risk":
+                if field in ("country_of_risk", "isin"):
                     val = val.upper()
             elif field == "instrument_type":
                 # Bloomberg MARKET_SECTOR_DES (Govt/Corp/…) → canonical bucket.
@@ -1059,12 +1063,14 @@ def _load_manual_prices(cusips: list[str]) -> dict[str, float]:
     if not MANUAL_PRICES_PATH.exists():
         return {}
 
+    amap = alias_map()
+    wanted = {canonical_id(c, amap) for c in cusips} if cusips else None
     prices: dict[str, tuple[str, float]] = {}
     with open(MANUAL_PRICES_PATH, newline="") as f:
         reader = csv.DictReader(f)
         for row in reader:
-            cusip = row["cusip"]
-            if not cusips or cusip in cusips:
+            cusip = canonical_id(row["cusip"], amap)
+            if wanted is None or cusip in wanted:
                 existing_date = prices.get(cusip, ("", 0.0))[0]
                 if row["date"] >= existing_date:
                     prices[cusip] = (row["date"], float(row["px_last"]))
@@ -1076,9 +1082,12 @@ def _load_manual_price_history(cusips, start_date, end_date) -> pd.DataFrame:
     if not MANUAL_HISTORY_PATH.exists():
         return pd.DataFrame(columns=["date", "cusip", "px_last"])
 
+    amap = alias_map()
     df = pd.read_csv(MANUAL_HISTORY_PATH, dtype={"cusip": str})
+    df["cusip"] = canonicalize_series(df["cusip"], amap)
     df["date"] = pd.to_datetime(df["date"])
     mask = (df["date"] >= pd.Timestamp(start_date)) & (df["date"] <= pd.Timestamp(end_date))
     if cusips:
-        mask &= df["cusip"].isin(cusips)
+        wanted = {canonical_id(c, amap) for c in cusips}
+        mask &= df["cusip"].isin(wanted)
     return df[mask].reset_index(drop=True)

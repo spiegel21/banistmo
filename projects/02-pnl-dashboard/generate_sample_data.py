@@ -184,6 +184,7 @@ def build_bonds_static() -> pd.DataFrame:
             "maturity_date": b.maturity_date.isoformat(),
             "first_coupon_date": b.first_coupon_date.isoformat(),
             "bbg_ticker": f"{b.cusip} Corp",
+            "isin": "",             # ← CUSIP↔ISIN crosswalk; populated via Bloomberg ID_ISIN
             "instrument_type": s.instrument_type,
             "issuer": s.issuer,
             "country_of_risk": b.country,

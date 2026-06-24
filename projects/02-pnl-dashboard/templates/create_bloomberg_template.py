@@ -86,6 +86,9 @@ def create_static_sheet(wb: Workbook) -> None:
         ("day_count_convention",'BDP(A{r},"DAY_CNT_DES")'),
         ("maturity_date",       'BDP(A{r},"MATURITY")'),
         ("first_coupon_date",   'BDP(A{r},"FIRST_CPN_DT")'),
+        # ID_ISIN gives the CUSIP↔ISIN crosswalk used to merge ISIN-keyed
+        # trades/prices onto this bond's canonical CUSIP (see security_id.py).
+        ("isin",                'BDP(A{r},"ID_ISIN")'),
         # ── enterprise classification fields ──────────────────────────────────
         ("instrument_type",     'BDP(A{r},"MARKET_SECTOR_DES")'),
         ("issuer",              'BDP(A{r},"ISSUER")'),

@@ -106,8 +106,9 @@ Email parser (external) → data/trades.csv
 - `bloomberg.find_price_gaps(all_trades)` walks the signed-trade stream per CUSIP to compute hold intervals (position-by-date), then diffs against `price_history.csv` to return only the missing business-day ranges — the exact input for `prepare_history_template()`. Called on every dashboard render so gap detection is always current.
 
 Transparency & risk modules (all pure, unit-tested, framework-agnostic):
+- `src/security_id.py` — CUSIP/ISIN identifier normalisation so the same bond never splits into two positions when trades/prices arrive under different identifiers. `canonical_id()` resolves any identifier to one canonical CUSIP via three layers: (1) **structural collapse** — a US/CA ISIN embeds its CUSIP (`US`+CUSIP+check digit), verified by both check digits and lifted out deterministically; (2) **explicit crosswalk** — `alias_map()` built from the `isin` column of `bonds_static.csv` (Bloomberg `ID_ISIN`) and/or `data/id_map.csv` (`alias,cusip`), covering non-US ISINs; (3) **name-based detection** — `reconciliation.check_identifier_aliases()` flags two ids sharing one security name as a merge candidate (suggested in the Debug tab, never auto-merged). Applied to the `cusip` column at every load edge (`load_trades`, `load_initial_positions`, `load_bonds_static`, all price/history loaders), so positions/prices/P&L merge consistently.
 - `src/classification.py` — derives the enterprise classification dimensions (sovereign/corp, country of risk, local/global) with precedence: explicit `BondStatic` field → Bloomberg-extracted value → heuristic → `"Unknown"`. Never invents data.
-- `src/reconciliation.py` — `run_all_checks()` returns a tidy findings DataFrame powering the **Debug / Needs-Attention** tab: broken/incomplete trades, unknown bonds, missing classification, and missing/weird/stale prices, each with severity + suggested fix.
+- `src/reconciliation.py` — `run_all_checks()` returns a tidy findings DataFrame powering the **Debug / Needs-Attention** tab: broken/incomplete trades, unknown bonds, missing classification, CUSIP/ISIN duplicate-identifier merge suggestions, and missing/weird/stale prices, each with severity + suggested fix.
 - `src/movements.py` — `position_movements()` rebuilds each bond's per-trade running position, WAVG cost, cash, and realized gain; its realized column reconciles exactly with `trading_gains`.
 - `src/exposure.py` — nominal/MTM aggregation across classification dimensions, top-N concentration, and a remaining-tenor maturity ladder (no pricing model).
 - `src/analytics.py` — analytical risk engine: solves YTM from the clean price, then modified/Macaulay duration, DV01, and convexity by finite differences off `price_from_yield` (street convention: discount at yield compounded `coupon_frequency`×/yr, Act/365 time). `portfolio_risk()` returns a per-bond table + MV-weighted summary; `var_historical()` gives VaR/ES from realised daily P&L. No external curve, so G-/Z-spread are out of scope.
@@ -120,7 +121,7 @@ Trade confirmation fields (exact headers from `data/trades.csv`, written by the 
 | Field | Description |
 |-------|-------------|
 | `Timestamp` | When the confirmation was parsed (informational only) |
-| `cusip` | 9-char CUSIP identifier |
+| `cusip` | Security identifier — a 9-char CUSIP or 12-char ISIN; normalised to a canonical CUSIP on load by `security_id.canonical_id()` so the same bond never splits |
 | `side` | `buy` or `sell`; `load_trades()` normalises to signed nominal |
 | `nominal` | Face value (always positive in CSV; sign applied by `load_trades`) |
 | `principal` | `price × \|nominal\| / 100` |
@@ -146,9 +147,10 @@ Position fields computed by `position_manager.py`:
 plus enterprise classification fields, all optional and `""` == unknown:
 `instrument_type` (canonical Sovereign/Corporate/Agency/Supranational/Municipal/
 Other), `issuer`, `country_of_risk`, `sector`, `seniority`, `market`
-(Local/Global), and `rating_sp` / `rating_moody` / `rating_fitch`. Bloomberg
-import fills these where the terminal returns them; `classification.py` derives
-sovereign/corp and local/global when they are blank.
+(Local/Global), `rating_sp` / `rating_moody` / `rating_fitch`, and `isin` (the
+CUSIP↔ISIN crosswalk populated by Bloomberg `ID_ISIN`; see `security_id.py`).
+Bloomberg import fills these where the terminal returns them; `classification.py`
+derives sovereign/corp and local/global when they are blank.
 
 ### Key invariants
 
@@ -184,7 +186,8 @@ Bloomberg integration requires Windows + an active Bloomberg Terminal with the x
 |------|-------------|-----------|
 | `data/trades.csv` | Append-only trade log from email parser | No (real data) |
 | `data/initial_positions.csv` | Seed positions at portfolio inception | Yes |
-| `data/bonds_static.csv` | Bond reference data: coupon, country, day-count | Yes |
+| `data/bonds_static.csv` | Bond reference data: coupon, country, day-count, `isin` crosswalk | Yes |
+| `data/id_map.csv` | Optional manual CUSIP/ISIN crosswalk (`alias,cusip`) for non-US ISINs | Yes (if present) |
 | `data/portfolio.csv` | Computed current positions (rewritten each run) | No |
 | `data/price_history.csv` | Accumulated daily Bloomberg prices | No |
 | `data/pnl_history.csv` | Pre-computed daily P&L by CUSIP and portfolio | No |

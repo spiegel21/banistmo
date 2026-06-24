@@ -32,7 +32,7 @@ TRADES_COLUMNS = [
 BONDS_COLUMNS = [
     "cusip", "name", "currency", "country", "coupon_rate", "coupon_frequency",
     "day_count_convention", "maturity_date", "first_coupon_date", "bbg_ticker",
-    "instrument_type", "issuer", "country_of_risk", "sector", "seniority",
+    "isin", "instrument_type", "issuer", "country_of_risk", "sector", "seniority",
     "market", "rating_sp", "rating_moody", "rating_fitch",
 ]
 INITIAL_COLUMNS = ["portfolio", "cusip", "nominal", "price", "book_value", "inception_date"]
@@ -160,6 +160,7 @@ def parse_bond_static_row(row) -> BondStatic:
         maturity_date=maturity,
         first_coupon_date=first_coupon,
         bbg_ticker="" if pd.isna(row.get("bbg_ticker")) else str(row.get("bbg_ticker", "")),
+        isin=_s("isin").upper(),
         instrument_type=normalise_instrument_type(_s("instrument_type")),
         issuer=_s("issuer"),
         country_of_risk=_s("country_of_risk"),

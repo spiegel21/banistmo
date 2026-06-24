@@ -14,6 +14,7 @@ import config
 from config import get_logger
 from models import Position, BondStatic
 from data_io import parse_bond_static_row
+from security_id import canonical_id, alias_map
 
 log = get_logger(__name__)
 
@@ -25,6 +26,7 @@ def load_bonds_static(path: Path | None = None) -> dict[str, BondStatic]:
         return {}
 
     df = pd.read_csv(path, dtype={"cusip": str})
+    amap = alias_map()
     result: dict[str, BondStatic] = {}
     for _, row in df.iterrows():
         cusip = str(row.get("cusip", ""))
@@ -37,6 +39,9 @@ def load_bonds_static(path: Path | None = None) -> dict[str, BondStatic]:
         except (ValueError, KeyError, TypeError) as exc:
             log.warning("Skipping invalid bonds_static row for %s: %s", cusip, exc)
             continue
+        # Key by canonical CUSIP so an ISIN-keyed static row (legacy data) and
+        # the trades that reference it land on the same identifier everywhere.
+        bond.cusip = canonical_id(bond.cusip, amap)
         result[bond.cusip] = bond
     return result
 

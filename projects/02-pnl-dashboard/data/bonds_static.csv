@@ -1,4 +1,4 @@
-cusip,name,currency,country,coupon_rate,coupon_frequency,day_count_convention,maturity_date,first_coupon_date,bbg_ticker,instrument_type,issuer,country_of_risk,sector,seniority,market,rating_sp,rating_moody,rating_fitch
-25714PFB9,Sample HY Corp 5.5% 2028,USD,US,0.055,2,30/360,2028-04-15,2025-04-15,25714PFB9 Corp,Corporate,Sample HY Issuer,US,Financials,Sr Unsecured,Local,,,
-195325ER2,Sample HY Corp 6.0% 2031,USD,US,0.06,2,30/360,2031-07-30,2025-07-30,195325ER2 Corp,Corporate,Sample Energy Issuer,US,Energy,Sr Unsecured,Local,,,
-25714PEF1,Sample IG Corp 5.0% 2030,USD,US,0.05,2,30/360,2030-01-15,2025-01-15,25714PEF1 Corp,Corporate,Sample IG Issuer,US,Financials,Sr Unsecured,Local,,,
+cusip,name,currency,country,coupon_rate,coupon_frequency,day_count_convention,maturity_date,first_coupon_date,bbg_ticker,isin,instrument_type,issuer,country_of_risk,sector,seniority,market,rating_sp,rating_moody,rating_fitch
+25714PFB9,Sample HY Corp 5.5% 2028,USD,US,0.055,2,30/360,2028-04-15,2025-04-15,25714PFB9 Corp,,Corporate,Sample HY Issuer,US,Financials,Sr Unsecured,Local,,,
+195325ER2,Sample HY Corp 6.0% 2031,USD,US,0.06,2,30/360,2031-07-30,2025-07-30,195325ER2 Corp,,Corporate,Sample Energy Issuer,US,Energy,Sr Unsecured,Local,,,
+25714PEF1,Sample IG Corp 5.0% 2030,USD,US,0.05,2,30/360,2030-01-15,2025-01-15,25714PEF1 Corp,,Corporate,Sample IG Issuer,US,Financials,Sr Unsecured,Local,,,
