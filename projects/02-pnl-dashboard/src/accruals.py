@@ -43,7 +43,9 @@ def load_bonds_static(path: Path | None = None) -> dict[str, BondStatic]:
 
 def _coupon_dates(bond: BondStatic) -> list[date]:
     """Generate all coupon dates from first_coupon_date up to and including maturity."""
-    if bond.coupon_frequency == 0:
+    # A frequency of 0 (or any missing/invalid value) means non-coupon-bearing:
+    # no coupon schedule to walk.
+    if not bond.coupon_frequency:
         return []
     months_per_period = 12 // bond.coupon_frequency
     dates: list[date] = []
@@ -68,7 +70,14 @@ def _days_in_month(year: int, month: int) -> int:
 
 
 def _prev_period_start(bond: BondStatic) -> date:
-    """The coupon date one period before first_coupon_date (proxy for issue date)."""
+    """The coupon date one period before first_coupon_date (proxy for issue date).
+
+    Non-coupon-bearing bonds (``coupon_frequency`` 0 / missing) have no period to
+    step back to, so the first_coupon_date is returned unchanged. This keeps the
+    function safe to call for any bond (no ZeroDivisionError).
+    """
+    if not bond.coupon_frequency:
+        return bond.first_coupon_date
     months = 12 // bond.coupon_frequency
     m = bond.first_coupon_date.month - months
     y = bond.first_coupon_date.year + (m - 1) // 12
@@ -78,7 +87,12 @@ def _prev_period_start(bond: BondStatic) -> date:
 
 
 def last_coupon_date(bond: BondStatic, as_of: date) -> date:
-    """Most recent coupon date on or before as_of."""
+    """Most recent coupon date on or before as_of.
+
+    For non-coupon-bearing bonds (``coupon_frequency`` 0 / missing) there is no
+    coupon schedule, so ``_prev_period_start`` returns first_coupon_date as a
+    safe, no-accrual reference date rather than raising.
+    """
     past = [d for d in _coupon_dates(bond) if d <= as_of]
     if past:
         return max(past)
@@ -88,7 +102,7 @@ def last_coupon_date(bond: BondStatic, as_of: date) -> date:
 def next_coupon_date(bond: BondStatic, as_of: date) -> date | None:
     """Earliest coupon date strictly after as_of, or None if the bond has matured
     or is non-coupon-bearing."""
-    if bond.coupon_frequency == 0:
+    if not bond.coupon_frequency:
         return None
     future = [d for d in _coupon_dates(bond) if d > as_of]
     return min(future) if future else None
@@ -96,7 +110,7 @@ def next_coupon_date(bond: BondStatic, as_of: date) -> date | None:
 
 def coupon_amount_per_period(nominal: float, bond: BondStatic) -> float:
     """Cash coupon paid each period for a given nominal (annual coupon / frequency)."""
-    if bond.coupon_frequency == 0:
+    if not bond.coupon_frequency or not bond.coupon_rate:
         return 0.0
     return nominal * bond.coupon_rate / bond.coupon_frequency
 
@@ -143,7 +157,7 @@ def _days_30_360(start: date, end: date) -> int:
 
 def days_accrued(bond: BondStatic, as_of: date) -> int:
     """Days since last coupon using the bond's day-count convention."""
-    if bond.coupon_frequency == 0:
+    if not bond.coupon_frequency:
         return 0
     lcd = last_coupon_date(bond, as_of)
     if bond.day_count_convention == "30/360":
@@ -159,7 +173,7 @@ def accrued_interest(nominal: float, bond: BondStatic, as_of: date) -> float:
     Act/Act:          annual_coupon * days / 365 (365-day approximation)
     30/360:           annual_coupon * days_30_360 / 360
     """
-    if bond.coupon_frequency == 0:
+    if not bond.coupon_frequency or not bond.coupon_rate:
         return 0.0
     days = days_accrued(bond, as_of)
     annual_coupon = nominal * bond.coupon_rate
