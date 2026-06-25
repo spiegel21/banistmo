@@ -15,6 +15,7 @@ import pandas as pd
 import config
 from config import DEFAULT_PORTFOLIO, get_logger
 from models import BondStatic, Position
+from security_id import alias_map, canonicalize_series
 
 log = get_logger(__name__)
 
@@ -46,6 +47,9 @@ def load_trades(trades_path: Path | None = None) -> pd.DataFrame:
         return pd.DataFrame(columns=empty_cols)
 
     df = pd.read_csv(path, dtype=_DTYPES)
+    # Collapse any ISIN-keyed clip onto its canonical CUSIP so the same bond
+    # never splits into two positions (see security_id.py).
+    df["cusip"] = canonicalize_series(df["cusip"], alias_map())
     for col in ("trade_date", "settle_date"):
         if col not in df.columns:
             continue
@@ -107,6 +111,7 @@ def load_initial_positions(initial_path: Path | None = None) -> pd.DataFrame:
     if df.empty:
         return pd.DataFrame()
 
+    df["cusip"] = canonicalize_series(df["cusip"], alias_map())
     rows = []
     for _, row in df.iterrows():
         signed_nominal = float(row["nominal"])

@@ -19,6 +19,9 @@ TEMPLATES_DIR = PROJECT_ROOT / "templates"
 TRADES_PATH = DATA_DIR / "trades.csv"
 INITIAL_POSITIONS_PATH = DATA_DIR / "initial_positions.csv"
 BONDS_STATIC_PATH = DATA_DIR / "bonds_static.csv"
+# Optional manual CUSIP/ISIN crosswalk (columns: alias, cusip) for identifiers
+# the structural ISIN→CUSIP rule can't reach (e.g. non-US XS/DE/FR ISINs).
+ID_MAP_PATH = DATA_DIR / "id_map.csv"
 PORTFOLIO_PATH = DATA_DIR / "portfolio.csv"
 PRICE_HISTORY_PATH = DATA_DIR / "price_history.csv"
 PNL_HISTORY_PATH = DATA_DIR / "pnl_history.csv"

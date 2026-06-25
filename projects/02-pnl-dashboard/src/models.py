@@ -140,6 +140,8 @@ class BondStatic:
     maturity_date: date
     first_coupon_date: date
     bbg_ticker: str = ""        # full Bloomberg ticker e.g. "912828Z78 Govt"; blank → cusip + " Corp"
+    isin: str = ""              # ISIN crosswalk (Bloomberg ID_ISIN); "" == unknown. Used to merge
+                                # ISIN-keyed trades/prices onto this bond's canonical CUSIP.
     instrument_type: str = ""   # canonical: Sovereign/Corporate/Agency/Supranational/Municipal/Other/"" (unknown)
     # ── enterprise classification dimensions (all optional; "" == unknown) ──────
     issuer: str = ""            # issuer / obligor name (Bloomberg ISSUER)

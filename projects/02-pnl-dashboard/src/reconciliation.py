@@ -29,6 +29,7 @@ import pandas as pd
 import config
 from classification import classify, UNKNOWN
 from models import BondStatic
+from security_id import alias_map, canonical_id, is_isin_shaped
 
 # ── tuning knobs ──────────────────────────────────────────────────────────────
 
@@ -77,17 +78,21 @@ def check_trades(
     if raw_trades is None or raw_trades.empty:
         return findings
 
+    amap = alias_map()
     for i, row in raw_trades.iterrows():
         n = i + 1
         key = f"row {n}"
         cusip = str(row.get("cusip", "")).strip()
+        # Resolve CUSIP/ISIN aliases before the membership test so an ISIN-keyed
+        # clip that collapses onto a known bond is not falsely flagged as missing.
+        canon = canonical_id(cusip, amap)
 
         if not cusip or cusip.lower() == "nan":
             findings.append(_finding(
                 "error", "Trade", "trades.csv", key, "cusip",
                 "CUSIP is blank", "Add the 9-char CUSIP in Data Editor ▸ Trades."))
-        elif cusip not in bonds_static:
-            if known_cusips is not None and cusip in known_cusips:
+        elif canon not in bonds_static:
+            if known_cusips is not None and canon in known_cusips:
                 # Row is present but did not load — almost always a missing
                 # maturity_date (the one field with no fallback in the loader).
                 findings.append(_finding(
@@ -236,6 +241,49 @@ def check_bonds(
     return findings
 
 
+# ── identifier-alias checks (CUSIP/ISIN merge suggestions) ────────────────────
+
+def check_identifier_aliases(bonds_static: dict[str, BondStatic]) -> list[dict]:
+    """Surface bonds that look like the SAME security split across two identifiers.
+
+    The structural ISIN→CUSIP rule and the explicit crosswalk merge everything
+    they safely can *before* this point. What survives as two separate keys is
+    exactly the case the user described: one row fetched under its CUSIP and
+    another under a (non-US / un-crosswalked) ISIN, both carrying the *same*
+    Bloomberg name. We never merge by name automatically — two bonds from one
+    issuer can share a near-identical name — so this is reported as
+    ``needs_input`` with a one-line fix (add the crosswalk entry).
+    """
+    findings: list[dict] = []
+
+    by_name: dict[str, list[str]] = {}
+    for cusip, bond in bonds_static.items():
+        nm = (bond.name or "").strip().lower()
+        if nm:
+            by_name.setdefault(nm, []).append(cusip)
+
+    for nm, ids in by_name.items():
+        ids = sorted(set(ids))
+        if len(ids) < 2:
+            continue
+        # Prefer a CUSIP-shaped id as the canonical target; fall back to the
+        # first id if every duplicate is ISIN-shaped.
+        cusip_ids = [c for c in ids if not is_isin_shaped(c)]
+        canonical = cusip_ids[0] if cusip_ids else ids[0]
+        display_name = bonds_static[ids[0]].name
+        for other in ids:
+            if other == canonical:
+                continue
+            findings.append(_finding(
+                "needs_input", "Bond Static", "bonds_static.csv", other, "isin",
+                f"'{display_name}' also appears under {canonical} — likely the same "
+                f"bond under two identifiers (CUSIP vs ISIN)",
+                f"Merge them: add alias {other} → {canonical} to data/id_map.csv "
+                f"(or set {canonical}'s isin field to {other}), then re-import."))
+
+    return findings
+
+
 # ── price checks ──────────────────────────────────────────────────────────────
 
 def check_prices(
@@ -356,6 +404,7 @@ def run_all_checks(
     findings: list[dict] = []
     findings += check_trades(raw_trades, bonds_static, known_cusips=known_cusips)
     findings += check_bonds(bonds_static, held_cusips)
+    findings += check_identifier_aliases(bonds_static)
     findings += check_prices(held_cusips, current_prices, price_history, bonds_static)
 
     df = pd.DataFrame(findings, columns=FINDING_COLUMNS)
