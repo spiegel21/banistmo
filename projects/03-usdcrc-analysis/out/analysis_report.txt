@@ -1,0 +1,158 @@
+
+==============================================================================
+1. DATA OVERVIEW
+==============================================================================
+Trading days        : 362
+Date range          : 2024-12-06 -> 2026-06-19
+VWAP start / end    : 504.99 -> 454.10 (-10.08% over period)
+VWAP min / max      : 452.74 / 511.43
+Daily volume (US$M) : mean 39.0  median 35.2  min 5.2  max 142.2
+Trades / day        : mean 216  median 212  max 441
+Avg ticket (US$)    : mean 180,085  median 164,277
+Daily |VWAP move|   : mean 19.8 bps  std 25.9 bps  (annualized vol ~4.1%)
+
+==============================================================================
+2. REVERSE-ENGINEERING THE PRICE FORMATION MODEL
+==============================================================================
+
+(a) OPEN vs PREVIOUS-SESSION VWAP
+    open - prev_vwap: mean -2.88 bps  median -1.60  std 20.86
+    % of days open within +/-10 bps of prev VWAP: 48.3%
+    => the market opens essentially AT the prior session's weighted avg (anchoring / crawling reference).
+
+(b) SESSION-OVER-SESSION VWAP MOVE — autocorrelation
+    lag1 +0.373   lag2 +0.069   lag5 -0.049
+    (negative lag1 => mean reversion;  positive => momentum/trend)
+
+(c) DOES THE OPENING GAP GET FADED INTRADAY?
+    intraday_bps = -1.72 + -0.807 * open_gap_bps   (R^2=0.243, p=1.4e-23)
+    slope -0.807: a negative slope means an up-gap tends to drift back down.
+    CAVEAT: open_gap=open-prevVWAP and intraday=close-open SHARE the noisy `open`
+    print with opposite signs, which mechanically biases this slope toward -1.
+    CLEAN: close_gap_bps = -1.75 + 0.195 * open_gap_bps (R^2=0.018) -> 81% of the opening gap is retraced by the close.
+
+(d) WHERE DOES VWAP SIT IN THE DAILY RANGE?
+    vwap position in [low,high]: mean 0.53 (0=low,1=high), std 0.27
+    close position in [low,high]: mean 0.55
+    VWAP-vs-simple-avg skew: mean +0.038 colones (51% of days VWAP>simple avg => larger tickets lifted offers)
+
+(e) SECULAR DRIFT (crawl)
+    VWAP ~ 520.25 -0.1481*day   => -3.111 colones/month, -37.33 colones/yr  (R^2=0.696)
+
+==============================================================================
+3. VOLUME SEASONALITY
+==============================================================================
+
+(a) DAY-OF-WEEK
+          days  vol_musd  n_trades    ticket  ret_bps  absret_bps
+dow_name                                                         
+Mon         74      41.1     224.6  182746.6     -1.0        19.5
+Tue         74      42.6     205.8  205338.1     -3.3        21.0
+Wed         73      38.8     200.1  190447.1     -5.6        18.7
+Thu         71      38.6     220.1  175402.1     -2.0        21.8
+Fri         70      33.5     230.0  144516.7     -2.1        18.1
+
+(b) MONTH-OF-YEAR
+     days  vol_musd  n_trades  ret_bps  absret_bps
+Jan    43      33.4     208.3     -2.5        28.8
+Feb    40      43.0     226.4    -15.6        23.9
+Mar    43      42.5     240.4     -3.2        19.1
+Apr    39      49.3     228.9     -3.9        17.5
+May    40      38.3     215.9      1.6        17.5
+Jun    36      42.8     217.6     -2.4        22.6
+Jul    22      31.3     203.6      0.9        10.0
+Aug    20      34.8     192.0     -0.7        10.9
+Oct    23      27.5     170.3     -1.3        13.9
+Nov    20      33.9     178.4    -10.0        17.7
+Dec    36      40.0     239.9      7.2        23.6
+
+(c) INTRA-MONTH (quincena effect: payroll / tax dates)
+                  days  vol_musd  ret_bps
+fortnight                                
+1st half (1-15)    177     39.32    -7.70
+2nd half (16-31)   185     38.66     1.87
+
+    Month-end (day>=25) vol: 35.5M vs rest 39.9M  (-11.0%)
+
+==============================================================================
+4. VOLUME PROFILE — volume at each price level
+==============================================================================
+Point of Control (highest-volume level): 507 colones (8.5% of all volume, 32 days)
+70% Value Area: 453 - 510 colones
+
+Top 10 highest-volume price levels:
+        days  vol_musd  vol_pct
+px_bin                         
+507.0     32    1199.6      8.5
+504.0     33    1183.3      8.4
+505.0     30    1144.1      8.1
+506.0     31    1092.5      7.7
+509.0     22     804.7      5.7
+508.0     17     662.4      4.7
+500.0     15     558.7      4.0
+455.0     10     430.7      3.1
+453.0     10     406.8      2.9
+497.0      9     386.6      2.7
+
+==============================================================================
+5. VOLUME vs INTRADAY MOVEMENT
+==============================================================================
+
+(a) DAILY RANGE vs VOLUME
+    range_bps = 51.4 +0.0587 * volume_musd   (R^2=0.001, p=4.7e-01)
+    Pearson r = +0.038 (volume up => range wider)
+
+(b) |SESSION MOVE| vs VOLUME
+    |ret_bps| = 17.2 +0.0658 * volume_musd   (R^2=0.007, p=1.1e-01)
+
+(c) SIGNED MOVE vs VOLUME
+    ret_bps = +14.81 -0.45196 * volume_musd   (R^2=0.142, p=1.2e-13)
+    (a significant NEGATIVE slope is a fingerprint of supply/CB USD selling on heavy days)
+
+(d) BEHAVIOUR BY VOLUME TERCILE
+       vol_musd  range_bps  absret_bps  mean_ret_bps
+vol_t                                               
+low       19.15      56.40       19.55          7.31
+mid       35.07      49.50       18.10         -1.55
+high      62.69      55.07       21.77        -14.17
+
+==============================================================================
+6. TRADING OPPORTUNITIES (signal backtests)
+==============================================================================
+
+SIGNAL 1 — Fade the opening gap to the close (intraday mean reversion)
+    Trades: 261 (|gap|>=5bps)   Hit rate: 63.2%
+    Avg P&L: +13.03 bps/trade   Total: +3402 bps   Sharpe~6.04
+
+SIGNAL 2 — FOLLOW a >1sigma session move into the NEXT session (overnight momentum)
+    (lag-1 autocorr is +0.37, i.e. the market trends)
+    Trades: 89   Hit rate: 73.0%
+    Avg P&L: +17.44 bps/trade   Sharpe~8.45
+
+SIGNAL 2b — 5d/20d VWAP trend-follow (trade the persistent appreciation crawl)
+    Hit rate: 48.2%   Avg -1.34 bps/day   Sharpe~-0.81
+
+SIGNAL 3 — Day-of-week directional bias (session VWAP move)
+          mean    std  count  t_stat
+dow_name                            
+Mon      -1.05  23.75     74   -0.38
+Tue      -3.34  28.68     74   -1.00
+Wed      -5.56  24.88     73   -1.91
+Thu      -1.99  28.10     71   -0.60
+Fri      -2.06  24.24     70   -0.71
+
+SIGNAL 4 — Volume as order-flow: next-session move after volume spikes
+    After HEAVY day (vol_z>=+1, n=58): next-session move -14.08 bps (same-day was -21.43)
+    After LIGHT day (vol_z<=-1, n=41): next-session move +8.49 bps
+    => heavy USD-supply days keep pushing the rate down the next session (appreciation pressure persists, consistent with the +0.37 autocorrelation).
+
+    [S4 full backtest: 342 days, +2412 bps total, +7.05/day, hit 59%, Sharpe~4.41]
+
+==============================================================================
+CHARTS WRITTEN
+==============================================================================
+    out/01_price_formation.png
+    out/02_volume_seasonality.png
+    out/03_volume_profile.png
+    out/04_volume_vs_move.png
+    out/05_signal_equity.png
