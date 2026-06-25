@@ -118,3 +118,27 @@ def test_load_alias_map_canonicalises_target(tmp_path):
     idmap.write_text(f"alias,cusip\nXS9999999999,{APPLE[1]}\n")
     amap = sid.load_alias_map(bonds_static_path=tmp_path / "none.csv", id_map_path=idmap)
     assert amap == {"XS9999999999": APPLE[0]}
+
+
+def test_load_alias_map_merges_rows_sharing_isin(tmp_path):
+    # Two bonds_static rows under different CUSIPs but the SAME ISIN are the same
+    # bond fetched twice — they must collapse onto one canonical id automatically.
+    bs = tmp_path / "bonds_static.csv"
+    bs.write_text(
+        "cusip,name,isin\n"
+        f"{APPLE[0]},Apple 5% 2030,XS1234567890\n"
+        "ZZ9999999,Apple 5% 2030,XS1234567890\n"
+    )
+    amap = sid.load_alias_map(bonds_static_path=bs, id_map_path=tmp_path / "none.csv")
+    # Both the ISIN and the non-canonical CUSIP resolve to the valid CUSIP.
+    assert sid.canonical_id("ZZ9999999", amap) == APPLE[0]
+    assert sid.canonical_id("XS1234567890", amap) == APPLE[0]
+    assert sid.canonical_id(APPLE[0], amap) == APPLE[0]
+
+
+def test_load_alias_map_singleton_isin_unchanged(tmp_path):
+    # A single row's ISIN still maps to its CUSIP (no regression).
+    bs = tmp_path / "bonds_static.csv"
+    bs.write_text("cusip,name,isin\nAB1234567,Foo,XS1234567890\n")
+    amap = sid.load_alias_map(bonds_static_path=bs, id_map_path=tmp_path / "none.csv")
+    assert amap == {"XS1234567890": "AB1234567"}
