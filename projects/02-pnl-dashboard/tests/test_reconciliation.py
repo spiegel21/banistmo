@@ -173,6 +173,43 @@ def test_price_stale_detection():
     assert any("stale" in x["issue"] for x in f)
 
 
+def test_identifier_aliases_warns_on_name_only_match():
+    # Same name, no shared ISIN → genuinely ambiguous, still surfaced for input.
+    a = _bond(cusip="037833100", name="APPLE 5% 2030", isin="")
+    b = _bond(cusip="459200101", name="APPLE 5% 2030", isin="")
+    f = rec.check_identifier_aliases({a.cusip: a, b.cusip: b})
+    assert any(x["field"] == "isin" and x["severity"] == "needs_input" for x in f)
+
+
+def test_isin_matching_bonds_auto_merge_no_warning(tmp_path, monkeypatch):
+    # Two bonds_static rows with the SAME ISIN must merge automatically on load
+    # (one position, no reconciliation warning).
+    import config
+    import security_id
+    from accruals import load_bonds_static
+
+    bs = tmp_path / "bonds_static.csv"
+    bs.write_text(
+        "cusip,name,currency,country,coupon_rate,coupon_frequency,"
+        "day_count_convention,maturity_date,first_coupon_date,isin,"
+        "instrument_type,country_of_risk,sector,market,rating_sp\n"
+        "037833100,APPLE 5% 2030,USD,US,0.05,2,30/360,2030-06-15,2024-06-15,"
+        "XS1234567890,Corporate,US,Tech,Local,AA\n"
+        "ZZ9999999,APPLE 5% 2030,USD,US,0.05,2,30/360,2030-06-15,2024-06-15,"
+        "XS1234567890,Corporate,US,Tech,Local,AA\n"
+    )
+    monkeypatch.setattr(config, "BONDS_STATIC_PATH", bs)
+    monkeypatch.setattr(config, "ID_MAP_PATH", tmp_path / "none.csv")
+    security_id._cached_alias_map.cache_clear()
+
+    bonds = load_bonds_static(path=bs)
+    assert len(bonds) == 1                       # the two rows collapsed into one
+    assert "037833100" in bonds                  # onto the valid CUSIP
+    f = rec.check_identifier_aliases(bonds)
+    assert f == []                               # no merge warning
+    security_id._cached_alias_map.cache_clear()
+
+
 def test_run_all_checks_summary_shape():
     raw = pd.DataFrame([dict(
         cusip="037833100", side="buy", nominal=1000, price=100, principal=1000,

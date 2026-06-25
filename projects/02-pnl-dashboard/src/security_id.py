@@ -190,6 +190,23 @@ def canonicalize_series(series: pd.Series, alias_map: dict[str, str] | None = No
 
 # ── alias-map loader ──────────────────────────────────────────────────────────
 
+def _pick_canonical_cusip(cusips: list[str]) -> str:
+    """Choose the canonical id for a set of identifiers that are the same bond.
+
+    Prefer a real, check-digit-valid CUSIP, then any CUSIP-shaped id, falling
+    back to the first id when every member is ISIN-shaped.  Deterministic
+    (sorted) within each tier so the choice never depends on row order.
+    """
+    ordered = sorted(set(cusips))
+    valid = [c for c in ordered if is_valid_cusip(c)]
+    if valid:
+        return valid[0]
+    cusip_shaped = [c for c in ordered if is_cusip_shaped(c)]
+    if cusip_shaped:
+        return cusip_shaped[0]
+    return ordered[0]
+
+
 def load_alias_map(
     bonds_static_path: Path | None = None,
     id_map_path: Path | None = None,
@@ -198,7 +215,10 @@ def load_alias_map(
 
     Two sources, both optional:
       - ``bonds_static.csv`` ``isin`` column → ``{isin: cusip}`` (the Bloomberg
-        ID_ISIN-populated field);
+        ID_ISIN-populated field).  When two rows carry the *same* ISIN they are
+        the same bond fetched under two identifiers, so every member CUSIP (and
+        the shared ISIN) is collapsed onto one canonical CUSIP automatically —
+        no reconciliation warning, no manual crosswalk entry needed.
       - ``data/id_map.csv`` (``alias,cusip``) → manual overrides for non-US
         ISINs or any identifier the structural rule can't reach.
 
@@ -214,11 +234,23 @@ def load_alias_map(
     if bonds_static_path.exists() and bonds_static_path.stat().st_size > 0:
         df = pd.read_csv(bonds_static_path, dtype=str)
         if "cusip" in df.columns and "isin" in df.columns:
+            # Group every row's CUSIP by the ISIN it carries.  A shared ISIN is a
+            # deterministic "same bond" signal, so all CUSIPs in a group collapse
+            # onto one canonical id (auto-merge); a singleton group is just the
+            # plain isin→cusip crosswalk.
+            by_isin: dict[str, list[str]] = {}
             for _, row in df.iterrows():
                 canon = canonical_id(row.get("cusip"))
                 alias = _clean(row.get("isin"))
-                if canon and alias and alias != canon:
-                    amap[alias] = canon
+                if canon and alias:
+                    by_isin.setdefault(alias, []).append(canon)
+            for isin, cusips in by_isin.items():
+                canonical = _pick_canonical_cusip(cusips)
+                for c in set(cusips):
+                    if c != canonical:
+                        amap[c] = canonical
+                if isin != canonical:
+                    amap[isin] = canonical
 
     if id_map_path.exists() and id_map_path.stat().st_size > 0:
         df = pd.read_csv(id_map_path, dtype=str)
