@@ -38,6 +38,7 @@ BONDS_COLUMNS = [
 INITIAL_COLUMNS = ["portfolio", "cusip", "nominal", "price", "book_value", "inception_date"]
 MANUAL_PRICES_COLUMNS = ["cusip", "px_last", "date"]
 MANUAL_HISTORY_COLUMNS = ["date", "cusip", "px_last"]
+BOND_PORTFOLIO_MAP_COLUMNS = ["cusip", "portfolio"]
 
 
 # ── backup ──────────────────────────────────────────────────────────────────
@@ -262,6 +263,34 @@ def save_initial_positions(df: pd.DataFrame) -> Path | None:
     backup = backup_file(config.INITIAL_POSITIONS_PATH)
     out.to_csv(config.INITIAL_POSITIONS_PATH, index=False)
     log.info("Wrote %d initial positions to %s", len(out), config.INITIAL_POSITIONS_PATH)
+    return backup
+
+
+def save_bond_portfolio_map(df: pd.DataFrame) -> Path | None:
+    """Write bond_portfolio_map.csv (cusip,portfolio).
+
+    Only rows with both a cusip and a non-blank portfolio are kept — blank
+    portfolios mean "let automatic resolution decide" and must not be persisted
+    as pins. The last entry wins if a cusip is listed twice.
+    """
+    out = df.copy()
+    if "cusip" not in out.columns:
+        out["cusip"] = ""
+    if "portfolio" not in out.columns:
+        out["portfolio"] = ""
+    # fillna("") first so empty selectbox cells (None/NaN) don't stringify to
+    # the literal "None"/"nan" and survive the blank filter as bogus pins.
+    out["cusip"] = out["cusip"].fillna("").astype(str).str.strip()
+    out["portfolio"] = out["portfolio"].fillna("").astype(str).str.strip()
+    _blank = {"", "nan", "none"}
+    out = out[~out["cusip"].str.lower().isin(_blank)
+              & ~out["portfolio"].str.lower().isin(_blank)]
+    out = out[BOND_PORTFOLIO_MAP_COLUMNS].drop_duplicates(subset=["cusip"], keep="last")
+
+    config.BOND_PORTFOLIO_MAP_PATH.parent.mkdir(parents=True, exist_ok=True)
+    backup = backup_file(config.BOND_PORTFOLIO_MAP_PATH)
+    out.to_csv(config.BOND_PORTFOLIO_MAP_PATH, index=False)
+    log.info("Wrote %d bond→portfolio pin(s) to %s", len(out), config.BOND_PORTFOLIO_MAP_PATH)
     return backup
 
 

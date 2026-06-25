@@ -213,11 +213,37 @@ def synthesize_redemptions(
     return out[list(trades_df.columns)]
 
 
+def apply_portfolio_assignment(
+    combined: pd.DataFrame,
+    initial: pd.DataFrame,
+) -> pd.DataFrame:
+    """Override each trade's ``portfolio`` with its bond's resolved portfolio.
+
+    A bond's portfolio is decided once (manual pin → initial position → issuer
+    inference; see ``bond_portfolio``) and applied to all of its trades so the
+    book stays consistent. Bonds that can't be resolved confidently keep the
+    portfolio their trades already carry. No-op on an empty frame.
+    """
+    if combined.empty or "cusip" not in combined.columns:
+        return combined
+    from accruals import load_bonds_static
+    from bond_portfolio import resolve_portfolios, apply_to_trades, load_manual_map
+
+    bonds_static = load_bonds_static()
+    assignment = resolve_portfolios(
+        initial, bonds_static,
+        combined["cusip"].dropna().unique().tolist(),
+        load_manual_map(),
+    )
+    return apply_to_trades(combined, assignment)
+
+
 def load_all_trades(
     trades_path: Path | None = None,
     initial_path: Path | None = None,
     redeem_matured: bool = True,
     as_of: date | None = None,
+    assign_portfolios: bool = True,
 ) -> pd.DataFrame:
     """Initial positions + live trades, sorted by trade_date. Single source of truth.
 
@@ -225,6 +251,11 @@ def load_all_trades(
     for every bond that has matured on/before ``as_of`` (today if None), so
     matured positions close themselves and their proceeds move off the book as
     cash. Set it False to get the raw booked stream only.
+
+    When ``assign_portfolios`` is True (default), each trade's ``portfolio`` is
+    overridden with its bond's resolved portfolio (see ``bond_portfolio``), so a
+    bond's whole trade history sits in one book regardless of what the email
+    parser tagged each clip with. Set it False to keep the raw per-trade tags.
     """
     trades = load_trades(trades_path)
     initial = load_initial_positions(initial_path)
@@ -235,6 +266,9 @@ def load_all_trades(
     else:
         combined = pd.concat([initial, trades], ignore_index=True)
         combined = combined.sort_values("trade_date").reset_index(drop=True)
+
+    if assign_portfolios and not combined.empty:
+        combined = apply_portfolio_assignment(combined, initial)
 
     if redeem_matured and not combined.empty:
         redemptions = synthesize_redemptions(combined, as_of=as_of)
