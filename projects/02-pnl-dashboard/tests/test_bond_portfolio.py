@@ -3,7 +3,6 @@ import sys
 from pathlib import Path
 
 import pandas as pd
-import pytest
 
 _SRC = Path(__file__).resolve().parent.parent / "src"
 sys.path.insert(0, str(_SRC))
@@ -12,7 +11,7 @@ import config  # noqa: E402
 import data_io  # noqa: E402
 import bond_portfolio as bp  # noqa: E402
 from models import BondStatic  # noqa: E402
-from position_manager import load_all_trades, compute_positions  # noqa: E402
+from position_manager import load_all_trades  # noqa: E402
 
 
 def _bond(cusip, issuer="", name=""):
