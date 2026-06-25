@@ -156,7 +156,9 @@ def _arrow_safe(df: pd.DataFrame) -> pd.DataFrame:
     Replacing blank/whitespace-only strings with None lets Arrow infer a numeric
     column. Genuine text columns are unaffected (blanks just render empty).
     """
-    obj_cols = df.select_dtypes(include="object").columns
+    # include both legacy "object" and pandas-3's native "str" dtype; passing
+    # "object" alone warns (Pandas4Warning) because it implicitly pulls in str.
+    obj_cols = df.select_dtypes(include=["object", "str"]).columns
     if df.empty or obj_cols.empty:
         return df
     df = df.copy()

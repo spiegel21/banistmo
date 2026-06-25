@@ -221,20 +221,23 @@ _SNAPSHOT_COLUMNS = [
 ]
 
 
-def daily_snapshot(day: date, portfolio: str | None = None) -> pd.DataFrame:
-    """
-    One row per CUSIP held on `day`: position size, clean & dirty price, MTM value,
-    and the price/accrued P&L split — all marked as of `day`.
+def _snapshot_from(
+    day: date,
+    portfolio: str | None,
+    all_trades: pd.DataFrame,
+    bonds_static: dict,
+    prices_df: pd.DataFrame,
+) -> pd.DataFrame:
+    """Build one day's snapshot from already-loaded data (no disk I/O).
 
-    Prices come from price_history.csv for that exact day. Reuses mark_to_market
-    so the numbers reconcile with the rest of the app.
+    Shared by ``daily_snapshot`` (loads once) and ``position_timeseries`` (loads
+    once, then loops) so the CSV reads + portfolio resolution happen a single
+    time per call instead of once per business day.
     """
-    positions = compute_positions(load_all_trades(), as_of=day, portfolio=portfolio)
+    positions = compute_positions(all_trades, as_of=day, portfolio=portfolio)
     if not positions:
         return pd.DataFrame(columns=_SNAPSHOT_COLUMNS)
 
-    bonds_static = load_bonds_static()
-    prices_df = load_price_history()
     day_px = prices_df[prices_df["date"] == pd.Timestamp(day)] if not prices_df.empty else prices_df
     prices = dict(zip(day_px["cusip"], day_px["px_last"])) if not day_px.empty else {}
 
@@ -248,13 +251,34 @@ def daily_snapshot(day: date, portfolio: str | None = None) -> pd.DataFrame:
     return out[_SNAPSHOT_COLUMNS].reset_index(drop=True)
 
 
+def daily_snapshot(day: date, portfolio: str | None = None) -> pd.DataFrame:
+    """
+    One row per CUSIP held on `day`: position size, clean & dirty price, MTM value,
+    and the price/accrued P&L split — all marked as of `day`.
+
+    Prices come from price_history.csv for that exact day. Reuses mark_to_market
+    so the numbers reconcile with the rest of the app.
+    """
+    return _snapshot_from(
+        day, portfolio,
+        load_all_trades(), load_bonds_static(), load_price_history(),
+    )
+
+
 def position_timeseries(
     start: date, end: date, portfolio: str | None = None
 ) -> pd.DataFrame:
-    """`daily_snapshot` stacked for every business day in [start, end]."""
+    """`daily_snapshot` stacked for every business day in [start, end].
+
+    Trades, bond static, and price history are read **once** here and reused for
+    every day, rather than re-read (and the portfolio map re-resolved) per day.
+    """
+    all_trades = load_all_trades()
+    bonds_static = load_bonds_static()
+    prices_df = load_price_history()
     frames = []
     for day in business_days(start, end):
-        snap = daily_snapshot(day, portfolio)
+        snap = _snapshot_from(day, portfolio, all_trades, bonds_static, prices_df)
         if not snap.empty:
             snap.insert(0, "date", day.isoformat())
             frames.append(snap)
