@@ -28,7 +28,10 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 import config
 import data_io
-from position_manager import load_all_trades, compute_positions, get_positions_as_of
+import bond_portfolio
+from position_manager import (
+    load_all_trades, compute_positions, get_positions_as_of, load_initial_positions,
+)
 from accruals import load_bonds_static, upcoming_coupons
 from trading_gains import total_realized_pnl, realized_pnl
 from mtm import mark_to_market
@@ -234,6 +237,23 @@ bonds_static = load_bonds_static()
 bs_df = _bonds_static_df(bonds_static)
 clf_df = _classification_df(bonds_static)
 
+# ── bond → portfolio assignment ───────────────────────────────────────────────
+# Resolve each bond's portfolio once (manual pin → initial position → issuer
+# inference) so every table can show which book a bond belongs to. The same
+# resolution already drives the portfolio column on `all_trades` (applied inside
+# load_all_trades); here we expose it for display + the editor view.
+_initial_df = load_initial_positions()
+_all_cusips = set(all_trades["cusip"].dropna().unique()) if not all_trades.empty else set()
+_all_cusips |= set(bonds_static.keys())
+_manual_map = bond_portfolio.load_manual_map()
+portfolio_assignment = bond_portfolio.resolve_portfolios(
+    _initial_df, bonds_static, _all_cusips, _manual_map,
+)
+# Attach the resolved portfolio to bs_df so _enrich can surface it on any
+# cusip-keyed table just like name/country.
+if not bs_df.empty:
+    bs_df["portfolio"] = bs_df["cusip"].map(portfolio_assignment.portfolio)
+
 # ── sidebar: filters ──────────────────────────────────────────────────────────
 
 st.sidebar.header("Filters")
@@ -347,7 +367,9 @@ with st.sidebar.expander("Price History Coverage"):
         _cov_rows.append({"CUSIP": _cusip, "Name": _name, "Days": _days, "Status": _status})
 
     if _cov_rows:
-        st.dataframe(pd.DataFrame(_cov_rows), hide_index=True, use_container_width=True)
+        _filtered_dataframe(
+            pd.DataFrame(_cov_rows), "cov_tbl", hide_index=True, width="stretch",
+        )
     else:
         st.write("No positions found.")
     st.caption(
@@ -653,8 +675,8 @@ with tab_overview:
                     _dim_col: _dim_label, "net_nominal": "Nominal", "mtm_value": "MTM Value",
                     "pct_nominal": "% Nominal", "pct_mtm": "% MTM", "n_bonds": "# Bonds",
                 })
-                st.dataframe(
-                    _arrow_safe(_agg_view), hide_index=True, width="stretch",
+                _filtered_dataframe(
+                    _agg_view, "exp_agg", hide_index=True, width="stretch",
                     column_config={
                         "Nominal":   st.column_config.NumberColumn(format="%,.0f"),
                         "MTM Value": st.column_config.NumberColumn(format="%,.0f"),
@@ -685,8 +707,8 @@ with tab_overview:
                     "bucket": "Tenor", "net_nominal": "Nominal",
                     "mtm_value": "MTM Value", "n_bonds": "# Bonds",
                 })
-                st.dataframe(
-                    _arrow_safe(_ladder_view), hide_index=True, width="stretch",
+                _filtered_dataframe(
+                    _ladder_view, "mat_ladder", hide_index=True, width="stretch",
                     column_config={
                         "Nominal":   st.column_config.NumberColumn(format="%,.0f"),
                         "MTM Value": st.column_config.NumberColumn(format="%,.0f"),
@@ -794,9 +816,10 @@ with tab_risk:
     if risk_df.empty:
         st.info("No positions to analyse. Load positions and prices first.")
     else:
-        rv = _enrich(risk_df, bs_df, ["country", "currency"])
+        rv = _enrich(risk_df, bs_df, ["name", "portfolio", "country", "currency"])
         rv = rv.rename(columns={
-            "cusip": "CUSIP", "name": "Name", "country": "Country", "currency": "CCY",
+            "cusip": "CUSIP", "name": "Name", "portfolio": "Portfolio",
+            "country": "Country", "currency": "CCY",
             "net_nominal": "Nominal", "clean_px": "Clean Px", "dirty_px": "Dirty Px",
             "mtm_value": "MTM Value", "ytm": "YTM", "mac_duration": "Mac Dur",
             "mod_duration": "Mod Dur", "dv01_dollar": "DV01 ($)", "convexity": "Convexity",
@@ -852,8 +875,8 @@ with tab_risk:
                     "group": _rbg_label, "mtm_value": "MTM Value",
                     "dv01_dollar": "DV01 ($)", "mod_duration": "Mod Dur", "n_bonds": "# Bonds",
                 })
-                st.dataframe(
-                    _arrow_safe(_rbg_view), hide_index=True, width="stretch",
+                _filtered_dataframe(
+                    _rbg_view, "risk_group", hide_index=True, width="stretch",
                     column_config={
                         "MTM Value": st.column_config.NumberColumn(format="%,.0f"),
                         "DV01 ($)":  st.column_config.NumberColumn(format="%,.2f"),
@@ -941,7 +964,7 @@ with tab_mtm:
             st.info("No prices loaded. Add prices in **Data Editor → Manual Prices** or click **Refresh Bloomberg Prices**.")
     else:
         view = mtm_df_range.copy()
-        view = _enrich(view, bs_df, ["name", "country", "currency"])
+        view = _enrich(view, bs_df, ["name", "portfolio", "country", "currency"])
 
         # Replace P&L columns with range-summed values from pnl_history
         view = view.drop(columns=["price_pnl", "accrued_pnl", "mtm_gain"], errors="ignore")
@@ -955,7 +978,8 @@ with tab_mtm:
         view["realized"] = view.get("realized_gain", pd.Series(0.0, index=view.index)).fillna(0)
 
         view = view.rename(columns={
-            "cusip": "CUSIP", "name": "Name", "country": "Country", "currency": "CCY",
+            "cusip": "CUSIP", "name": "Name", "portfolio": "Portfolio",
+            "country": "Country", "currency": "CCY",
             "net_nominal": "Nominal",
             "cost_px": "Cost Px", "prev_px": "Prev Px", "px_change": "Px Change",
             "clean_px": "Clean Px", "accrued_today_pct": "Accrued %", "dirty_px": "Dirty Px",
@@ -966,7 +990,7 @@ with tab_mtm:
             "note": "Note",
         })
         ordered = [
-            "CUSIP", "Name", "Country", "CCY", "Nominal",
+            "CUSIP", "Name", "Portfolio", "Country", "CCY", "Nominal",
             "Cost Px", "Prev Px", "Px Change", "Clean Px", "Accrued %", "Dirty Px",
             "Vs Cost", "MTM Value", "Book Value",
             "Price P&L", "Accrued P&L", "Unrealized P&L", "Realized", "Note",
@@ -1046,8 +1070,8 @@ with tab_positions_date:
             "last_settle": p.last_settle,
         } for p in baseline_pos.values()]
         pos_base_df = pd.DataFrame(pos_rows)
-        pos_display = _enrich(pos_base_df, bs_df, ["name", "country", "currency"])
-        display_cols = ["cusip", "name", "country", "currency",
+        pos_display = _enrich(pos_base_df, bs_df, ["name", "portfolio", "country", "currency"])
+        display_cols = ["cusip", "name", "portfolio", "country", "currency",
                         "net_nominal", "wavg_price", "book_value", "last_settle"]
         pos_display = pos_display[[c for c in display_cols if c in pos_display.columns]]
 
@@ -1059,6 +1083,7 @@ with tab_positions_date:
             column_config={
                 "cusip":       st.column_config.TextColumn("CUSIP", disabled=True),
                 "name":        st.column_config.TextColumn("Name", disabled=True),
+                "portfolio":   st.column_config.TextColumn("Portfolio", disabled=True),
                 "country":     st.column_config.TextColumn("Country", disabled=True),
                 "currency":    st.column_config.TextColumn("CCY", disabled=True),
                 "net_nominal": st.column_config.NumberColumn("Net Nominal", format="%,.0f"),
@@ -1210,7 +1235,7 @@ with tab_attribution:
             else:
                 snap_view = _enrich(
                     mtm_df.copy(), bs_df,
-                    ["name", "country", "currency", "coupon_rate",
+                    ["name", "portfolio", "country", "currency", "coupon_rate",
                      "day_count_convention", "maturity_date"],
                 )
                 acc_bk = accrual_breakdown(positions, bonds_static, as_of)
@@ -1243,7 +1268,7 @@ with tab_attribution:
                 )
 
                 snap_cols = [
-                    "name", "cusip", "country", "currency",
+                    "name", "cusip", "portfolio", "country", "currency",
                     "net_nominal", "cost_px", "prev_px", "px_change",
                     "clean_px", "dirty_px", "px_vs_cost",
                     "today_price_pnl", "today_accrued", "today_unrealized",
@@ -1253,7 +1278,8 @@ with tab_attribution:
                 ]
                 snap_view = snap_view[[c for c in snap_cols if c in snap_view.columns]]
                 snap_view = snap_view.rename(columns={
-                    "name": "Name", "cusip": "CUSIP", "country": "Country", "currency": "CCY",
+                    "name": "Name", "cusip": "CUSIP", "portfolio": "Portfolio",
+                    "country": "Country", "currency": "CCY",
                     "net_nominal": "Nominal",
                     "cost_px": "Cost Px", "prev_px": "Prev Px", "px_change": "Px Change",
                     "clean_px": "Clean Px", "dirty_px": "Dirty Px", "px_vs_cost": "Vs Cost",
@@ -1491,7 +1517,7 @@ with tab_attribution:
         else:
             acc_full = _enrich(
                 acc_detail_attr, bs_df,
-                ["name", "country", "currency", "coupon_rate", "day_count_convention"],
+                ["name", "portfolio", "country", "currency", "coupon_rate", "day_count_convention"],
             )
 
             _safe_days = acc_full["days_accrued"].replace(0, 1)
@@ -1503,14 +1529,15 @@ with tab_attribution:
             ).round(2)
 
             acc_display_cols = [
-                "name", "cusip", "country", "currency",
+                "name", "cusip", "portfolio", "country", "currency",
                 "coupon_rate", "day_count_convention",
                 "last_coupon_date", "days_accrued",
                 "accrued_bps_day", "accrued_cash_day", "accrued_total", "note",
             ]
             acc_full = acc_full[[c for c in acc_display_cols if c in acc_full.columns]]
             acc_full = acc_full.rename(columns={
-                "name": "Name", "cusip": "CUSIP", "country": "Country", "currency": "CCY",
+                "name": "Name", "cusip": "CUSIP", "portfolio": "Portfolio",
+                "country": "Country", "currency": "CCY",
                 "coupon_rate": "Coupon Rate", "day_count_convention": "Day Count",
                 "last_coupon_date": "Last Coupon", "days_accrued": "Days Accrued",
                 "accrued_bps_day": "Accrued bps/day",
@@ -1555,9 +1582,10 @@ with tab_attribution:
         if cal.empty:
             st.info("No coupons scheduled in this window for held positions.")
         else:
-            cal = _enrich(cal, bs_df, ["name", "country", "currency"])
+            cal = _enrich(cal, bs_df, ["name", "portfolio", "country", "currency"])
             cal_view = cal.rename(columns={
                 "coupon_date": "Coupon Date", "cusip": "CUSIP", "name": "Name",
+                "portfolio": "Portfolio",
                 "country": "Country", "currency": "CCY", "net_nominal": "Nominal",
                 "coupon_rate": "Coupon Rate", "coupon_amount": "Coupon Amount",
             })
@@ -1595,18 +1623,19 @@ with tab_attribution:
         if ts_attr.empty:
             st.info("No data. Populate `price_history.csv` for this date range.")
         else:
-            ts_enriched = _enrich(ts_attr, bs_df, ["name", "country", "currency"])
+            ts_enriched = _enrich(ts_attr, bs_df, ["name", "portfolio", "country", "currency"])
             # Apply CUSIP filter to the timeseries too
             if _filtered_cusips and not ts_enriched.empty and "cusip" in ts_enriched.columns:
                 ts_enriched = ts_enriched[ts_enriched["cusip"].isin(_filtered_cusips)]
             px_cols = [
-                "date", "cusip", "name", "country", "currency",
+                "date", "cusip", "name", "portfolio", "country", "currency",
                 "net_nominal", "clean_px", "accrued_pct", "dirty_px",
                 "mtm_value", "price_pnl", "accrued_pnl",
             ]
             ts_display = ts_enriched[[c for c in px_cols if c in ts_enriched.columns]]
             ts_display = ts_display.rename(columns={
                 "date": "Date", "cusip": "CUSIP", "name": "Name",
+                "portfolio": "Portfolio",
                 "country": "Country", "currency": "CCY",
                 "net_nominal": "Nominal", "clean_px": "Clean Px",
                 "accrued_pct": "Accrued %", "dirty_px": "Dirty Px",
@@ -1645,6 +1674,7 @@ with tab_ledger:
     if snap.empty:
         st.info("No positions held on this day (or no price available).")
     else:
+        snap = _enrich(snap, bs_df, ["portfolio"])
         _filtered_dataframe(snap, "ledger_snap", width="stretch", hide_index=True)
 
     st.markdown("##### Accrual detail")
@@ -1653,7 +1683,7 @@ with tab_ledger:
     if acc.empty:
         st.info("No accruing positions on this day.")
     else:
-        acc = _enrich(acc, bs_df, ["name"])
+        acc = _enrich(acc, bs_df, ["name", "portfolio"])
         _filtered_dataframe(acc, "ledger_acc", width="stretch", hide_index=True)
 
     cL, cR = st.columns(2)
@@ -1681,7 +1711,7 @@ with tab_ledger:
         if rl is None or rl.empty:
             st.info("No positions closed.")
         else:
-            rl = _enrich(rl, bs_df, ["name"])
+            rl = _enrich(rl, bs_df, ["name", "portfolio"])
             _filtered_dataframe(rl, "ledger_rl", width="stretch", hide_index=True)
 
 # ── Tab 7: Time Series ────────────────────────────────────────────────────────
@@ -1695,6 +1725,7 @@ with tab_ts:
     if ts.empty:
         st.info("No data. Ensure positions exist and `price_history.csv` is populated for the range.")
     else:
+        ts = _enrich(ts, bs_df, ["name", "portfolio"])
         _filtered_dataframe(ts, "ts_main", width="stretch", hide_index=True, height=500)
         st.download_button(
             "Download CSV", ts.to_csv(index=False).encode(),
@@ -1724,6 +1755,97 @@ with tab_edit:
                 st.rerun()
             except ValueError as exc:
                 st.error(str(exc))
+
+    # ── Portfolio Assignment ─────────────────────────────────────────────────
+    st.markdown("#### Portfolio Assignment")
+    st.caption(
+        "Which book each bond belongs to. Resolved automatically: a bond seeded "
+        "in **Initial Positions** keeps its book, and any other bond from the "
+        "**same issuer** inherits that book — *unless* the issuer's bonds span "
+        "more than one book, in which case the bond is left **unassigned** for "
+        "you to pin here. Set **Assign Portfolio** for any row and **Save**; the "
+        "pin overrides automatic resolution and applies to every trade of that "
+        "bond. Leave it blank to let automatic resolution stand."
+    )
+
+    _src_icon = {
+        bond_portfolio.SOURCE_MANUAL: "📌 manual pin",
+        bond_portfolio.SOURCE_INITIAL: "✓ initial position",
+        bond_portfolio.SOURCE_ISSUER: "✓ issuer",
+        bond_portfolio.SOURCE_UNASSIGNED: "⚠ unassigned",
+    }
+    if portfolio_assignment.ambiguous_issuers:
+        _amb_lines = "; ".join(
+            f"**{iss}** → {', '.join(ports)}"
+            for iss, ports in sorted(portfolio_assignment.ambiguous_issuers.items())
+        )
+        st.warning(
+            "These issuers have initial-position bonds in more than one book, so "
+            f"their other bonds can't be auto-assigned — pin each below: {_amb_lines}."
+        )
+    if portfolio_assignment.unassigned:
+        st.info(
+            f"{len(portfolio_assignment.unassigned)} bond(s) need a portfolio. "
+            "They appear first in the table below."
+        )
+
+    _known_ports = sorted({
+        p for p in (
+            list(portfolio_assignment.assigned.values())
+            + (all_trades["portfolio"].dropna().tolist() if not all_trades.empty else [])
+        ) if str(p).strip()
+    })
+    _pa_rows = []
+    for _cusip in portfolio_assignment.portfolio:
+        _b = bonds_static.get(_cusip)
+        _src = portfolio_assignment.source.get(_cusip, "")
+        _pa_rows.append({
+            "cusip": _cusip,
+            "name": (_b.name if _b and _b.name else "") or "",
+            "issuer": portfolio_assignment.issuer_label.get(_cusip, ""),
+            "resolved": portfolio_assignment.portfolio.get(_cusip, ""),
+            "source": _src_icon.get(_src, _src),
+            "assign": _manual_map.get(_cusip) or None,
+            "_unassigned": _src == bond_portfolio.SOURCE_UNASSIGNED,
+        })
+    pa_df = pd.DataFrame(_pa_rows)
+    if pa_df.empty:
+        st.info("No bonds known yet — add trades or bond static data first.")
+    else:
+        # Keep the editable column object-typed so an all-blank column doesn't
+        # become float64 NaN, which a string SelectboxColumn can't render.
+        pa_df["assign"] = pa_df["assign"].astype(object)
+        # Unassigned first, then by issuer/cusip, so attention items lead.
+        pa_df = pa_df.sort_values(
+            ["_unassigned", "issuer", "cusip"], ascending=[False, True, True]
+        ).drop(columns="_unassigned").reset_index(drop=True)
+        edited_pa = st.data_editor(
+            pa_df, num_rows="fixed", width="stretch", key="ed_portfolio_assign",
+            column_config={
+                "cusip":     st.column_config.TextColumn("CUSIP", disabled=True),
+                "name":      st.column_config.TextColumn("Name", disabled=True),
+                "issuer":    st.column_config.TextColumn("Issuer", disabled=True),
+                "resolved":  st.column_config.TextColumn("Resolved Portfolio", disabled=True),
+                "source":    st.column_config.TextColumn("Source", disabled=True),
+                "assign":    st.column_config.SelectboxColumn(
+                    "Assign Portfolio", options=_known_ports, required=False,
+                    help="Pin this bond to one of the existing books (overrides "
+                         "automatic resolution). Clear it to fall back to auto.",
+                ),
+            },
+        )
+        if st.button("Save Portfolio Assignment", key="save_portfolio_assign"):
+            pins = edited_pa[["cusip", "assign"]].rename(columns={"assign": "portfolio"})
+            try:
+                backup = data_io.save_bond_portfolio_map(pins)
+                msg = "Portfolio pins saved."
+                if backup:
+                    msg += f"  Backup: {Path(backup).name}"
+                st.success(msg)
+                st.rerun()
+            except ValueError as exc:
+                st.error(str(exc))
+    st.markdown("---")
 
     _editor_block(
         "Trades",

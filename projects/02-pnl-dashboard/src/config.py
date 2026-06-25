@@ -22,6 +22,9 @@ BONDS_STATIC_PATH = DATA_DIR / "bonds_static.csv"
 # Optional manual CUSIP/ISIN crosswalk (columns: alias, cusip) for identifiers
 # the structural ISIN→CUSIP rule can't reach (e.g. non-US XS/DE/FR ISINs).
 ID_MAP_PATH = DATA_DIR / "id_map.csv"
+# Optional manual bond→portfolio pins (columns: cusip, portfolio) edited in the
+# dashboard's Portfolio Assignment view; overrides automatic issuer inference.
+BOND_PORTFOLIO_MAP_PATH = DATA_DIR / "bond_portfolio_map.csv"
 PORTFOLIO_PATH = DATA_DIR / "portfolio.csv"
 PRICE_HISTORY_PATH = DATA_DIR / "price_history.csv"
 PNL_HISTORY_PATH = DATA_DIR / "pnl_history.csv"
