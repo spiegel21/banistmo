@@ -18,11 +18,15 @@ Resolution precedence, highest first:
      issuer's initial bonds span MORE THAN ONE portfolio the inference is
      ambiguous and the bond is left UNASSIGNED, to be pinned manually.
 
-Issuer identity is the ``issuer`` field from ``bonds_static.csv`` when present,
-falling back to the 6-digit CUSIP issuer prefix (the same proxy the app's
-"Issuer (6-digit CUSIP)" rollup uses). The issuer-name field is preferred
-because two different issuers can share a 6-digit prefix (e.g. one underwriter's
-range) yet belong to different books.
+Issuer identity is the ``issuer`` field from ``bonds_static.csv`` crossed with
+the bond's **currency**, falling back to the 6-digit CUSIP issuer prefix (the
+same proxy the app's "Issuer (6-digit CUSIP)" rollup uses) when no issuer name
+is known. The issuer-name field is preferred because two different issuers can
+share a 6-digit prefix (e.g. one underwriter's range) yet belong to different
+books. Currency is part of the bucket so the same obligor in two currencies
+(Mex in USD vs Mex in EUR) resolves independently: if every Mex-USD initial
+bond sits in one book, a new Mex-USD bond inherits it even when Mex-EUR bonds
+live in a different book.
 
 Only *confidently* resolved bonds (manual / initial / issuer) are returned in
 ``assigned`` — that is the map applied to trades, so an unresolved bond keeps
@@ -47,24 +51,28 @@ SOURCE_ISSUER = "issuer"
 SOURCE_UNASSIGNED = "unassigned"
 
 
-def issuer_key(cusip: str, bonds_static: dict | None) -> tuple[str, str]:
-    """Return a hashable issuer identity for ``cusip``.
+def issuer_key(cusip: str, bonds_static: dict | None) -> tuple[str, str, str]:
+    """Return a hashable issuer identity for ``cusip``: (kind, value, currency).
 
-    Prefers the explicit ``issuer`` field from bond static data; falls back to
-    the 6-digit CUSIP issuer prefix when no issuer name is known. The tuple's
-    first element marks which rule fired so two issuers can never collide across
-    namespaces (an issuer literally named "25714P" vs the prefix 25714P).
+    The issuer bucket is the **issuer crossed with currency**, so the same
+    obligor in two currencies (e.g. Mex in USD vs Mex in EUR) is treated as two
+    distinct issuers — each can resolve independently. ``value`` prefers the
+    explicit ``issuer`` field; it falls back to the 6-digit CUSIP issuer prefix
+    when no issuer name is known. ``kind`` marks which rule fired so an issuer
+    literally named "25714P" can never collide with the prefix 25714P.
     """
     b = bonds_static.get(cusip) if bonds_static else None
+    ccy = str(getattr(b, "currency", "") or "").strip().upper() if b is not None else ""
     if b is not None and str(getattr(b, "issuer", "") or "").strip():
-        return ("issuer", str(b.issuer).strip())
-    return ("cusip6", str(cusip or "")[:6])
+        return ("issuer", str(b.issuer).strip(), ccy)
+    return ("cusip6", str(cusip or "")[:6], ccy)
 
 
-def issuer_label(key: tuple[str, str]) -> str:
-    """Human-readable label for an issuer_key tuple."""
-    kind, value = key
-    return value if kind == "issuer" else f"CUSIP {value}*"
+def issuer_label(key: tuple[str, str, str]) -> str:
+    """Human-readable label for an issuer_key tuple, e.g. ``Mexico (USD)``."""
+    kind, value, ccy = key
+    base = value if kind == "issuer" else f"CUSIP {value}*"
+    return f"{base} ({ccy})" if ccy else base
 
 
 @dataclass

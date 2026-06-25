@@ -29,6 +29,13 @@ TRADES_COLUMNS = [
     "Timestamp", "cusip", "side", "nominal", "principal", "net", "accrued",
     "price", "yield_closed", "trade_date", "settle_date", "trader", "portfolio",
 ]
+# Columns that identify a re-appended (duplicate) confirmation. Includes
+# Timestamp + the economics so two genuine same-day clips are NOT collapsed.
+# Deduplication happens here, at the write edge, so the on-disk file is cleaned
+# once when trades are added — readers don't re-drop the same rows every load.
+TRADE_DEDUP_KEYS = [
+    "Timestamp", "cusip", "side", "nominal", "net", "price", "trade_date", "trader",
+]
 BONDS_COLUMNS = [
     "cusip", "name", "currency", "country", "coupon_rate", "coupon_frequency",
     "day_count_convention", "maturity_date", "first_coupon_date", "bbg_ticker",
@@ -213,6 +220,14 @@ def save_trades(df: pd.DataFrame) -> Path | None:
         if col not in out.columns:
             out[col] = ""
     out = out[TRADES_COLUMNS]
+
+    # Drop exact re-appends (same confirmation written twice) once, here, so the
+    # persisted file stays clean and load_trades never has to re-drop them.
+    keys = [k for k in TRADE_DEDUP_KEYS if k in out.columns]
+    before = len(out)
+    out = out.drop_duplicates(subset=keys)
+    if len(out) < before:
+        log.info("Dropped %d duplicate trade row(s) on save", before - len(out))
 
     backup = backup_file(config.TRADES_PATH)
     config.TRADES_PATH.parent.mkdir(parents=True, exist_ok=True)
