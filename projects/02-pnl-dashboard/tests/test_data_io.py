@@ -48,6 +48,35 @@ def test_save_trades_keeps_distinct_same_day_clips():
     assert (on_disk["trader"] == "TwoClips").sum() == 2
 
 
+def test_load_trades_self_heals_duplicate_in_file():
+    # A re-appended (byte-identical) confirmation is removed from trades.csv
+    # itself on load — fixed at the root, not just filtered in memory.
+    row = dict(
+        Timestamp="2025-08-01T09:00", cusip="037833100", side="buy", nominal=150_000,
+        principal=148_500, net=149_000, accrued=300, price=99.0, yield_closed=4.7,
+        trade_date="2025-08-01", settle_date="2025-08-04", trader="HealMe", portfolio="HY",
+    )
+    base = pd.read_csv(config.TRADES_PATH, dtype=str, keep_default_na=False)
+    with_dups = pd.concat([base, pd.DataFrame([row, dict(row)])], ignore_index=True)
+    with_dups.to_csv(config.TRADES_PATH, index=False)
+
+    load_trades()  # triggers the self-heal
+
+    on_disk = pd.read_csv(config.TRADES_PATH, dtype=str, keep_default_na=False)
+    assert (on_disk["trader"] == "HealMe").sum() == 1          # duplicate removed from file
+    assert list(config.BACKUPS_DIR.glob("trades_*.csv"))       # backup written first
+
+
+def test_load_trades_does_not_rewrite_clean_file():
+    # No duplicates → no new backup, file untouched (no needless rewrites every load).
+    before = config.TRADES_PATH.read_text()
+    n_backups = len(list(config.BACKUPS_DIR.glob("trades_*.csv")))
+    for _ in range(3):
+        load_trades()
+    assert config.TRADES_PATH.read_text() == before
+    assert len(list(config.BACKUPS_DIR.glob("trades_*.csv"))) == n_backups
+
+
 def test_save_trades_creates_backup():
     # conftest already wrote trades.csv, so a backup must be produced.
     raw = pd.read_csv(config.TRADES_PATH, dtype={"cusip": str})

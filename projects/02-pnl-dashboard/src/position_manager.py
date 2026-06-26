@@ -14,7 +14,7 @@ import pandas as pd
 
 import config
 from config import DEFAULT_PORTFOLIO, get_logger
-from data_io import TRADE_DEDUP_KEYS
+from data_io import TRADE_DEDUP_KEYS, dedupe_trades_file
 from models import BondStatic, Position
 from security_id import alias_map, canonicalize_series
 
@@ -80,15 +80,15 @@ def load_trades(trades_path: Path | None = None) -> pd.DataFrame:
     else:
         df["portfolio"] = df["portfolio"].fillna(DEFAULT_PORTFOLIO)
 
-    # Safety net for duplicates an external writer appended since the last save.
-    # Trades added through the app are de-duplicated once at the write edge
-    # (data_io.save_trades), so a clean file drops nothing here — and we stay
-    # quiet (debug, not info) to avoid logging the same drop on every load.
+    # If an external writer (the email parser) re-appended a confirmation, fix it
+    # at the root: rewrite trades.csv without the duplicate rows (a backup is made
+    # first), so the duplicate leaves the file once instead of being filtered in
+    # memory on every load. A clean file drops nothing and is never rewritten.
     dedup_keys = [k for k in TRADE_DEDUP_KEYS if k in df.columns]
     before = len(df)
     df = df.drop_duplicates(subset=dedup_keys)
     if len(df) < before:
-        log.debug("Dropped %d duplicate trade row(s) at load (external append)", before - len(df))
+        dedupe_trades_file(path)
 
     return df.sort_values("trade_date").reset_index(drop=True)
 
