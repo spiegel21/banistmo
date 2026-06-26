@@ -14,9 +14,9 @@ from models import BondStatic  # noqa: E402
 from position_manager import load_all_trades  # noqa: E402
 
 
-def _bond(cusip, issuer="", name=""):
+def _bond(cusip, issuer="", name="", currency="USD"):
     return BondStatic(
-        cusip=cusip, name=name or cusip, currency="USD", country="US",
+        cusip=cusip, name=name or cusip, currency=currency, country="US",
         coupon_rate=0.05, coupon_frequency=2, day_count_convention="30/360",
         maturity_date=pd.Timestamp("2030-01-15").date(),
         first_coupon_date=pd.Timestamp("2025-01-15").date(),
@@ -69,8 +69,8 @@ def test_ambiguous_issuer_left_unassigned():
     assert asg.source["AAA333333"] == bp.SOURCE_UNASSIGNED
     assert asg.portfolio["AAA333333"] == config.DEFAULT_PORTFOLIO
     assert "AAA333333" not in asg.assigned
-    assert "Acme" in asg.ambiguous_issuers
-    assert sorted(asg.ambiguous_issuers["Acme"]) == ["HY", "IG"]
+    assert "Acme (USD)" in asg.ambiguous_issuers
+    assert sorted(asg.ambiguous_issuers["Acme (USD)"]) == ["HY", "IG"]
 
 
 def test_distinct_issuers_sharing_cusip6_are_not_ambiguous():
@@ -83,6 +83,38 @@ def test_distinct_issuers_sharing_cusip6_are_not_ambiguous():
     assert asg.ambiguous_issuers == {}
     assert asg.portfolio["25714PFB9"] == "HY"
     assert asg.portfolio["25714PEF1"] == "IG"
+
+
+def test_issuer_crossed_with_currency_resolves_independently():
+    # Same obligor "Mex" in two currencies, each currency sits in one book.
+    # A new Mex-USD bond should auto-assign to the USD book even though Mex-EUR
+    # lives in a different book — the currency makes them distinct issuers.
+    bonds = {
+        "MEXUSD0001": _bond("MEXUSD0001", issuer="Mex", currency="USD"),
+        "MEXUSD0002": _bond("MEXUSD0002", issuer="Mex", currency="USD"),
+        "MEXEUR0001": _bond("MEXEUR0001", issuer="Mex", currency="EUR"),
+        "MEXUSD9999": _bond("MEXUSD9999", issuer="Mex", currency="USD"),  # new, unseeded
+    }
+    initial = _initial([("USD Book", "MEXUSD0001"), ("EUR Book", "MEXEUR0001")])
+    asg = bp.resolve_portfolios(initial, bonds, list(bonds))
+    # No ambiguity: (Mex, USD) and (Mex, EUR) are separate buckets.
+    assert asg.ambiguous_issuers == {}
+    assert asg.portfolio["MEXUSD9999"] == "USD Book"
+    assert asg.source["MEXUSD9999"] == bp.SOURCE_ISSUER
+    assert asg.portfolio["MEXUSD0002"] == "USD Book"
+
+
+def test_same_issuer_same_currency_two_books_is_ambiguous():
+    # If the SAME (issuer, currency) bucket spans two books, it's still ambiguous.
+    bonds = {
+        "MEXUSD0001": _bond("MEXUSD0001", issuer="Mex", currency="USD"),
+        "MEXUSD0002": _bond("MEXUSD0002", issuer="Mex", currency="USD"),
+        "MEXUSD9999": _bond("MEXUSD9999", issuer="Mex", currency="USD"),
+    }
+    initial = _initial([("A", "MEXUSD0001"), ("B", "MEXUSD0002")])
+    asg = bp.resolve_portfolios(initial, bonds, list(bonds))
+    assert "MEXUSD9999" in asg.unassigned
+    assert "Mex (USD)" in asg.ambiguous_issuers
 
 
 def test_manual_pin_overrides_everything():

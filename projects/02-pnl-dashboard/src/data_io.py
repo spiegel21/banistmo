@@ -29,6 +29,13 @@ TRADES_COLUMNS = [
     "Timestamp", "cusip", "side", "nominal", "principal", "net", "accrued",
     "price", "yield_closed", "trade_date", "settle_date", "trader", "portfolio",
 ]
+# Columns that identify a re-appended (duplicate) confirmation. Includes
+# Timestamp + the economics so two genuine same-day clips are NOT collapsed.
+# Deduplication happens here, at the write edge, so the on-disk file is cleaned
+# once when trades are added — readers don't re-drop the same rows every load.
+TRADE_DEDUP_KEYS = [
+    "Timestamp", "cusip", "side", "nominal", "net", "price", "trade_date", "trader",
+]
 BONDS_COLUMNS = [
     "cusip", "name", "currency", "country", "coupon_rate", "coupon_frequency",
     "day_count_convention", "maturity_date", "first_coupon_date", "bbg_ticker",
@@ -214,6 +221,14 @@ def save_trades(df: pd.DataFrame) -> Path | None:
             out[col] = ""
     out = out[TRADES_COLUMNS]
 
+    # Drop exact re-appends (same confirmation written twice) once, here, so the
+    # persisted file stays clean and load_trades never has to re-drop them.
+    keys = [k for k in TRADE_DEDUP_KEYS if k in out.columns]
+    before = len(out)
+    out = out.drop_duplicates(subset=keys)
+    if len(out) < before:
+        log.info("Dropped %d duplicate trade row(s) on save", before - len(out))
+
     backup = backup_file(config.TRADES_PATH)
     config.TRADES_PATH.parent.mkdir(parents=True, exist_ok=True)
     out.to_csv(config.TRADES_PATH, index=False)
@@ -264,6 +279,37 @@ def save_initial_positions(df: pd.DataFrame) -> Path | None:
     out.to_csv(config.INITIAL_POSITIONS_PATH, index=False)
     log.info("Wrote %d initial positions to %s", len(out), config.INITIAL_POSITIONS_PATH)
     return backup
+
+
+def dedupe_trades_file(path: Path | None = None) -> int:
+    """Remove duplicate confirmation rows from trades.csv **in place**, at the root.
+
+    Reads the file verbatim (preserving every value's formatting), drops rows
+    that repeat on ``TRADE_DEDUP_KEYS``, and — only if any were removed — backs
+    the file up and rewrites it without them. Returns the number of rows removed
+    (0 = nothing to do, no write).
+
+    This is the source fix for a re-appended confirmation (the email parser
+    parsing the same email twice): the duplicate leaves the file once, instead
+    of being filtered out in memory on every single load.
+    """
+    path = Path(path) if path is not None else config.TRADES_PATH
+    if not path.exists() or path.stat().st_size == 0:
+        return 0
+    # Read as strings with blanks preserved so the rewrite is byte-faithful
+    # except for the dropped rows (no float reformatting, no blank→NaN).
+    raw = pd.read_csv(path, dtype=str, keep_default_na=False)
+    keys = [k for k in TRADE_DEDUP_KEYS if k in raw.columns]
+    if not keys:
+        return 0
+    before = len(raw)
+    deduped = raw.drop_duplicates(subset=keys)
+    removed = before - len(deduped)
+    if removed:
+        backup_file(path)
+        deduped.to_csv(path, index=False)
+        log.info("Removed %d duplicate trade row(s) from %s", removed, path.name)
+    return removed
 
 
 def save_bond_portfolio_map(df: pd.DataFrame) -> Path | None:

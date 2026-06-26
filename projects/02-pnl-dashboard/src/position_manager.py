@@ -14,6 +14,7 @@ import pandas as pd
 
 import config
 from config import DEFAULT_PORTFOLIO, get_logger
+from data_io import TRADE_DEDUP_KEYS, dedupe_trades_file
 from models import BondStatic, Position
 from security_id import alias_map, canonicalize_series
 
@@ -34,9 +35,9 @@ _DTYPES = {
     "portfolio": str,
 }
 
-# Columns used to detect a re-appended (duplicate) confirmation. Includes
-# Timestamp + the economics so two genuine same-day clips are NOT collapsed.
-_DEDUP_KEYS = ["Timestamp", "cusip", "side", "nominal", "net", "price", "trade_date", "trader"]
+# Trade dedup keys are owned by data_io (the write edge), where trades are
+# de-duplicated once on save. The read-side pass in load_trades is only a silent
+# safety net for rows an external writer (the email parser) appended since.
 
 
 def load_trades(trades_path: Path | None = None) -> pd.DataFrame:
@@ -79,12 +80,15 @@ def load_trades(trades_path: Path | None = None) -> pd.DataFrame:
     else:
         df["portfolio"] = df["portfolio"].fillna(DEFAULT_PORTFOLIO)
 
-    # Drop only exact re-appends (same confirmation parsed twice).
-    dedup_keys = [k for k in _DEDUP_KEYS if k in df.columns]
+    # If an external writer (the email parser) re-appended a confirmation, fix it
+    # at the root: rewrite trades.csv without the duplicate rows (a backup is made
+    # first), so the duplicate leaves the file once instead of being filtered in
+    # memory on every load. A clean file drops nothing and is never rewritten.
+    dedup_keys = [k for k in TRADE_DEDUP_KEYS if k in df.columns]
     before = len(df)
     df = df.drop_duplicates(subset=dedup_keys)
     if len(df) < before:
-        log.info("Dropped %d duplicate trade row(s)", before - len(df))
+        dedupe_trades_file(path)
 
     return df.sort_values("trade_date").reset_index(drop=True)
 
