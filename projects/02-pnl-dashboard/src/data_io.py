@@ -46,6 +46,7 @@ INITIAL_COLUMNS = ["portfolio", "cusip", "nominal", "price", "book_value", "ince
 MANUAL_PRICES_COLUMNS = ["cusip", "px_last", "date"]
 MANUAL_HISTORY_COLUMNS = ["date", "cusip", "px_last"]
 BOND_PORTFOLIO_MAP_COLUMNS = ["cusip", "portfolio"]
+BOND_PORTFOLIO_SPLITS_COLUMNS = ["cusip", "portfolio"]
 
 
 # ── backup ──────────────────────────────────────────────────────────────────
@@ -337,6 +338,40 @@ def save_bond_portfolio_map(df: pd.DataFrame) -> Path | None:
     backup = backup_file(config.BOND_PORTFOLIO_MAP_PATH)
     out.to_csv(config.BOND_PORTFOLIO_MAP_PATH, index=False)
     log.info("Wrote %d bond→portfolio pin(s) to %s", len(out), config.BOND_PORTFOLIO_MAP_PATH)
+    return backup
+
+
+def save_bond_portfolio_splits(df: pd.DataFrame) -> Path | None:
+    """Write bond_portfolio_splits.csv (cusip,portfolio) — bonds that live in
+    more than one book.
+
+    Only rows with both a cusip and a non-blank portfolio are kept. A (cusip,
+    portfolio) pair is a declaration that the bond participates in that book;
+    several rows for one cusip enumerate all of its books. Duplicate pairs are
+    collapsed. A bond is only treated as split when it has at least TWO distinct
+    books — a lone row is meaningless (use a normal pin for a single book), so
+    such rows are dropped here to keep the file honest.
+    """
+    out = df.copy()
+    for col in ("cusip", "portfolio"):
+        if col not in out.columns:
+            out[col] = ""
+        out[col] = out[col].fillna("").astype(str).str.strip()
+    _blank = {"", "nan", "none"}
+    out = out[~out["cusip"].str.lower().isin(_blank)
+              & ~out["portfolio"].str.lower().isin(_blank)]
+    out = out[BOND_PORTFOLIO_SPLITS_COLUMNS].drop_duplicates(
+        subset=["cusip", "portfolio"], keep="last"
+    )
+    # Keep only cusips that resolve to 2+ distinct books.
+    _counts = out.groupby("cusip")["portfolio"].nunique()
+    out = out[out["cusip"].isin(_counts[_counts >= 2].index)]
+    out = out.sort_values(["cusip", "portfolio"]).reset_index(drop=True)
+
+    config.BOND_PORTFOLIO_SPLITS_PATH.parent.mkdir(parents=True, exist_ok=True)
+    backup = backup_file(config.BOND_PORTFOLIO_SPLITS_PATH)
+    out.to_csv(config.BOND_PORTFOLIO_SPLITS_PATH, index=False)
+    log.info("Wrote %d bond split row(s) to %s", len(out), config.BOND_PORTFOLIO_SPLITS_PATH)
     return backup
 
 

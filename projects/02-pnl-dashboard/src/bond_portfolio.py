@@ -49,6 +49,7 @@ SOURCE_MANUAL = "manual"
 SOURCE_INITIAL = "initial position"
 SOURCE_ISSUER = "issuer"
 SOURCE_UNASSIGNED = "unassigned"
+SOURCE_SPLIT = "split"
 
 
 def issuer_key(cusip: str, bonds_static: dict | None) -> tuple[str, str, str]:
@@ -85,9 +86,13 @@ class PortfolioAssignment:
     issuer_label: dict[str, str]           # cusip → issuer label used for inference
     ambiguous_issuers: dict[str, list[str]]  # issuer label → sorted portfolios in conflict
     unassigned: list[str] = field(default_factory=list)  # cusips needing a manual pin
+    splits: dict[str, list[str]] = field(default_factory=dict)  # cusip → books it's split across
 
     def portfolio_of(self, cusip: str) -> str:
         return self.portfolio.get(cusip, DEFAULT_PORTFOLIO)
+
+    def is_split(self, cusip: str) -> bool:
+        return cusip in self.splits
 
 
 def load_manual_map(path: Path | None = None) -> dict[str, str]:
@@ -111,6 +116,36 @@ def load_manual_map(path: Path | None = None) -> dict[str, str]:
     return out
 
 
+def load_splits(path: Path | None = None) -> dict[str, list[str]]:
+    """Read ``bond_portfolio_splits.csv`` → {canonical cusip: [book, …]}.
+
+    Only bonds that resolve to TWO OR MORE distinct books are returned — a split
+    is meaningless for a single book (use a normal pin instead). Returns an empty
+    dict when the file is absent/empty. CUSIPs are canonicalised so a split keyed
+    by an ISIN still lands on the bond's canonical identifier.
+    """
+    path = Path(path) if path is not None else config.BOND_PORTFOLIO_SPLITS_PATH
+    if not path.exists() or path.stat().st_size == 0:
+        return {}
+    df = pd.read_csv(path, dtype=str).fillna("")
+    amap = alias_map()
+    grouped: dict[str, list[str]] = defaultdict(list)
+    for _, row in df.iterrows():
+        cusip = str(row.get("cusip", "")).strip()
+        portfolio = str(row.get("portfolio", "")).strip()
+        if not cusip or not portfolio:
+            continue
+        canon = canonical_id(cusip, amap)
+        if portfolio not in grouped[canon]:
+            grouped[canon].append(portfolio)
+    return {c: sorted(ports) for c, ports in grouped.items() if len(ports) >= 2}
+
+
+def split_label(books: list[str]) -> str:
+    """Human-readable label for a bond split across ``books``, e.g. ``A / B``."""
+    return " / ".join(books)
+
+
 def _direct_from_initial(initial_df: pd.DataFrame | None) -> dict[str, str]:
     """{cusip: portfolio} from the initial-positions frame (portfolio + cusip cols)."""
     direct: dict[str, str] = {}
@@ -131,14 +166,22 @@ def resolve_portfolios(
     bonds_static: dict | None,
     cusips: list[str] | set[str] | None = None,
     manual_map: dict[str, str] | None = None,
+    splits: dict[str, list[str]] | None = None,
 ) -> PortfolioAssignment:
     """Resolve every bond's portfolio. See module docstring for the precedence.
 
     ``cusips`` is the universe to resolve (typically every CUSIP that appears in
     trades); initial-position and manual-map CUSIPs are always included so they
     surface even before they trade.
+
+    ``splits`` ({cusip: [book, …]}) marks bonds that deliberately live in more
+    than one book. A split bond takes the HIGHEST precedence: it is never
+    force-moved to a single book (so each of its trades keeps its own per-trade
+    portfolio tag and cost basis is never blended), and it is never flagged as
+    "unassigned". Its ``portfolio`` entry is a display label of all its books.
     """
     manual_map = manual_map or {}
+    splits = splits or {}
     direct = _direct_from_initial(initial_df)
 
     # Issuer → set of portfolios, learned only from initial positions.
@@ -150,7 +193,7 @@ def resolve_portfolios(
         issuer_label(k): sorted(v) for k, v in issuer_ports.items() if len(v) > 1
     }
 
-    universe = set(cusips or []) | set(direct) | set(manual_map)
+    universe = set(cusips or []) | set(direct) | set(manual_map) | set(splits)
 
     portfolio: dict[str, str] = {}
     source: dict[str, str] = {}
@@ -161,7 +204,12 @@ def resolve_portfolios(
     for cusip in universe:
         key = issuer_key(cusip, bonds_static)
         labels[cusip] = issuer_label(key)
-        if manual_map.get(cusip):
+        if cusip in splits:
+            # Split bond: lives in several books. Never override its trades and
+            # never nag as unassigned; show all books as the resolved label.
+            portfolio[cusip] = split_label(splits[cusip])
+            source[cusip] = SOURCE_SPLIT
+        elif manual_map.get(cusip):
             portfolio[cusip] = manual_map[cusip]
             source[cusip] = SOURCE_MANUAL
             assigned[cusip] = manual_map[cusip]
@@ -185,6 +233,7 @@ def resolve_portfolios(
         issuer_label=labels,
         ambiguous_issuers=ambiguous,
         unassigned=sorted(unassigned),
+        splits={c: list(books) for c, books in splits.items()},
     )
 
 

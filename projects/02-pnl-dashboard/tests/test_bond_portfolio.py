@@ -154,6 +154,71 @@ def test_apply_to_trades_overrides_only_assigned():
     assert out.loc[1, "portfolio"] == "KEEP"   # unresolved bond untouched
 
 
+# ── splits: a bond held across more than one book ─────────────────────────────
+
+def test_split_bond_is_exempt_from_single_book_override():
+    bonds = {"AAA111111": _bond("AAA111111", issuer="Acme")}
+    initial = _initial([("HY", "AAA111111")])
+    asg = bp.resolve_portfolios(
+        initial, bonds, ["AAA111111"],
+        manual_map={"AAA111111": "PINNED"},
+        splits={"AAA111111": ["Book A", "Book B"]},
+    )
+    # Split takes the highest precedence — over manual pin and initial position.
+    assert asg.source["AAA111111"] == bp.SOURCE_SPLIT
+    assert asg.is_split("AAA111111")
+    assert "AAA111111" not in asg.assigned     # never force-moved to one book
+    assert "AAA111111" not in asg.unassigned   # not nagged for a pin
+    assert asg.portfolio["AAA111111"] == "Book A / Book B"
+    assert asg.splits["AAA111111"] == ["Book A", "Book B"]
+
+
+def test_split_trades_keep_their_own_portfolio():
+    # Two clips of one split bond in two books must stay apart (no blended basis).
+    trades = pd.DataFrame([
+        {"cusip": "AAA111111", "portfolio": "Book A"},
+        {"cusip": "AAA111111", "portfolio": "Book B"},
+    ])
+    asg = bp.resolve_portfolios(
+        None, {}, ["AAA111111"], splits={"AAA111111": ["Book A", "Book B"]},
+    )
+    out = bp.apply_to_trades(trades, asg)
+    assert out["portfolio"].tolist() == ["Book A", "Book B"]
+
+
+def test_splits_round_trip_requires_two_books(data_dir):
+    df = pd.DataFrame([
+        {"cusip": "AAA111111", "portfolio": "Book A"},
+        {"cusip": "AAA111111", "portfolio": "Book B"},
+        {"cusip": "AAA111111", "portfolio": "Book B"},  # dup pair → collapsed
+        {"cusip": "BBB222222", "portfolio": "Solo"},     # single book → dropped
+        {"cusip": "", "portfolio": "X"},                 # blank cusip → dropped
+    ])
+    data_io.save_bond_portfolio_splits(df)
+    try:
+        assert bp.load_splits() == {"AAA111111": ["Book A", "Book B"]}
+    finally:
+        config.BOND_PORTFOLIO_SPLITS_PATH.unlink(missing_ok=True)
+
+
+def test_split_preserves_per_trade_books_end_to_end():
+    # The Apple bond is seeded HY via initial position, so normally every clip is
+    # forced to HY. Declaring it split HY/IG must instead keep each clip's book.
+    data_io.save_bond_portfolio_splits(pd.DataFrame([
+        {"cusip": "037833100", "portfolio": "HY"},
+        {"cusip": "037833100", "portfolio": "IG"},
+    ]))
+    raw = pd.read_csv(config.TRADES_PATH, dtype=str)
+    raw.loc[raw.index[0], "portfolio"] = "IG"   # route the first clip to IG
+    raw.to_csv(config.TRADES_PATH, index=False)
+    try:
+        allt = load_all_trades()
+        books = set(allt[allt["cusip"] == "037833100"]["portfolio"].unique())
+        assert books == {"HY", "IG"}            # preserved, not collapsed to HY
+    finally:
+        config.BOND_PORTFOLIO_SPLITS_PATH.unlink(missing_ok=True)
+
+
 # ── persistence round-trip ────────────────────────────────────────────────────
 
 def test_manual_map_round_trip(data_dir):
