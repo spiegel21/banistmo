@@ -3,8 +3,8 @@ P&L Dashboard — Streamlit app.
 
 Run with:  streamlit run src/dashboard.py
 
-Total P&L = Realized + Price P&L + Accrued P&L. These three are mutually
-exclusive (Price P&L and Accrued P&L together make up total unrealized), so they
+Total P&L = Realized + Valuation + Accrued P&L. These three are mutually
+exclusive (Valuation and Accrued P&L together make up total unrealized), so they
 sum to the headline figure with no double counting.
 
 Tabs:
@@ -29,6 +29,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import config
 import data_io
 import bond_portfolio
+from security_id import canonical_id
 from position_manager import (
     load_all_trades, compute_positions, get_positions_as_of, load_initial_positions,
 )
@@ -993,7 +994,7 @@ with tab_mtm:
             "clean_px": "Clean Px", "accrued_today_pct": "Accrued %", "dirty_px": "Dirty Px",
             "px_vs_cost": "Vs Cost",
             "mtm_value": "MTM Value", "book_value": "Book Value",
-            "price_pnl": "Price P&L", "accrued_pnl": "Accrued P&L",
+            "price_pnl": "Valuation", "accrued_pnl": "Accrued P&L",
             "unrealized_pnl": "Unrealized P&L", "realized": "Realized",
             "note": "Note",
         })
@@ -1167,6 +1168,7 @@ with tab_trades_date:
     # Show the bond name (display-only) right after cusip. Dropped on save —
     # save_trades() filters to TRADES_COLUMNS, so "name" never reaches disk.
     if not day_trades.empty and "cusip" in day_trades.columns:
+        day_trades["cusip"] = day_trades["cusip"].apply(canonical_id)
         day_trades = _enrich(day_trades, bs_df, ["name"])
 
     edited_day = st.data_editor(
@@ -1300,7 +1302,7 @@ with tab_attribution:
                 })
 
                 # Totals row
-                _pnl_total_cols = ["Nominal", "Price P&L", "Accrued P&L", "Unrealized P&L",
+                _pnl_total_cols = ["Nominal", "Valuation", "Accrued P&L", "Unrealized P&L",
                                    "Realized", "Total P&L"]
                 # Use None (not "") for non-total columns: an empty string in an
                 # otherwise-numeric column breaks Streamlit's Arrow serialization
@@ -1491,7 +1493,7 @@ with tab_attribution:
                 .reset_index()
                 .rename(columns={
                     "group_key": label,
-                    "price_pnl": "Price P&L",
+                    "price_pnl": "Valuation",
                     "accrued": "Accrued P&L",
                     "realized_gain": "Realized",
                     "total_pnl": "Total P&L",
@@ -1647,10 +1649,10 @@ with tab_attribution:
                 "country": "Country", "currency": "CCY",
                 "net_nominal": "Nominal", "clean_px": "Clean Px",
                 "accrued_pct": "Accrued %", "dirty_px": "Dirty Px",
-                "mtm_value": "MTM Value", "price_pnl": "Price P&L",
+                "mtm_value": "MTM Value", "price_pnl": "Valuation",
                 "accrued_pnl": "Accrued P&L",
             })
-            styled_ts = _color_pnl_df(ts_display, ["Price P&L", "Accrued P&L"])
+            styled_ts = _color_pnl_df(ts_display, ["Valuation", "Accrued P&L"])
             _filtered_dataframe(
                 styled_ts, "attr_ts", width="stretch", hide_index=True, height=500,
                 column_config={
