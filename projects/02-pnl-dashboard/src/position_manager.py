@@ -227,17 +227,24 @@ def apply_portfolio_assignment(
     inference; see ``bond_portfolio``) and applied to all of its trades so the
     book stays consistent. Bonds that can't be resolved confidently keep the
     portfolio their trades already carry. No-op on an empty frame.
+
+    Split bonds (``bond_portfolio_splits.csv``) are the exception: they live in
+    more than one book, so their trades are NEVER overridden — each clip keeps
+    its own per-trade portfolio tag and cost basis is never blended across books.
     """
     if combined.empty or "cusip" not in combined.columns:
         return combined
     from accruals import load_bonds_static
-    from bond_portfolio import resolve_portfolios, apply_to_trades, load_manual_map
+    from bond_portfolio import (
+        resolve_portfolios, apply_to_trades, load_manual_map, load_splits,
+    )
 
     bonds_static = load_bonds_static()
     assignment = resolve_portfolios(
         initial, bonds_static,
         combined["cusip"].dropna().unique().tolist(),
         load_manual_map(),
+        load_splits(),
     )
     return apply_to_trades(combined, assignment)
 

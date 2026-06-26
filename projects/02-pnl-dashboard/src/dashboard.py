@@ -167,17 +167,47 @@ def _arrow_safe(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _filtered_dataframe(df: pd.DataFrame, key: str, **kwargs) -> None:
-    """Render a text filter then display the (filtered) dataframe."""
-    filt = st.text_input(
-        "Filter", key=f"filt_{key}",
-        placeholder="search any column…",
-        label_visibility="collapsed",
-    )
+    """Render filter + sort controls, then display the (filtered, sorted) dataframe.
+
+    Every column is sortable from the "Sort by" picker (ascending or descending),
+    independent of Streamlit's native click-to-sort, so the choice is explicit and
+    works the same across all table views.
+    """
+    cols = list(df.columns)
+    ctrl_filt, ctrl_sort, ctrl_dir = st.columns([3, 2, 2])
+    with ctrl_filt:
+        filt = st.text_input(
+            "Filter", key=f"filt_{key}",
+            placeholder="search any column…",
+            label_visibility="collapsed",
+        )
+    with ctrl_sort:
+        sort_col = st.selectbox(
+            "Sort by", ["— sort by —", *cols], key=f"sort_{key}",
+            label_visibility="collapsed",
+        )
+    with ctrl_dir:
+        direction = st.radio(
+            "Direction", ["Asc", "Desc"], key=f"dir_{key}",
+            horizontal=True, label_visibility="collapsed",
+        )
     if filt.strip():
         mask = df.apply(
             lambda col: col.astype(str).str.contains(filt.strip(), case=False, na=False)
         ).any(axis=1)
         df = df[mask]
+    if sort_col in cols:
+        ascending = direction == "Asc"
+        try:
+            df = df.sort_values(
+                by=sort_col, ascending=ascending, kind="stable", na_position="last",
+            )
+        except TypeError:
+            # Mixed-type (e.g. numbers plus a "TOTAL" label) column: sort as text.
+            df = df.sort_values(
+                by=sort_col, ascending=ascending, kind="stable", na_position="last",
+                key=lambda s: s.astype(str),
+            )
     st.dataframe(_arrow_safe(df), **kwargs)
 
 
@@ -248,8 +278,9 @@ _initial_df = load_initial_positions()
 _all_cusips = set(all_trades["cusip"].dropna().unique()) if not all_trades.empty else set()
 _all_cusips |= set(bonds_static.keys())
 _manual_map = bond_portfolio.load_manual_map()
+_splits_map = bond_portfolio.load_splits()
 portfolio_assignment = bond_portfolio.resolve_portfolios(
-    _initial_df, bonds_static, _all_cusips, _manual_map,
+    _initial_df, bonds_static, _all_cusips, _manual_map, _splits_map,
 )
 # Attach the resolved portfolio to bs_df so _enrich can surface it on any
 # cusip-keyed table just like name/country.
@@ -1767,7 +1798,11 @@ with tab_edit:
         "more than one book, in which case the bond is left **unassigned** for "
         "you to pin here. Set **Assign Portfolio** for any row and **Save**; the "
         "pin overrides automatic resolution and applies to every trade of that "
-        "bond. Leave it blank to let automatic resolution stand."
+        "bond. Leave it blank to let automatic resolution stand. Need a book that "
+        "doesn't exist yet? Add it under **Add a new portfolio** below and it "
+        "becomes selectable in **Assign Portfolio**. A bond held in **two or more "
+        "books** (e.g. 1MM here, 2MM there) is handled separately — see **Split a "
+        "bond across portfolios** below."
     )
 
     _src_icon = {
@@ -1775,6 +1810,7 @@ with tab_edit:
         bond_portfolio.SOURCE_INITIAL: "✓ initial position",
         bond_portfolio.SOURCE_ISSUER: "✓ issuer",
         bond_portfolio.SOURCE_UNASSIGNED: "⚠ unassigned",
+        bond_portfolio.SOURCE_SPLIT: "⮂ split (per-trade)",
     }
     if portfolio_assignment.ambiguous_issuers:
         _amb_lines = "; ".join(
@@ -1791,9 +1827,26 @@ with tab_edit:
             "They appear first in the table below."
         )
 
+    # Let the user define a brand-new book on the fly, so a bond can be pinned to
+    # a portfolio that doesn't exist in any trade or initial position yet. Custom
+    # names persist in session state so they stay selectable across reruns.
+    _custom_ports = st.session_state.setdefault("_custom_portfolios", [])
+    _add_col, _ = st.columns([2, 3])
+    with _add_col:
+        _new_port = st.text_input(
+            "Add a new portfolio",
+            key="new_portfolio_name",
+            placeholder="e.g. EM Book",
+            help="Create a new book here, then pick it under Assign Portfolio "
+                 "for any bond and Save.",
+        ).strip()
+    if _new_port and _new_port not in _custom_ports:
+        _custom_ports.append(_new_port)
+
     _known_ports = sorted({
         p for p in (
             list(portfolio_assignment.assigned.values())
+            + _custom_ports
             + (all_trades["portfolio"].dropna().tolist() if not all_trades.empty else [])
         ) if str(p).strip()
     })
@@ -1801,13 +1854,16 @@ with tab_edit:
     for _cusip in portfolio_assignment.portfolio:
         _b = bonds_static.get(_cusip)
         _src = portfolio_assignment.source.get(_cusip, "")
+        _is_split = _src == bond_portfolio.SOURCE_SPLIT
         _pa_rows.append({
             "cusip": _cusip,
             "name": (_b.name if _b and _b.name else "") or "",
             "issuer": portfolio_assignment.issuer_label.get(_cusip, ""),
             "resolved": portfolio_assignment.portfolio.get(_cusip, ""),
             "source": _src_icon.get(_src, _src),
-            "assign": _manual_map.get(_cusip) or None,
+            # A split bond is assigned per-trade, not by a single pin — don't show
+            # (or let the user set) a single-book pin that the split would ignore.
+            "assign": None if _is_split else (_manual_map.get(_cusip) or None),
             "_unassigned": _src == bond_portfolio.SOURCE_UNASSIGNED,
         })
     pa_df = pd.DataFrame(_pa_rows)
@@ -1847,6 +1903,87 @@ with tab_edit:
                 st.rerun()
             except ValueError as exc:
                 st.error(str(exc))
+
+    # ── Split a bond across portfolios ───────────────────────────────────────
+    st.markdown("#### Split a bond across portfolios")
+    st.caption(
+        "Some bonds are held in **more than one book** (e.g. 1MM in *Book A* and "
+        "2MM in *Book B*). List each book a bond belongs to below — a bond needs "
+        "**at least two** rows to count as split. A split bond is **not** forced "
+        "into a single book: instead each individual buy/sell keeps its own book, "
+        "so cost basis is never blended across portfolios. Set every clip's "
+        "**portfolio** in **Edit positions → trades by date** (or the Trades "
+        "editor) so 1MM lands in *Book A* and 2MM in *Book B*. New book name? Add "
+        "it under **Add a new portfolio** above first."
+    )
+
+    # Bond picker uses readable "Name (CUSIP)" labels; map back to cusip on save.
+    _bond_options: dict[str, str] = {}
+    for _cusip in sorted(portfolio_assignment.portfolio):
+        _b = bonds_static.get(_cusip)
+        _nm = (_b.name if _b and _b.name else "").strip()
+        _bond_options[f"{_nm} ({_cusip})" if _nm else _cusip] = _cusip
+    _label_for = {v: k for k, v in _bond_options.items()}
+
+    _split_rows = [
+        {"bond": _label_for.get(_cusip, _cusip), "portfolio": _bk}
+        for _cusip, _books in sorted(_splits_map.items())
+        for _bk in _books
+    ]
+    splits_df = pd.DataFrame(_split_rows, columns=["bond", "portfolio"])
+
+    # Flag trades of split bonds not yet routed to one of the bond's books.
+    if _splits_map and not all_trades.empty:
+        _stray = []
+        for _cu, _books in sorted(_splits_map.items()):
+            _tr = all_trades[all_trades["cusip"] == _cu]
+            _bad = _tr[~_tr["portfolio"].isin(_books)]
+            if not _bad.empty:
+                _stray.append(f"**{_label_for.get(_cu, _cu)}**: {len(_bad)} clip(s)")
+        if _stray:
+            st.warning(
+                "These split bonds have trades not yet assigned to one of their "
+                "books — assign each in the Trades editor so the split adds up: "
+                + "; ".join(_stray) + "."
+            )
+
+    edited_splits = st.data_editor(
+        splits_df, num_rows="dynamic", width="stretch", key="ed_portfolio_splits",
+        column_config={
+            "bond": st.column_config.SelectboxColumn(
+                "Bond", options=sorted(_bond_options), required=True,
+                help="Which bond is split across books.",
+            ),
+            "portfolio": st.column_config.SelectboxColumn(
+                "Portfolio", options=_known_ports, required=True,
+                help="A book this bond is held in. Add 2+ rows per bond.",
+            ),
+        },
+    )
+    if st.button("Save Splits", key="save_portfolio_splits"):
+        _rows = [
+            {
+                "cusip": _bond_options.get(str(r.get("bond") or "").strip(),
+                                           str(r.get("bond") or "").strip()),
+                "portfolio": str(r.get("portfolio") or "").strip(),
+            }
+            for _, r in edited_splits.iterrows()
+        ]
+        _out = pd.DataFrame(_rows, columns=["cusip", "portfolio"])
+        try:
+            backup = data_io.save_bond_portfolio_splits(_out)
+            _saved = bond_portfolio.load_splits()
+            msg = (
+                f"Splits saved: {len(_saved)} bond(s) across multiple books."
+                if _saved else
+                "No splits saved — a split needs at least two distinct books per bond."
+            )
+            if backup:
+                msg += f"  Backup: {Path(backup).name}"
+            st.success(msg)
+            st.rerun()
+        except ValueError as exc:
+            st.error(str(exc))
     st.markdown("---")
 
     _editor_block(
