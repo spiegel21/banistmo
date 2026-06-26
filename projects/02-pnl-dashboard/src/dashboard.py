@@ -167,47 +167,22 @@ def _arrow_safe(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _filtered_dataframe(df: pd.DataFrame, key: str, **kwargs) -> None:
-    """Render filter + sort controls, then display the (filtered, sorted) dataframe.
+    """Render a search-by-any-column field, then display the filtered dataframe.
 
-    Every column is sortable from the "Sort by" picker (ascending or descending),
-    independent of Streamlit's native click-to-sort, so the choice is explicit and
-    works the same across all table views.
+    Sorting is left to Streamlit's native column controls — click a column header,
+    or use the column's three-dots menu — so every table view sorts the same way
+    without a bespoke picker.
     """
-    cols = list(df.columns)
-    ctrl_filt, ctrl_sort, ctrl_dir = st.columns([3, 2, 2])
-    with ctrl_filt:
-        filt = st.text_input(
-            "Filter", key=f"filt_{key}",
-            placeholder="search any column…",
-            label_visibility="collapsed",
-        )
-    with ctrl_sort:
-        sort_col = st.selectbox(
-            "Sort by", ["— sort by —", *cols], key=f"sort_{key}",
-            label_visibility="collapsed",
-        )
-    with ctrl_dir:
-        direction = st.radio(
-            "Direction", ["Asc", "Desc"], key=f"dir_{key}",
-            horizontal=True, label_visibility="collapsed",
-        )
+    filt = st.text_input(
+        "Filter", key=f"filt_{key}",
+        placeholder="search any column…",
+        label_visibility="collapsed",
+    )
     if filt.strip():
         mask = df.apply(
             lambda col: col.astype(str).str.contains(filt.strip(), case=False, na=False)
         ).any(axis=1)
         df = df[mask]
-    if sort_col in cols:
-        ascending = direction == "Asc"
-        try:
-            df = df.sort_values(
-                by=sort_col, ascending=ascending, kind="stable", na_position="last",
-            )
-        except TypeError:
-            # Mixed-type (e.g. numbers plus a "TOTAL" label) column: sort as text.
-            df = df.sort_values(
-                by=sort_col, ascending=ascending, kind="stable", na_position="last",
-                key=lambda s: s.astype(str),
-            )
     st.dataframe(_arrow_safe(df), **kwargs)
 
 
