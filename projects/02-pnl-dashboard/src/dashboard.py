@@ -167,17 +167,47 @@ def _arrow_safe(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _filtered_dataframe(df: pd.DataFrame, key: str, **kwargs) -> None:
-    """Render a text filter then display the (filtered) dataframe."""
-    filt = st.text_input(
-        "Filter", key=f"filt_{key}",
-        placeholder="search any column…",
-        label_visibility="collapsed",
-    )
+    """Render filter + sort controls, then display the (filtered, sorted) dataframe.
+
+    Every column is sortable from the "Sort by" picker (ascending or descending),
+    independent of Streamlit's native click-to-sort, so the choice is explicit and
+    works the same across all table views.
+    """
+    cols = list(df.columns)
+    ctrl_filt, ctrl_sort, ctrl_dir = st.columns([3, 2, 2])
+    with ctrl_filt:
+        filt = st.text_input(
+            "Filter", key=f"filt_{key}",
+            placeholder="search any column…",
+            label_visibility="collapsed",
+        )
+    with ctrl_sort:
+        sort_col = st.selectbox(
+            "Sort by", ["— sort by —", *cols], key=f"sort_{key}",
+            label_visibility="collapsed",
+        )
+    with ctrl_dir:
+        direction = st.radio(
+            "Direction", ["Asc", "Desc"], key=f"dir_{key}",
+            horizontal=True, label_visibility="collapsed",
+        )
     if filt.strip():
         mask = df.apply(
             lambda col: col.astype(str).str.contains(filt.strip(), case=False, na=False)
         ).any(axis=1)
         df = df[mask]
+    if sort_col in cols:
+        ascending = direction == "Asc"
+        try:
+            df = df.sort_values(
+                by=sort_col, ascending=ascending, kind="stable", na_position="last",
+            )
+        except TypeError:
+            # Mixed-type (e.g. numbers plus a "TOTAL" label) column: sort as text.
+            df = df.sort_values(
+                by=sort_col, ascending=ascending, kind="stable", na_position="last",
+                key=lambda s: s.astype(str),
+            )
     st.dataframe(_arrow_safe(df), **kwargs)
 
 
@@ -1767,7 +1797,9 @@ with tab_edit:
         "more than one book, in which case the bond is left **unassigned** for "
         "you to pin here. Set **Assign Portfolio** for any row and **Save**; the "
         "pin overrides automatic resolution and applies to every trade of that "
-        "bond. Leave it blank to let automatic resolution stand."
+        "bond. Leave it blank to let automatic resolution stand. Need a book that "
+        "doesn't exist yet? Add it under **Add a new portfolio** below and it "
+        "becomes selectable in **Assign Portfolio**."
     )
 
     _src_icon = {
@@ -1791,9 +1823,26 @@ with tab_edit:
             "They appear first in the table below."
         )
 
+    # Let the user define a brand-new book on the fly, so a bond can be pinned to
+    # a portfolio that doesn't exist in any trade or initial position yet. Custom
+    # names persist in session state so they stay selectable across reruns.
+    _custom_ports = st.session_state.setdefault("_custom_portfolios", [])
+    _add_col, _ = st.columns([2, 3])
+    with _add_col:
+        _new_port = st.text_input(
+            "Add a new portfolio",
+            key="new_portfolio_name",
+            placeholder="e.g. EM Book",
+            help="Create a new book here, then pick it under Assign Portfolio "
+                 "for any bond and Save.",
+        ).strip()
+    if _new_port and _new_port not in _custom_ports:
+        _custom_ports.append(_new_port)
+
     _known_ports = sorted({
         p for p in (
             list(portfolio_assignment.assigned.values())
+            + _custom_ports
             + (all_trades["portfolio"].dropna().tolist() if not all_trades.empty else [])
         ) if str(p).strip()
     })
