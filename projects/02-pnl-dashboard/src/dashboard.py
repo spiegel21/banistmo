@@ -562,7 +562,7 @@ with tab_overview:
         )
     c1, c2, c3, c4 = st.columns(4)
     c1.metric("Total P&L (Today)",   _fmt(today_total))
-    c2.metric("Price P&L (Today)",   _fmt(today_price))
+    c2.metric("Valuation (Today)",   _fmt(today_price))
     c3.metric("Accrued P&L (Today)", _fmt(today_accrued))
     c4.metric("Realized (Today)",    _fmt(today_realized))
     st.caption("Daily move as of today. Cumulative P&L is shown in the charts below.")
@@ -591,7 +591,7 @@ with tab_overview:
     with left:
         st.subheader("P&L Attribution (cumulative)")
         attr = pd.DataFrame({
-            "Component": ["Realized", "Price P&L", "Accrued P&L"],
+            "Component": ["Realized", "Valuation", "Accrued P&L"],
             "Value": [total_realized, total_price, total_accrued],
         })
         if attr["Value"].abs().sum() > 0:
@@ -608,7 +608,7 @@ with tab_overview:
         st.markdown("---")
         st.subheader("Cumulative P&L by component")
         comp = _daily.set_index("date")[["price_pnl", "accrued", "realized_gain"]].fillna(0).cumsum()
-        comp.columns = ["Price P&L", "Accrued P&L", "Realized"]
+        comp.columns = ["Valuation", "Accrued P&L", "Realized"]
         st.line_chart(comp, width="stretch")
 
     # ── P&L by Country ────────────────────────────────────────────────────────
@@ -1002,11 +1002,11 @@ with tab_mtm:
             "CUSIP", "Name", "Portfolio", "Country", "CCY", "Nominal",
             "Cost Px", "Prev Px", "Px Change", "Clean Px", "Accrued %", "Dirty Px",
             "Vs Cost", "MTM Value", "Book Value",
-            "Price P&L", "Accrued P&L", "Unrealized P&L", "Realized", "Note",
+            "Valuation", "Accrued P&L", "Unrealized P&L", "Realized", "Note",
         ]
         styled_mtm = _color_pnl_df(
             view[[c for c in ordered if c in view.columns]],
-            ["Price P&L", "Accrued P&L", "Unrealized P&L", "Realized"],
+            ["Valuation", "Accrued P&L", "Unrealized P&L", "Realized"],
         )
         _filtered_dataframe(
             styled_mtm, "mtm", width="stretch", hide_index=True,
@@ -1021,7 +1021,7 @@ with tab_mtm:
                 "Vs Cost":        st.column_config.NumberColumn(format="%.4f"),
                 "MTM Value":      st.column_config.NumberColumn(format="%,.0f"),
                 "Book Value":     st.column_config.NumberColumn(format="%,.0f"),
-                "Price P&L":      st.column_config.NumberColumn(format="%,.0f"),
+                "Valuation":      st.column_config.NumberColumn(format="%,.0f"),
                 "Accrued P&L":    st.column_config.NumberColumn(format="%,.0f"),
                 "Unrealized P&L": st.column_config.NumberColumn(format="%,.0f"),
                 "Realized":       st.column_config.NumberColumn(format="%,.0f"),
@@ -1045,7 +1045,7 @@ with tab_mtm:
         t1, t2, t3, t4, t5, t6 = st.columns(6)
         t1.metric("MTM Value",      _fmt(_nansum(mtm_df_range["mtm_value"])))
         t2.metric("Book Value",     _fmt(_nansum(mtm_df_range["book_value"])))
-        t3.metric("Price P&L",      _fmt(range_price))
+        t3.metric("Valuation",      _fmt(range_price))
         t4.metric("Accrued P&L",    _fmt(range_accrued))
         t5.metric("Unrealized P&L", _fmt(range_unrealized))
         t6.metric("Realized",       _fmt(range_realized))
@@ -1293,7 +1293,7 @@ with tab_attribution:
                     "net_nominal": "Nominal",
                     "cost_px": "Cost Px", "prev_px": "Prev Px", "px_change": "Px Change",
                     "clean_px": "Clean Px", "dirty_px": "Dirty Px", "px_vs_cost": "Vs Cost",
-                    "today_price_pnl": "Price P&L", "today_accrued": "Accrued P&L",
+                    "today_price_pnl": "Valuation", "today_accrued": "Accrued P&L",
                     "today_unrealized": "Unrealized P&L",
                     "today_realized": "Realized", "today_total": "Total P&L",
                     "last_coupon_date": "Last Coupon", "days_accrued": "Days Accrued",
@@ -1319,7 +1319,7 @@ with tab_attribution:
 
                 styled_snap = _color_pnl_df(
                     snap_with_totals,
-                    ["Price P&L", "Accrued P&L", "Unrealized P&L", "Realized", "Total P&L"],
+                    ["Valuation", "Accrued P&L", "Unrealized P&L", "Realized", "Total P&L"],
                 )
                 _filtered_dataframe(
                     styled_snap, "attr_snap", width="stretch", hide_index=True,
@@ -1331,7 +1331,7 @@ with tab_attribution:
                         "Clean Px":       st.column_config.NumberColumn(format="%.4f"),
                         "Dirty Px":       st.column_config.NumberColumn(format="%.4f"),
                         "Vs Cost":        st.column_config.NumberColumn(format="%.4f"),
-                        "Price P&L":      st.column_config.NumberColumn(format="%,.0f"),
+                        "Valuation":      st.column_config.NumberColumn(format="%,.0f"),
                         "Accrued P&L":    st.column_config.NumberColumn(format="%,.0f"),
                         "Unrealized P&L": st.column_config.NumberColumn(format="%,.0f"),
                         "Realized":       st.column_config.NumberColumn(format="%,.0f"),
@@ -1343,7 +1343,7 @@ with tab_attribution:
                     st.caption(
                         "Cost Px = WAVG purchase price.  Prev Px = prior business day close.  "
                         "Px Change = today vs prev.  Vs Cost = today vs cost basis.  "
-                        "Today's P&L contribution per bond. Unrealized P&L = Price P&L + Accrued P&L."
+                        "Today's P&L contribution per bond. Unrealized P&L = Valuation + Accrued P&L."
                     )
                 else:
                     st.caption(
@@ -1502,13 +1502,13 @@ with tab_attribution:
                 .sort_values("Total P&L", ascending=False)
             )
             styled_rollup = _color_pnl_df(
-                agg, ["Price P&L", "Accrued P&L", "Realized", "Total P&L"]
+                agg, ["Valuation", "Accrued P&L", "Realized", "Total P&L"]
             )
             _filtered_dataframe(
                 styled_rollup, "attr_rollup", width="stretch", hide_index=True,
                 column_config={
                     "Nominal":     st.column_config.NumberColumn(format="%,.0f"),
-                    "Price P&L":   st.column_config.NumberColumn(format="%,.0f"),
+                    "Valuation":   st.column_config.NumberColumn(format="%,.0f"),
                     "Accrued P&L": st.column_config.NumberColumn(format="%,.0f"),
                     "Realized":    st.column_config.NumberColumn(format="%,.0f"),
                     "Total P&L":   st.column_config.NumberColumn(format="%,.0f"),
@@ -1661,7 +1661,7 @@ with tab_attribution:
                     "Accrued %":   st.column_config.NumberColumn(format="%.6f"),
                     "Dirty Px":    st.column_config.NumberColumn(format="%.4f"),
                     "MTM Value":   st.column_config.NumberColumn(format="%,.0f"),
-                    "Price P&L":   st.column_config.NumberColumn(format="%,.0f"),
+                    "Valuation":   st.column_config.NumberColumn(format="%,.0f"),
                     "Accrued P&L": st.column_config.NumberColumn(format="%,.0f"),
                 },
             )
