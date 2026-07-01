@@ -985,6 +985,7 @@ with tab_mtm:
             view["realized_gain"] = 0.0
         view["unrealized_pnl"] = view["price_pnl"].fillna(0) + view["accrued_pnl"].fillna(0)
         view["realized"] = view.get("realized_gain", pd.Series(0.0, index=view.index)).fillna(0)
+        view["net_pnl"] = view["unrealized_pnl"] + view["realized"]
 
         view = view.rename(columns={
             "cusip": "CUSIP", "name": "Name", "portfolio": "Portfolio",
@@ -996,17 +997,18 @@ with tab_mtm:
             "mtm_value": "MTM Value", "book_value": "Book Value",
             "price_pnl": "Valuation", "accrued_pnl": "Accrued P&L",
             "unrealized_pnl": "Unrealized P&L", "realized": "Realized",
+            "net_pnl": "Net P&L",
             "note": "Note",
         })
         ordered = [
             "CUSIP", "Name", "Portfolio", "Country", "CCY", "Nominal",
             "Cost Px", "Prev Px", "Px Change", "Clean Px", "Accrued %", "Dirty Px",
             "Vs Cost", "MTM Value", "Book Value",
-            "Valuation", "Accrued P&L", "Unrealized P&L", "Realized", "Note",
+            "Valuation", "Accrued P&L", "Unrealized P&L", "Realized", "Net P&L", "Note",
         ]
         styled_mtm = _color_pnl_df(
             view[[c for c in ordered if c in view.columns]],
-            ["Valuation", "Accrued P&L", "Unrealized P&L", "Realized"],
+            ["Valuation", "Accrued P&L", "Unrealized P&L", "Realized", "Net P&L"],
         )
         _filtered_dataframe(
             styled_mtm, "mtm", width="stretch", hide_index=True,
@@ -1025,6 +1027,7 @@ with tab_mtm:
                 "Accrued P&L":    st.column_config.NumberColumn(format="%,.0f"),
                 "Unrealized P&L": st.column_config.NumberColumn(format="%,.0f"),
                 "Realized":       st.column_config.NumberColumn(format="%,.0f"),
+                "Net P&L":        st.column_config.NumberColumn(format="%,.0f"),
             },
         )
 
@@ -1040,19 +1043,22 @@ with tab_mtm:
         range_accrued = float(pnl_sum["accrued_pnl"].sum()) if not pnl_sum.empty else 0.0
         range_realized = float(pnl_sum["realized_gain"].sum()) if not pnl_sum.empty else 0.0
         range_unrealized = range_price + range_accrued
+        range_net = range_unrealized + range_realized
 
         st.markdown("**Portfolio totals**")
-        t1, t2, t3, t4, t5, t6 = st.columns(6)
+        t1, t2, t3, t4, t5, t6, t7 = st.columns(7)
         t1.metric("MTM Value",      _fmt(_nansum(mtm_df_range["mtm_value"])))
         t2.metric("Book Value",     _fmt(_nansum(mtm_df_range["book_value"])))
         t3.metric("Valuation",      _fmt(range_price))
         t4.metric("Accrued P&L",    _fmt(range_accrued))
         t5.metric("Unrealized P&L", _fmt(range_unrealized))
         t6.metric("Realized",       _fmt(range_realized))
+        t7.metric("Net P&L",        _fmt(range_net))
         st.caption(
             f"Cost Px = WAVG purchase price.  Prev Px = {_prev_day} close.  "
             f"Px Change = today vs prev.  Vs Cost = today vs cost basis.  "
             f"Dirty Px = Clean Px + Accrued %.  MTM Value = Nominal × Dirty Px / 100.  "
+            f"Unrealized P&L = Valuation + Accrued P&L.  Net P&L = Unrealized P&L + Realized.  "
             f"P&L columns = sum from {mtm_start} to {mtm_end}. Positions as of {mtm_end}."
         )
 

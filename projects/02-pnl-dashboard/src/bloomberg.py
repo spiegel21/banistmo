@@ -451,9 +451,17 @@ def _append_df_to_price_history(df: pd.DataFrame) -> None:
 
 
 def load_price_history(path: Path = PRICE_HISTORY_PATH) -> pd.DataFrame:
-    """Load full price history; returns empty DataFrame if file doesn't exist."""
+    """Load full price history; returns empty DataFrame if none is available.
+
+    Reads the Bloomberg-accumulated ``price_history.csv`` when present. When it
+    is absent or empty (no Bloomberg run yet — the common offline case), falls
+    back to the manually-maintained ``data/prices/manual_price_history.csv`` so
+    the P&L-history curve, price-coverage view, and gap detection all work
+    offline. This mirrors ``load_latest_prices``/``get_prices``, which already
+    fall back to ``manual_prices.csv`` for the current-price side.
+    """
     if not Path(path).exists() or Path(path).stat().st_size == 0:
-        return pd.DataFrame(columns=["date", "cusip", "px_last"])
+        return _load_all_manual_price_history()
     df = pd.read_csv(path, dtype={"cusip": str})
     df["cusip"] = canonicalize_series(df["cusip"], alias_map())
     df["date"] = pd.to_datetime(df["date"])
@@ -509,11 +517,13 @@ def _save_backfill_state(state: dict) -> None:
 
 
 def last_priced_date() -> date | None:
-    """Return the latest date in price_history.csv, or None if the file is empty."""
-    if not PRICE_HISTORY_PATH.exists():
-        return None
+    """Return the latest date in the effective price history, or None if empty.
+
+    Uses ``load_price_history``, so it reflects the ``manual_price_history.csv``
+    fallback offline just like the rest of the app (otherwise the sidebar would
+    report "No price history yet" even when manual history is present)."""
     try:
-        df = pd.read_csv(PRICE_HISTORY_PATH, dtype={"cusip": str})
+        df = load_price_history()
         if df.empty:
             return None
         return pd.to_datetime(df["date"]).max().date()
@@ -1076,6 +1086,18 @@ def _load_manual_prices(cusips: list[str]) -> dict[str, float]:
                     prices[cusip] = (row["date"], float(row["px_last"]))
 
     return {cusip: v[1] for cusip, v in prices.items()}
+
+
+def _load_all_manual_price_history() -> pd.DataFrame:
+    """Full manual price history (all cusips, all dates), typed like
+    ``load_price_history`` so it is a drop-in offline substitute."""
+    if not MANUAL_HISTORY_PATH.exists() or MANUAL_HISTORY_PATH.stat().st_size == 0:
+        return pd.DataFrame(columns=["date", "cusip", "px_last"])
+    df = pd.read_csv(MANUAL_HISTORY_PATH, dtype={"cusip": str})
+    df["cusip"] = canonicalize_series(df["cusip"], alias_map())
+    df["date"] = pd.to_datetime(df["date"])
+    df["px_last"] = pd.to_numeric(df["px_last"], errors="coerce")
+    return df[["date", "cusip", "px_last"]]
 
 
 def _load_manual_price_history(cusips, start_date, end_date) -> pd.DataFrame:

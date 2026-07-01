@@ -95,3 +95,33 @@ def test_position_timeseries_one_row_per_day_per_cusip():
     assert len(ts) == 2
     assert set(ts["date"]) == {"2025-03-03", "2025-03-04"}
     assert (ts["cusip"] == "037833100").all()
+
+
+def test_price_history_falls_back_to_manual_offline(data_dir):
+    """When Bloomberg's price_history.csv is absent, load_price_history and the
+    daily P&L must fall back to manual_price_history.csv (offline workflow).
+
+    Mirrors the current-price side, where get_prices/load_latest_prices already
+    fall back to manual_prices.csv."""
+    import config
+    from bloomberg import load_price_history, last_priced_date
+
+    # Simulate a no-Bloomberg environment: remove the accumulated history file
+    # and seed the manual fallback the dashboard's ③ Import never wrote to.
+    if config.PRICE_HISTORY_PATH.exists():
+        config.PRICE_HISTORY_PATH.unlink()
+    pd.DataFrame([
+        dict(date="2025-02-28", cusip="037833100", px_last=100.3),
+        dict(date="2025-03-03", cusip="037833100", px_last=100.5),
+    ]).to_csv(config.MANUAL_HISTORY_PATH, index=False)
+
+    ph = load_price_history()
+    assert len(ph) == 2
+    assert set(ph["cusip"]) == {"037833100"}
+    assert last_priced_date() == date(2025, 3, 3)
+
+    # Daily P&L now computes a real price move instead of blanks.
+    df = compute_daily_pnl(date(2025, 3, 3), date(2025, 3, 3), portfolio="HY")
+    d = df[df["date"] == "2025-03-03"]
+    assert d["price_pnl"].notna().any()
+    assert d["price_pnl"].sum() == pytest.approx(1_800_000 * (100.5 - 100.3) / 100, abs=1)
