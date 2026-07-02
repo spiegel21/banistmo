@@ -3,14 +3,20 @@ Historical daily P&L using the dirty-price change method.
 
 For each business day in a range, per-CUSIP P&L is computed as:
 
-    price_pnl  = (clean_today - clean_prev) × net_nominal_sod / 100
+    price_total = ΔcleanMV − net clean invested today
+                = (clean_today − clean_prev) × net_nominal_sod / 100        (SOD mark)
+                + (clean_today × Σsigned_nominal − Σsigned_nominal×price)/100 (trade adj)
+    price_pnl  = price_total − realized_trading      (Valuation: unrealized only)
     accrual    = interest earned into the accrued receivable, drawn down at coupon
     realized   = WAVG gains from closing trades  +  coupon income collected today
-    total_pnl  = price_pnl + accrual + realized
+    total_pnl  = price_pnl + accrual + realized  ( = price_total + accrual + coupon )
 
-net_nominal_sod is the start-of-day (= prior business day end-of-day) position.
-Using SOD nominal means bonds sold today are included in the daily price move;
-bonds bought today start contributing the following day (standard convention).
+The price P&L is the true daily clean-price P&L (change in clean market value
+minus clean cash invested), which counts a round trip exactly once. The realised
+trading slice is carved OUT of it so Valuation is unrealized-only and the sale's
+gain is booked once (in Realized), never double-counted against the daily mark.
+`net_nominal_sod` is the start-of-day position; trades executed today are marked
+execution→close via the trade adjustment (trade-date accounting).
 
 Interest is booked on an accrual basis and realised at the coupon (the standard
 bond-book treatment). Each day the interest earned — the change in accrued
@@ -140,7 +146,7 @@ def compute_daily_pnl(
                 return px_prev_hist[cusip]
             return inception_prices.get(cusip)  # Day-0 fallback
 
-        # Daily realized only (not cumulative)
+        # Daily realized only (not cumulative). Clean-price cost basis.
         realized_today: dict[str, float] = {}
         if not realized_detail.empty:
             mask = realized_detail["close_date"] == pd.Timestamp(day)
@@ -149,8 +155,21 @@ def compute_daily_pnl(
                     realized_detail[mask].groupby("cusip")["realized_gain"].sum().to_dict()
                 )
 
-        # Include SOD positions + any CUSIP with realized booked today
-        cusips = set(positions_sod.keys()) | set(realized_today.keys())
+        # Trades executed today, per CUSIP: signed nominal and signed nominal×price.
+        # These give the execution-vs-close price adjustment so the day's price P&L
+        # accounts for buying/selling away from the close (and so a closing trade's
+        # gain is not double-counted against the daily mark).
+        trades_today: dict[str, tuple[float, float]] = {}
+        if not all_trades.empty:
+            dmask = all_trades["trade_date"] == pd.Timestamp(day)
+            if dmask.any():
+                for c, grp in all_trades[dmask].groupby("cusip"):
+                    sum_nom = float(grp["nominal"].sum())
+                    sum_nom_px = float((grp["nominal"] * grp["price"]).sum())
+                    trades_today[c] = (sum_nom, sum_nom_px)
+
+        # SOD positions + CUSIPs with realized booked today + CUSIPs traded today
+        cusips = set(positions_sod.keys()) | set(realized_today.keys()) | set(trades_today.keys())
 
         for cusip in cusips:
             sod_pos = positions_sod.get(cusip)
@@ -159,9 +178,25 @@ def compute_daily_pnl(
             clean_t = px_today.get(cusip)
             clean_prev = prev_price(cusip)
 
-            price_pnl = None
-            if net_nominal != 0 and clean_t is not None and clean_prev is not None:
-                price_pnl = round(net_nominal * (clean_t - clean_prev) / 100, 2)
+            # Total clean-price P&L for the day, no double count:
+            #   sod_mark  = SOD position marked close→close
+            #   trade_adj = today's trades marked execution→close
+            #             = (clean_t × Σsigned_nominal − Σsigned_nominal×price) / 100
+            # price_total = ΔcleanMV − net clean invested today. The realized
+            # (crystallised) slice is then carved OUT of price_total below, so the
+            # reported Valuation is unrealized only and the sale's gain is booked
+            # exactly once (in Realized), never twice.
+            price_total = None
+            if clean_t is not None:
+                sod_mark = (
+                    net_nominal * (clean_t - clean_prev) / 100
+                    if net_nominal != 0 and clean_prev is not None else 0.0
+                )
+                trade_adj = 0.0
+                if cusip in trades_today:
+                    sum_nom, sum_nom_px = trades_today[cusip]
+                    trade_adj = (clean_t * sum_nom - sum_nom_px) / 100
+                price_total = sod_mark + trade_adj
 
             # Interest carry — computed from the coupon schedule, independent of
             # price. The day's true interest earned is the change in accrued
@@ -192,7 +227,16 @@ def compute_daily_pnl(
 
             # Coupon income is realised interest (cash received), so it lands in
             # the same bucket as realised trading gains.
-            realized_gain = round(realized_today.get(cusip, 0.0) + coupon_income, 2)
+            realized_trading = realized_today.get(cusip, 0.0)
+            realized_gain = round(realized_trading + coupon_income, 2)
+
+            # Valuation (reported price_pnl) is the UNREALIZED price move: the full
+            # clean-price P&L minus the realised trading slice already crystallised
+            # today. So price_total = Valuation + realised_trading, and
+            #   total = price_total + accrued + coupon_income
+            #         = price_pnl + accrued + realized_gain
+            # with the sale's gain counted exactly once.
+            price_pnl = None if price_total is None else round(price_total - realized_trading, 2)
             total = (price_pnl or 0.0) + (accrued or 0.0) + realized_gain
 
             records.append({

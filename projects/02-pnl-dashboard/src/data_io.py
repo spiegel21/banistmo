@@ -13,8 +13,9 @@ On-disk conventions (must match the readers in position_manager / bloomberg):
 """
 from __future__ import annotations
 
+import calendar
 import shutil
-from datetime import datetime
+from datetime import date, datetime
 from pathlib import Path
 
 import pandas as pd
@@ -144,9 +145,22 @@ def parse_bond_static_row(row) -> BondStatic:
     if coupon_rate == 0.0:
         coupon_freq = 0
 
-    # first_coupon_date: blank / "#N/A" → maturity_date
+    # first_coupon_date: blank / "#N/A". Defaulting to maturity_date leaves the
+    # last coupon in the future for the bond's whole life, so days-since-coupon
+    # (and accrued interest) go strongly negative. For a coupon-bearing bond,
+    # synthesize a schedule anchored to the maturity day/month, starting well
+    # before any realistic holding period; a whole number of years back stays
+    # congruent to maturity for any frequency dividing 12. A zero-coupon bond has
+    # no schedule, so maturity is a harmless placeholder.
     fcd = _one(row.get("first_coupon_date"))
-    first_coupon = maturity if pd.isna(fcd) else fcd.date()
+    if not pd.isna(fcd):
+        first_coupon = fcd.date()
+    elif coupon_freq:
+        _y = maturity.year - 50
+        _last = calendar.monthrange(_y, maturity.month)[1]
+        first_coupon = date(_y, maturity.month, min(maturity.day, _last))
+    else:
+        first_coupon = maturity
 
     # day_count_convention: blank / None → 30/360 (irrelevant for zero-coupon)
     dcc_raw = row.get("day_count_convention")

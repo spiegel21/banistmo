@@ -62,22 +62,42 @@ def test_accrued_never_negative_across_a_coupon():
 
 
 def test_price_pnl_is_daily_clean_price_change():
-    # On Mar 3: SOD nominal = 1.8M (before the sell), prev close = 100.3, today close = 100.5
-    # price_pnl = 1_800_000 * (100.5 - 100.3) / 100 = 3_600
+    # Mar 4 has no trades, so price_pnl (Valuation) is the raw daily clean mark on
+    # the SOD position. SOD nominal = 1.2M (after the Mar 3 sell), prev close 100.5,
+    # today close 100.6 → price_pnl = 1_200_000 * (100.6 - 100.5) / 100 = 1_200.
+    df = compute_daily_pnl(date(2025, 3, 4), date(2025, 3, 4), portfolio="HY")
+    d = df[df["date"] == "2025-03-04"]
+    assert d["price_pnl"].sum() == pytest.approx(1_200_000 * (100.6 - 100.5) / 100, abs=1)
+
+
+def test_trade_day_price_pnl_excludes_realized_no_double_count():
+    # Mar 3 sells 600k @100.0. The day's clean price P&L =
+    #   SOD mark   = 1.8M × (100.5 − 100.3)/100          = +3_600
+    #   trade adj  = (100.5×(−600k) − (−600k×100))/100    = −3_000   (sold below close)
+    #   price_total                                        = +600
+    # The realised slice (600k × (1.00 − wavg_clean)) is carved OUT of Valuation, so
+    # price_pnl = price_total − realized and total is counted exactly once.
     df = compute_daily_pnl(date(2025, 3, 3), date(2025, 3, 3), portfolio="HY")
-    d = df[df["date"] == "2025-03-03"]
-    assert d["price_pnl"].sum() == pytest.approx(1_800_000 * (100.5 - 100.3) / 100, abs=1)
+    d = df[df["date"] == "2025-03-03"].iloc[0]
+    price_total = 600.0
+    assert (d["price_pnl"] + d["realized_gain"]) == pytest.approx(price_total, abs=1)
+    # total reconciles with the reported components (no double count)
+    assert d["total_pnl"] == pytest.approx(d["price_pnl"] + d["accrued"] + d["realized_gain"], abs=0.01)
 
 
 def test_inception_price_used_as_prev_on_first_day():
-    # Jan 3 (Friday): prev business day = Jan 2, no price in history.
-    # Fallback: initial_positions.csv price = 97.0.
-    # SOD position (as of Jan 2) = inception 300k only (Jan 3 buy not yet settled).
-    # price_pnl = 300_000 * (97.5 - 97.0) / 100 = 1_500
+    # Jan 3 (Friday): prev business day = Jan 2, no price in history → prev-price
+    # fallback to initial_positions.csv price = 97.0. SOD = inception 300k; the Jan 3
+    # buy of 1M @98.5 is marked execution→close on the trade date:
+    #   SOD mark  = 300k × (97.5 − 97.0)/100                = +1_500
+    #   trade adj = (97.5×1_000_000 − 1_000_000×98.5)/100   = −10_000  (bought above close)
+    #   price_pnl = −8_500
     df = compute_daily_pnl(date(2025, 1, 3), date(2025, 1, 3), portfolio="HY")
     d = df[df["date"] == "2025-01-03"]
     assert not d.empty
-    assert d["price_pnl"].sum() == pytest.approx(300_000 * (97.5 - 97.0) / 100, abs=1)
+    assert d["price_pnl"].sum() == pytest.approx(
+        300_000 * (97.5 - 97.0) / 100 + (97.5 * 1_000_000 - 1_000_000 * 98.5) / 100, abs=1
+    )
 
 
 def test_load_pnl_history_scope_isolation():
@@ -146,8 +166,14 @@ def test_price_history_falls_back_to_manual_offline(data_dir):
     assert set(ph["cusip"]) == {"037833100"}
     assert last_priced_date() == date(2025, 3, 3)
 
-    # Daily P&L now computes a real price move instead of blanks.
-    df = compute_daily_pnl(date(2025, 3, 3), date(2025, 3, 3), portfolio="HY")
-    d = df[df["date"] == "2025-03-03"]
+    # Daily P&L now computes a real price move instead of blanks. Mar 4 (no trades)
+    # isolates the raw clean mark on the 1.2M SOD position (100.5 → 100.6).
+    pd.DataFrame([
+        dict(date="2025-02-28", cusip="037833100", px_last=100.3),
+        dict(date="2025-03-03", cusip="037833100", px_last=100.5),
+        dict(date="2025-03-04", cusip="037833100", px_last=100.6),
+    ]).to_csv(config.MANUAL_HISTORY_PATH, index=False)
+    df = compute_daily_pnl(date(2025, 3, 4), date(2025, 3, 4), portfolio="HY")
+    d = df[df["date"] == "2025-03-04"]
     assert d["price_pnl"].notna().any()
-    assert d["price_pnl"].sum() == pytest.approx(1_800_000 * (100.5 - 100.3) / 100, abs=1)
+    assert d["price_pnl"].sum() == pytest.approx(1_200_000 * (100.6 - 100.5) / 100, abs=1)

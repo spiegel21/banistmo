@@ -46,7 +46,11 @@ def realized_pnl(trades_df: pd.DataFrame) -> pd.DataFrame:
             q = float(row["nominal"])   # signed: >0 buy, <0 sell
             if abs(q) < _QTY_EPS:
                 continue
-            unit = abs(float(row["net"])) / abs(q)   # always positive
+            # Clean-price cost basis (% of par as a fraction). Using `net` (dirty:
+            # principal + accrued) would fold the accrued paid/received into the
+            # "trading" gain, double-attributing carry that the accrual engine
+            # already books. Realized trading P&L is a clean-price concept.
+            unit = float(row["price"]) / 100.0   # always positive
 
             if abs(qty) < _QTY_EPS:
                 qty, wavg = q, unit

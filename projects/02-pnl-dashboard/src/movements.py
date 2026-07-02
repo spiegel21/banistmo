@@ -67,7 +67,10 @@ def position_movements(
             realized_this = 0.0
 
             if abs(q) >= _QTY_EPS:
-                unit = abs(net) / abs(q) if net else float(r.get("price", 0.0))
+                # Clean-price cost basis (fraction of par), matching
+                # trading_gains.realized_pnl so the two reconcile exactly and
+                # accrued carry does not leak into realized trading gains.
+                unit = float(r.get("price", 0.0)) / 100.0
                 if abs(qty) < _QTY_EPS:
                     qty, wavg = q, unit
                 elif (q > 0) == (qty > 0):
