@@ -35,19 +35,30 @@ def test_daily_total_equals_components():
     assert (recon == df["total_pnl"]).all()
 
 
-def test_coupon_cash_folded_into_accrued_on_coupon_date():
-    # UST 912828XY9 (first_coupon 2024-09-20, semi-annual) pays on 2025-03-20.
-    # IG holds 2M SOD → coupon = 2_000_000 * 0.03 / 2 = 30_000. No price history
-    # exists for that day, so the accrued mark change is absent and the accrued
-    # line is exactly the coupon cash — the coupon is folded into `accrued`, not
-    # booked as its own component, and it flows through to total_pnl.
-    df = compute_daily_pnl(date(2025, 3, 19), date(2025, 3, 20), portfolio="IG")
-    d320 = df[df["date"] == "2025-03-20"]
-    d319 = df[df["date"] == "2025-03-19"]
-    assert d320["accrued"].sum() == pytest.approx(2_000_000 * 0.03 / 2, abs=1)
-    assert d320["total_pnl"].sum() == pytest.approx(2_000_000 * 0.03 / 2, abs=1)
-    # No coupon on the prior day → accrued carries no coupon jump there.
-    assert d319["accrued"].fillna(0).sum() == pytest.approx(0.0, abs=1)
+def test_coupon_collected_into_realized_not_accrued():
+    # UST 912828XY9 (first_coupon 2024-09-20, semi-annual, Act/360) pays on
+    # 2025-03-20. IG bought 2M on 2025-02-10. Running the daily P&L from just
+    # after the buy through the coupon, interest accrues into `accrued` and is
+    # collected into `realized_gain` (as coupon income) on the coupon date —
+    # accrued sawtooths back down rather than carrying the coupon.
+    df = compute_daily_pnl(date(2025, 2, 11), date(2025, 3, 21), portfolio="IG")
+    df = df.sort_values("date")
+    coupon_row = df[df["date"] == "2025-03-20"]
+    # Coupon income lands in realized on the coupon date (it was ~0 before).
+    assert coupon_row["realized_gain"].sum() > 0
+    assert df[df["date"] < "2025-03-20"]["realized_gain"].sum() == pytest.approx(0.0, abs=1)
+    # Accrued draws down on the coupon date (the receivable is collected).
+    assert coupon_row["accrued"].sum() < 0
+    # The interest earned window-start → coupon (2M * 3% * ~38/360 days).
+    assert coupon_row["realized_gain"].sum() == pytest.approx(2_000_000 * 0.03 * 38 / 360, abs=200)
+
+
+def test_accrued_never_negative_across_a_coupon():
+    # Cumulative accrued for a long must never dip below zero: it builds up as a
+    # receivable and resets to ~0 when the coupon is collected — the core fix.
+    df = compute_daily_pnl(date(2025, 2, 11), date(2025, 3, 21), portfolio="IG")
+    df = df.sort_values("date")
+    assert df["accrued"].fillna(0).cumsum().min() >= -0.01
 
 
 def test_price_pnl_is_daily_clean_price_change():
