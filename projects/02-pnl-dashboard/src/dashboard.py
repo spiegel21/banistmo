@@ -29,7 +29,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 import config
 import data_io
 import bond_portfolio
-from security_id import canonical_id
+from security_id import canonical_id, alias_map
 from position_manager import (
     load_all_trades, compute_positions, get_positions_as_of, load_initial_positions,
 )
@@ -92,12 +92,22 @@ def _raw_csv(path: Path, columns: list[str]) -> pd.DataFrame:
     return pd.DataFrame({c: pd.Series(dtype="object") for c in columns})
 
 
+_BS_DISPLAY_COLS = ["cusip", "name", "country", "currency", "coupon_rate",
+                    "day_count_convention", "maturity_date", "instrument_type"]
+
+
 def _bonds_static_df(bonds_static: dict) -> pd.DataFrame:
-    """Flatten BondStatic dict to a join-ready DataFrame."""
-    if not bonds_static:
-        return pd.DataFrame(columns=["cusip", "name", "country", "currency",
-                                     "coupon_rate", "day_count_convention",
-                                     "maturity_date", "instrument_type"])
+    """Join-ready display metadata for EVERY bond in bonds_static.csv.
+
+    Starts from the validated ``bonds_static`` dict, then backfills rows for any
+    CUSIP that is present in the file but was dropped by ``load_bonds_static``
+    (its only hard requirement is ``maturity_date``; a govt/sovereign kept as a
+    placeholder by the Bloomberg import has a Name but no maturity yet). Those
+    bonds still carry a Name/Country/Currency in the file, so every enriched
+    table (Trades, Positions, MTM, …) can label them instead of showing a blank
+    Name for a CUSIP that is clearly in Bonds Static. Accrual/pricing math keeps
+    using the validated dict elsewhere — display just doesn't need a maturity to
+    show a name."""
     rows = [{
         "cusip": b.cusip,
         "name": b.name,
@@ -108,7 +118,21 @@ def _bonds_static_df(bonds_static: dict) -> pd.DataFrame:
         "maturity_date": b.maturity_date,
         "instrument_type": b.instrument_type,
     } for b in bonds_static.values()]
-    return pd.DataFrame(rows)
+    df = pd.DataFrame(rows, columns=_BS_DISPLAY_COLS)
+
+    # Backfill display-only rows for placeholder bonds absent from the dict.
+    raw = _raw_csv(config.BONDS_STATIC_PATH, _BS_DISPLAY_COLS)
+    if not raw.empty:
+        _amap = alias_map()
+        raw = raw.copy()
+        raw["cusip"] = raw["cusip"].apply(lambda c: canonical_id(c, _amap))
+        have = set(df["cusip"]) if not df.empty else set()
+        extra = raw[~raw["cusip"].isin(have)]
+        if not extra.empty:
+            extra = (extra[[c for c in _BS_DISPLAY_COLS if c in extra.columns]]
+                     .drop_duplicates("cusip", keep="first"))
+            df = pd.concat([df, extra], ignore_index=True)
+    return df
 
 
 def _classification_df(bonds_static: dict) -> pd.DataFrame:
@@ -185,6 +209,32 @@ def _filtered_dataframe(df: pd.DataFrame, key: str, **kwargs) -> None:
         ).any(axis=1)
         df = df[mask]
     st.dataframe(_arrow_safe(df), **kwargs)
+
+
+def _sort_controls(df: pd.DataFrame, key: str) -> pd.DataFrame:
+    """Compact sort control for EDITABLE grids, returning ``df`` reordered.
+
+    Read-only tables render through ``st.dataframe`` and already sort natively on
+    a column-header click. ``st.data_editor`` has no such native sort, so the
+    editable blotters/editors get an equivalent here: pick a column and a
+    direction and the rows are reordered before the grid renders. Row order never
+    affects a save (each editor reconstructs from cell values / per-CUSIP diffs),
+    so this is display-only and safe."""
+    if df.empty or len(df.columns) == 0:
+        return df
+    c_col, c_dir = st.columns([4, 1])
+    with c_col:
+        col = st.selectbox(
+            "Sort by", ["(unsorted)"] + list(df.columns),
+            key=f"sortcol_{key}", label_visibility="collapsed",
+        )
+    with c_dir:
+        descending = st.checkbox("Desc", key=f"sortdesc_{key}")
+    if col and col != "(unsorted)":
+        df = df.sort_values(
+            col, ascending=not descending, kind="stable", na_position="last",
+        ).reset_index(drop=True)
+    return df
 
 
 def _make_adjustment_trades(
@@ -1100,6 +1150,7 @@ with tab_positions_date:
         display_cols = ["cusip", "name", "portfolio", "country", "currency",
                         "net_nominal", "wavg_price", "book_value", "last_settle"]
         pos_display = pos_display[[c for c in display_cols if c in pos_display.columns]]
+        pos_display = _sort_controls(pos_display, "ed_pos_by_date")
 
         edited_pos = st.data_editor(
             pos_display,
@@ -1185,9 +1236,15 @@ with tab_trades_date:
     # Show the bond name (display-only) right after cusip. Dropped on save —
     # save_trades() filters to TRADES_COLUMNS, so "name" never reaches disk.
     if not day_trades.empty and "cusip" in day_trades.columns:
-        day_trades["cusip"] = day_trades["cusip"].apply(canonical_id)
+        # Canonicalise WITH the alias map (same as every other load edge) so an
+        # ISIN-keyed clip resolves to the CUSIP that bs_df is keyed on — matching
+        # canonical_id(default) would silently miss non-US ISIN / crosswalk bonds
+        # and blank their Name here while other tabs show it.
+        _amap = alias_map()
+        day_trades["cusip"] = day_trades["cusip"].apply(lambda c: canonical_id(c, _amap))
         day_trades = _enrich(day_trades, bs_df, ["name"])
 
+    day_trades = _sort_controls(day_trades, "ed_trades_by_date")
     edited_day = st.data_editor(
         day_trades,
         num_rows="dynamic",
@@ -1771,6 +1828,7 @@ with tab_edit:
 
     def _editor_block(title, raw_df, save_fn, key):
         st.markdown(f"#### {title}")
+        raw_df = _sort_controls(raw_df, key)
         edited = st.data_editor(raw_df, num_rows="dynamic", width="stretch", key=key)
         if st.button(f"Save {title}", key=f"save_{key}"):
             try:
@@ -1871,6 +1929,7 @@ with tab_edit:
         pa_df = pa_df.sort_values(
             ["_unassigned", "issuer", "cusip"], ascending=[False, True, True]
         ).drop(columns="_unassigned").reset_index(drop=True)
+        pa_df = _sort_controls(pa_df, "ed_portfolio_assign")
         edited_pa = st.data_editor(
             pa_df, num_rows="fixed", width="stretch", key="ed_portfolio_assign",
             column_config={
@@ -1941,6 +2000,7 @@ with tab_edit:
                 + "; ".join(_stray) + "."
             )
 
+    splits_df = _sort_controls(splits_df, "ed_portfolio_splits")
     edited_splits = st.data_editor(
         splits_df, num_rows="dynamic", width="stretch", key="ed_portfolio_splits",
         column_config={
