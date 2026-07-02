@@ -51,6 +51,49 @@ def test_last_coupon_date_on_coupon():
     assert last_coupon_date(b, date(2025, 6, 15)) == date(2025, 6, 15)
 
 
+def test_accrued_never_negative_before_first_period():
+    # as_of before the first period (and before _prev_period_start) must not
+    # produce a negative day count / negative accrued for a long.
+    b = BondStatic(
+        cusip="T", name="t", currency="USD", country="US",
+        coupon_rate=0.05, coupon_frequency=2, day_count_convention="30/360",
+        maturity_date=date(2030, 6, 15), first_coupon_date=date(2026, 6, 15),
+    )
+    assert days_accrued(b, date(2024, 1, 1)) == 0
+    assert accrued_interest(1_000_000, b, date(2024, 1, 1)) == pytest.approx(0.0)
+
+
+def test_missing_first_coupon_date_gives_correct_positive_accrued():
+    # A coupon-bearing bond whose static lacks first_coupon_date must still
+    # accrue correctly (schedule anchored to maturity), never the large negative
+    # accrued produced by defaulting first_coupon_date to maturity_date.
+    from data_io import parse_bond_static_row
+    import pandas as pd
+
+    b = parse_bond_static_row(pd.Series(dict(
+        cusip="X", name="IG 5% 2030", currency="USD", country="US",
+        coupon_rate=0.05, coupon_frequency=2, day_count_convention="30/360",
+        maturity_date="2030-01-15", first_coupon_date="",
+    )))
+    # schedule anchored to the maturity day/month, so coupons land on 01-15/07-15
+    assert b.first_coupon_date.month == 1 and b.first_coupon_date.day == 15
+    assert last_coupon_date(b, date(2026, 7, 1)) == date(2026, 1, 15)
+    ai = accrued_interest(1_000_000, b, date(2026, 7, 1))
+    assert ai > 0
+    assert ai == pytest.approx(1_000_000 * 0.05 * days_accrued(b, date(2026, 7, 1)) / 360)
+
+
+def test_coupon_schedule_keeps_month_end_anchor():
+    # End-of-month coupons must stay on month-end, not drift after the first
+    # short month (Aug 31 → Feb 28 → Aug 31, not Aug 28).
+    b = BondStatic(
+        cusip="EOM", name="eom", currency="USD", country="US",
+        coupon_rate=0.05, coupon_frequency=2, day_count_convention="30/360",
+        maturity_date=date(2030, 8, 31), first_coupon_date=date(2024, 8, 31),
+    )
+    assert next_coupon_date(b, date(2025, 3, 1)) == date(2025, 8, 31)  # not Aug 28
+
+
 def test_zero_at_coupon_date():
     b = _bond("Act/360")
     assert accrued_interest(1_000_000, b, date(2025, 6, 15)) == pytest.approx(0.0)

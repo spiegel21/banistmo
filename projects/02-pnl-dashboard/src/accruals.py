@@ -53,6 +53,11 @@ def _coupon_dates(bond: BondStatic) -> list[date]:
     if not bond.coupon_frequency:
         return []
     months_per_period = 12 // bond.coupon_frequency
+    # Anchor the end-of-month roll to the ORIGINAL coupon day, not the running
+    # date. Clamping against d.day would permanently lose a month-end anchor after
+    # the first short month (e.g. Aug 31 → Feb 28 → Aug 28 …); anchoring keeps a
+    # month-end coupon on month-end (Aug 31 → Feb 28/29 → Aug 31).
+    anchor_day = bond.first_coupon_date.day
     dates: list[date] = []
     d = bond.first_coupon_date
     while d <= bond.maturity_date:
@@ -60,8 +65,7 @@ def _coupon_dates(bond: BondStatic) -> list[date]:
         month = d.month + months_per_period
         year = d.year + (month - 1) // 12
         month = (month - 1) % 12 + 1
-        # clamp day to end of month (handles 31st → shorter months)
-        day = min(d.day, _days_in_month(year, month))
+        day = min(anchor_day, _days_in_month(year, month))
         d = d.replace(year=year, month=month, day=day)
     return dates
 
@@ -189,9 +193,13 @@ def days_accrued(bond: BondStatic, as_of: date) -> int:
     if bond.is_matured(as_of):
         return 0
     lcd = last_coupon_date(bond, as_of)
+    # Lower-bound guard, the twin of the is_matured upper clamp: if as_of precedes
+    # the first period (last_coupon_date falls back to a _prev_period_start that is
+    # still in the future), the raw day count is negative. Accrued interest on a
+    # long is never negative before the first coupon, so floor at 0.
     if bond.day_count_convention == "30/360":
-        return _days_30_360(lcd, as_of)
-    return (as_of - lcd).days  # actual days for Act/360, Act/365, Act/Act
+        return max(0, _days_30_360(lcd, as_of))
+    return max(0, (as_of - lcd).days)  # actual days for Act/360, Act/365, Act/Act
 
 
 def accrued_interest(nominal: float, bond: BondStatic, as_of: date) -> float:
