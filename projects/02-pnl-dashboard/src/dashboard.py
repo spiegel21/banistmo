@@ -315,6 +315,15 @@ if not trades_df.empty:
 
 positions = compute_positions(trades_df, as_of=as_of)
 
+# Full held universe, IGNORING sidebar filters. Bloomberg data-maintenance
+# (price/static fetch, gap detection, coverage) and any "what data do we still
+# need" logic must look at every held bond, not just the ones surviving the
+# current view filter — otherwise editing trades.csv and clicking ① Prepare
+# while a filter is active would silently skip new bonds outside the view, so
+# their bonds_static/price rows never get written. The filtered `positions`
+# above stays for the on-screen P&L/MTM tables.
+all_positions = compute_positions(all_trades, as_of=as_of) if not all_trades.empty else {}
+
 # CUSIPs surviving all sidebar filters — used to restrict pnl_history to selected bonds
 _filtered_cusips: set[str] = set(trades_df["cusip"].unique()) if not trades_df.empty else set()
 
@@ -353,7 +362,7 @@ else:
         st.sidebar.caption("No price history yet.")
 
 with st.sidebar.expander("Price History Coverage"):
-    _all_held_cusips = set(positions.keys())
+    _all_held_cusips = set(all_positions.keys())
     _ph_counts: dict[str, int] = {}
     _ph_last: dict[str, str] = {}
     if not _ph.empty:
@@ -387,7 +396,9 @@ with st.sidebar.expander("Price History Coverage"):
         "✗ = bought today or BDH not yet run."
     )
 
-cusip_list = list(positions.keys())
+# Prepare/price the FULL held universe (unfiltered) so a sidebar filter can
+# never cause a held bond to be skipped from the Bloomberg template.
+cusip_list = list(all_positions.keys())
 
 if st.sidebar.button("① Prepare & open template", key="btn_prepare_all"):
     if cusip_list:
