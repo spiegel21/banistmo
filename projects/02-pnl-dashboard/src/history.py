@@ -5,12 +5,20 @@ For each business day in a range, per-CUSIP P&L is computed as:
 
     price_pnl  = (clean_today  - clean_prev ) × net_nominal_sod / 100
     accrual    = (accrued_today - accrued_prev) × net_nominal_sod / 100
+    coupon     = coupon cash paid on any coupon date in (prev_day, day]
     realized   = WAVG gains from trades that closed on this exact day
-    total_pnl  = price_pnl + accrual + realized
+    total_pnl  = price_pnl + accrual + coupon + realized
 
 net_nominal_sod is the start-of-day (= prior business day end-of-day) position.
 Using SOD nominal means bonds sold today are included in the daily price move;
 bonds bought today start contributing the following day (standard convention).
+
+`accrual` is the mark-to-market change in accrued interest: it drops sharply on
+a coupon date, when accrued resets to ~0. `coupon` books the cash coupon
+received on that same step, so the two together are the true interest income
+(carry) for the day and a long never shows a spurious negative accrual across a
+coupon. This is the standard total-return decomposition (price return + income
+return) used by Bloomberg PRISM / Advent Geneva.
 
 Previous-day clean price is sourced from price_history.csv. For the first day
 of the range, if no prior-day price is in price_history, the `price` field from
@@ -31,7 +39,7 @@ from config import ALL_PORTFOLIOS, get_logger
 from position_manager import load_all_trades, compute_positions
 from accruals import (
     load_bonds_static, accrued_interest, last_coupon_date, days_accrued,
-    next_coupon_date, coupon_amount_per_period,
+    next_coupon_date, coupon_amount_per_period, coupon_dates_between,
 )
 from trading_gains import realized_pnl
 from mtm import mark_to_market
@@ -41,7 +49,7 @@ log = get_logger(__name__)
 
 _COLUMNS = [
     "date", "portfolio", "cusip", "net_nominal",
-    "px_last", "price_pnl", "accrued", "realized_gain", "total_pnl",
+    "px_last", "price_pnl", "accrued", "coupon_income", "realized_gain", "total_pnl",
 ]
 
 
@@ -150,8 +158,21 @@ def compute_daily_pnl(
                 price_pnl = round(net_nominal * (clean_t - clean_prev) / 100, 2)
                 accrued = round(net_nominal * (acc_t - acc_prev) / 100, 2)
 
+            # Coupon cash for any coupon date crossed this step. Booked on the
+            # holder-of-record (SOD) nominal, independent of price availability —
+            # a coupon is a real cash flow whether or not the bond is marked. It
+            # offsets the accrued-reset drop on the coupon date so a long's carry
+            # stays positive. Short positions (net_nominal < 0) pay the coupon.
+            coupon_income = 0.0
+            if net_nominal != 0 and bond is not None:
+                n_coupons = len(coupon_dates_between(bond, prev_day, day))
+                if n_coupons:
+                    coupon_income = round(
+                        coupon_amount_per_period(net_nominal, bond) * n_coupons, 2
+                    )
+
             realized_gain = round(realized_today.get(cusip, 0.0), 2)
-            total = (price_pnl or 0.0) + (accrued or 0.0) + realized_gain
+            total = (price_pnl or 0.0) + (accrued or 0.0) + coupon_income + realized_gain
 
             records.append({
                 "date": day.isoformat(),
@@ -161,6 +182,7 @@ def compute_daily_pnl(
                 "px_last": clean_t,
                 "price_pnl": price_pnl,
                 "accrued": accrued,
+                "coupon_income": coupon_income,
                 "realized_gain": realized_gain,
                 "total_pnl": round(total, 2),
             })
@@ -202,6 +224,11 @@ def load_pnl_history(
 
     df = pd.read_csv(path, dtype={"cusip": str})
     df["date"] = pd.to_datetime(df["date"])
+    # Backfill columns absent from a pre-existing cache (e.g. coupon_income added
+    # later) so callers can rely on the full schema without a forced recompute.
+    for col in _COLUMNS:
+        if col not in df.columns:
+            df[col] = 0.0
 
     scope = portfolio if portfolio is not None else ALL_PORTFOLIOS
     df = df[df["portfolio"] == scope]

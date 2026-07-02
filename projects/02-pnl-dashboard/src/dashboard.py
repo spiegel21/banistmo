@@ -566,7 +566,13 @@ mtm_df = mark_to_market(positions, prices, bonds_static, as_of)
 total_realized = realized_df["realized_gain"].sum() if not realized_df.empty else 0.0
 total_price = _nansum(mtm_df["price_pnl"]) if not mtm_df.empty else 0.0
 total_accrued = _nansum(mtm_df["accrued_pnl"]) if not mtm_df.empty else 0.0
-total_pnl = total_realized + total_price + total_accrued
+# Coupon income is realised cash that has already left the accrued mark, so it is
+# not visible in the current MTM snapshot. Pull the cumulative coupons received
+# to date from pnl_history so the headline is a complete total return.
+_coupon_hist = load_pnl_history(portfolio=hist_portfolio, end_date=as_of)
+_coupon_hist = _apply_cusip_filter(_coupon_hist, _filtered_cusips)
+total_coupon = float(_coupon_hist["coupon_income"].sum()) if not _coupon_hist.empty else 0.0
+total_pnl = total_realized + total_price + total_accrued + total_coupon
 
 # ── MTM transparency: prev_px, cost_px, px_change, px_vs_cost ────────────────
 _prev_day = _prev_bday(as_of)
@@ -590,11 +596,12 @@ _today_hist = _apply_cusip_filter(_today_hist, _filtered_cusips)
 if not _today_hist.empty:
     today_price    = float(_today_hist["price_pnl"].sum())
     today_accrued  = float(_today_hist["accrued"].sum())
+    today_coupon   = float(_today_hist["coupon_income"].sum())
     today_realized = float(_today_hist["realized_gain"].sum())
     today_total    = float(_today_hist["total_pnl"].sum())
     _today_data_available = True
 else:
-    today_price = today_accrued = today_realized = today_total = 0.0
+    today_price = today_accrued = today_coupon = today_realized = today_total = 0.0
     _today_data_available = False
 
 # ── tabs ────────────────────────────────────────────────────────────────────
@@ -621,11 +628,12 @@ with tab_overview:
             "Today's P&L not yet computed. Click **Recompute P&L History** in the sidebar "
             "to generate today's daily move data."
         )
-    c1, c2, c3, c4 = st.columns(4)
-    c1.metric("Total P&L (Today)",   _fmt(today_total))
-    c2.metric("Valuation (Today)",   _fmt(today_price))
-    c3.metric("Accrued P&L (Today)", _fmt(today_accrued))
-    c4.metric("Realized (Today)",    _fmt(today_realized))
+    c1, c2, c3, c4, c5 = st.columns(5)
+    c1.metric("Total P&L (Today)",     _fmt(today_total))
+    c2.metric("Valuation (Today)",     _fmt(today_price))
+    c3.metric("Accrued P&L (Today)",   _fmt(today_accrued))
+    c4.metric("Coupon Income (Today)", _fmt(today_coupon))
+    c5.metric("Realized (Today)",      _fmt(today_realized))
     st.caption("Daily move as of today. Cumulative P&L is shown in the charts below.")
 
     # ── Cumulative Total P&L (first chart) ────────────────────────────────────
@@ -640,7 +648,7 @@ with tab_overview:
         )
     else:
         _daily = (
-            pnl_hist.groupby("date")[["price_pnl", "accrued", "realized_gain", "total_pnl"]]
+            pnl_hist.groupby("date")[["price_pnl", "accrued", "coupon_income", "realized_gain", "total_pnl"]]
             .sum().reset_index().sort_values("date")
         )
         _daily["date"] = pd.to_datetime(_daily["date"])
@@ -652,8 +660,8 @@ with tab_overview:
     with left:
         st.subheader("P&L Attribution (cumulative)")
         attr = pd.DataFrame({
-            "Component": ["Realized", "Valuation", "Accrued P&L"],
-            "Value": [total_realized, total_price, total_accrued],
+            "Component": ["Realized", "Valuation", "Accrued P&L", "Coupon Income"],
+            "Value": [total_realized, total_price, total_accrued, total_coupon],
         })
         if attr["Value"].abs().sum() > 0:
             st.bar_chart(attr.set_index("Component"), width="stretch")
@@ -668,8 +676,8 @@ with tab_overview:
     if not pnl_hist.empty:
         st.markdown("---")
         st.subheader("Cumulative P&L by component")
-        comp = _daily.set_index("date")[["price_pnl", "accrued", "realized_gain"]].fillna(0).cumsum()
-        comp.columns = ["Valuation", "Accrued P&L", "Realized"]
+        comp = _daily.set_index("date")[["price_pnl", "accrued", "coupon_income", "realized_gain"]].fillna(0).cumsum()
+        comp.columns = ["Valuation", "Accrued P&L", "Coupon Income", "Realized"]
         st.line_chart(comp, width="stretch")
 
     # ── P&L by Country ────────────────────────────────────────────────────────
@@ -1020,12 +1028,13 @@ with tab_mtm:
             .agg(
                 price_pnl=("price_pnl", "sum"),
                 accrued_pnl=("accrued", "sum"),
+                coupon_income=("coupon_income", "sum"),
                 realized_gain=("realized_gain", "sum"),
             )
             .reset_index()
         )
     else:
-        pnl_sum = pd.DataFrame(columns=["cusip", "price_pnl", "accrued_pnl", "realized_gain"])
+        pnl_sum = pd.DataFrame(columns=["cusip", "price_pnl", "accrued_pnl", "coupon_income", "realized_gain"])
 
     if mtm_df_range.empty:
         if trades_df.empty:
@@ -1043,10 +1052,12 @@ with tab_mtm:
         else:
             view["price_pnl"] = float("nan")
             view["accrued_pnl"] = float("nan")
+            view["coupon_income"] = 0.0
             view["realized_gain"] = 0.0
+        view["coupon_income"] = view.get("coupon_income", pd.Series(0.0, index=view.index)).fillna(0)
         view["unrealized_pnl"] = view["price_pnl"].fillna(0) + view["accrued_pnl"].fillna(0)
         view["realized"] = view.get("realized_gain", pd.Series(0.0, index=view.index)).fillna(0)
-        view["net_pnl"] = view["unrealized_pnl"] + view["realized"]
+        view["net_pnl"] = view["unrealized_pnl"] + view["coupon_income"] + view["realized"]
 
         view = view.rename(columns={
             "cusip": "CUSIP", "name": "Name", "portfolio": "Portfolio",
@@ -1057,6 +1068,7 @@ with tab_mtm:
             "px_vs_cost": "Vs Cost",
             "mtm_value": "MTM Value", "book_value": "Book Value",
             "price_pnl": "Valuation", "accrued_pnl": "Accrued P&L",
+            "coupon_income": "Coupon Income",
             "unrealized_pnl": "Unrealized P&L", "realized": "Realized",
             "net_pnl": "Net P&L",
             "note": "Note",
@@ -1065,11 +1077,11 @@ with tab_mtm:
             "CUSIP", "Name", "Portfolio", "Country", "CCY", "Nominal",
             "Cost Px", "Prev Px", "Px Change", "Clean Px", "Accrued %", "Dirty Px",
             "Vs Cost", "MTM Value", "Book Value",
-            "Valuation", "Accrued P&L", "Unrealized P&L", "Realized", "Net P&L", "Note",
+            "Valuation", "Accrued P&L", "Unrealized P&L", "Coupon Income", "Realized", "Net P&L", "Note",
         ]
         styled_mtm = _color_pnl_df(
             view[[c for c in ordered if c in view.columns]],
-            ["Valuation", "Accrued P&L", "Unrealized P&L", "Realized", "Net P&L"],
+            ["Valuation", "Accrued P&L", "Unrealized P&L", "Coupon Income", "Realized", "Net P&L"],
         )
         _filtered_dataframe(
             styled_mtm, "mtm", width="stretch", hide_index=True,
@@ -1087,6 +1099,7 @@ with tab_mtm:
                 "Valuation":      st.column_config.NumberColumn(format="%,.0f"),
                 "Accrued P&L":    st.column_config.NumberColumn(format="%,.0f"),
                 "Unrealized P&L": st.column_config.NumberColumn(format="%,.0f"),
+                "Coupon Income":  st.column_config.NumberColumn(format="%,.0f"),
                 "Realized":       st.column_config.NumberColumn(format="%,.0f"),
                 "Net P&L":        st.column_config.NumberColumn(format="%,.0f"),
             },
@@ -1102,24 +1115,27 @@ with tab_mtm:
 
         range_price = float(pnl_sum["price_pnl"].sum()) if not pnl_sum.empty else 0.0
         range_accrued = float(pnl_sum["accrued_pnl"].sum()) if not pnl_sum.empty else 0.0
+        range_coupon = float(pnl_sum["coupon_income"].sum()) if not pnl_sum.empty else 0.0
         range_realized = float(pnl_sum["realized_gain"].sum()) if not pnl_sum.empty else 0.0
         range_unrealized = range_price + range_accrued
-        range_net = range_unrealized + range_realized
+        range_net = range_unrealized + range_coupon + range_realized
 
         st.markdown("**Portfolio totals**")
-        t1, t2, t3, t4, t5, t6, t7 = st.columns(7)
+        t1, t2, t3, t4, t5, t6, t7, t8 = st.columns(8)
         t1.metric("MTM Value",      _fmt(_nansum(mtm_df_range["mtm_value"])))
         t2.metric("Book Value",     _fmt(_nansum(mtm_df_range["book_value"])))
         t3.metric("Valuation",      _fmt(range_price))
         t4.metric("Accrued P&L",    _fmt(range_accrued))
         t5.metric("Unrealized P&L", _fmt(range_unrealized))
-        t6.metric("Realized",       _fmt(range_realized))
-        t7.metric("Net P&L",        _fmt(range_net))
+        t6.metric("Coupon Income",  _fmt(range_coupon))
+        t7.metric("Realized",       _fmt(range_realized))
+        t8.metric("Net P&L",        _fmt(range_net))
         st.caption(
             f"Cost Px = WAVG purchase price.  Prev Px = {_prev_day} close.  "
             f"Px Change = today vs prev.  Vs Cost = today vs cost basis.  "
             f"Dirty Px = Clean Px + Accrued %.  MTM Value = Nominal × Dirty Px / 100.  "
-            f"Unrealized P&L = Valuation + Accrued P&L.  Net P&L = Unrealized P&L + Realized.  "
+            f"Unrealized P&L = Valuation + Accrued P&L.  "
+            f"Net P&L = Unrealized P&L + Coupon Income + Realized.  "
             f"P&L columns = sum from {mtm_start} to {mtm_end}. Positions as of {mtm_end}."
         )
 
@@ -1336,6 +1352,7 @@ with tab_attribution:
                         .agg(
                             today_price_pnl=("price_pnl", "sum"),
                             today_accrued=("accrued", "sum"),
+                            today_coupon=("coupon_income", "sum"),
                             today_realized=("realized_gain", "sum"),
                             today_total=("total_pnl", "sum"),
                         )
@@ -1343,7 +1360,7 @@ with tab_attribution:
                     )
                     snap_view = snap_view.merge(today_pnl_by_cusip, on="cusip", how="left")
                 else:
-                    for col in ["today_price_pnl", "today_accrued", "today_realized", "today_total"]:
+                    for col in ["today_price_pnl", "today_accrued", "today_coupon", "today_realized", "today_total"]:
                         snap_view[col] = 0.0
 
                 snap_view["today_unrealized"] = (
@@ -1356,7 +1373,7 @@ with tab_attribution:
                     "net_nominal", "cost_px", "prev_px", "px_change",
                     "clean_px", "dirty_px", "px_vs_cost",
                     "today_price_pnl", "today_accrued", "today_unrealized",
-                    "today_realized", "today_total",
+                    "today_coupon", "today_realized", "today_total",
                     "last_coupon_date", "days_accrued",
                     "coupon_rate", "day_count_convention", "maturity_date",
                 ]
@@ -1369,6 +1386,7 @@ with tab_attribution:
                     "clean_px": "Clean Px", "dirty_px": "Dirty Px", "px_vs_cost": "Vs Cost",
                     "today_price_pnl": "Valuation", "today_accrued": "Accrued P&L",
                     "today_unrealized": "Unrealized P&L",
+                    "today_coupon": "Coupon Income",
                     "today_realized": "Realized", "today_total": "Total P&L",
                     "last_coupon_date": "Last Coupon", "days_accrued": "Days Accrued",
                     "coupon_rate": "Coupon Rate", "day_count_convention": "Day Count",
@@ -1377,7 +1395,7 @@ with tab_attribution:
 
                 # Totals row
                 _pnl_total_cols = ["Nominal", "Valuation", "Accrued P&L", "Unrealized P&L",
-                                   "Realized", "Total P&L"]
+                                   "Coupon Income", "Realized", "Total P&L"]
                 # Use None (not "") for non-total columns: an empty string in an
                 # otherwise-numeric column breaks Streamlit's Arrow serialization
                 # ("Could not convert '' with type str: tried to convert to double").
@@ -1393,7 +1411,7 @@ with tab_attribution:
 
                 styled_snap = _color_pnl_df(
                     snap_with_totals,
-                    ["Valuation", "Accrued P&L", "Unrealized P&L", "Realized", "Total P&L"],
+                    ["Valuation", "Accrued P&L", "Unrealized P&L", "Coupon Income", "Realized", "Total P&L"],
                 )
                 _filtered_dataframe(
                     styled_snap, "attr_snap", width="stretch", hide_index=True,
@@ -1408,6 +1426,7 @@ with tab_attribution:
                         "Valuation":      st.column_config.NumberColumn(format="%,.0f"),
                         "Accrued P&L":    st.column_config.NumberColumn(format="%,.0f"),
                         "Unrealized P&L": st.column_config.NumberColumn(format="%,.0f"),
+                        "Coupon Income":  st.column_config.NumberColumn(format="%,.0f"),
                         "Realized":       st.column_config.NumberColumn(format="%,.0f"),
                         "Total P&L":      st.column_config.NumberColumn(format="%,.0f"),
                         "Coupon Rate":    st.column_config.NumberColumn(format="%.4f"),
@@ -1560,6 +1579,7 @@ with tab_attribution:
                 .agg(
                     price_pnl=("price_pnl", "sum"),
                     accrued=("accrued", "sum"),
+                    coupon_income=("coupon_income", "sum"),
                     realized_gain=("realized_gain", "sum"),
                     total_pnl=("total_pnl", "sum"),
                     net_nominal=("net_nominal", "sum"),
@@ -1569,6 +1589,7 @@ with tab_attribution:
                     "group_key": label,
                     "price_pnl": "Valuation",
                     "accrued": "Accrued P&L",
+                    "coupon_income": "Coupon Income",
                     "realized_gain": "Realized",
                     "total_pnl": "Total P&L",
                     "net_nominal": "Nominal",
@@ -1576,16 +1597,17 @@ with tab_attribution:
                 .sort_values("Total P&L", ascending=False)
             )
             styled_rollup = _color_pnl_df(
-                agg, ["Valuation", "Accrued P&L", "Realized", "Total P&L"]
+                agg, ["Valuation", "Accrued P&L", "Coupon Income", "Realized", "Total P&L"]
             )
             _filtered_dataframe(
                 styled_rollup, "attr_rollup", width="stretch", hide_index=True,
                 column_config={
-                    "Nominal":     st.column_config.NumberColumn(format="%,.0f"),
-                    "Valuation":   st.column_config.NumberColumn(format="%,.0f"),
-                    "Accrued P&L": st.column_config.NumberColumn(format="%,.0f"),
-                    "Realized":    st.column_config.NumberColumn(format="%,.0f"),
-                    "Total P&L":   st.column_config.NumberColumn(format="%,.0f"),
+                    "Nominal":       st.column_config.NumberColumn(format="%,.0f"),
+                    "Valuation":     st.column_config.NumberColumn(format="%,.0f"),
+                    "Accrued P&L":   st.column_config.NumberColumn(format="%,.0f"),
+                    "Coupon Income": st.column_config.NumberColumn(format="%,.0f"),
+                    "Realized":      st.column_config.NumberColumn(format="%,.0f"),
+                    "Total P&L":     st.column_config.NumberColumn(format="%,.0f"),
                 },
             )
             st.caption(

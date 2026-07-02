@@ -160,7 +160,7 @@ derives sovereign/corp and local/global when they are blank.
 - `net` is stored unsigned in the CSV and signed on load (like `nominal`): after `load_trades()` it is negative for a buy (cash leaves) and positive for a sell.
 - Bloomberg prices are clean prices (% of par). Dirty price = clean + accrued today.
 - `trade_date` (not `Timestamp`) is the effective date for all portfolio history.
-- Total P&L = Realized + Price MTM + Accrued (three non-overlapping components).
+- Total P&L = Realized + Price MTM + Accrued + Coupon Income (four non-overlapping components). `Accrued` is the daily mark-to-market change in accrued interest; it drops sharply on a coupon date when accrued resets to ~0. `Coupon Income` books the cash coupon received on that same step so the two together are the true interest carry — this is why a long never shows a spurious negative accrual across a coupon (see `history.py`). The current-MTM snapshot in `mtm.py` still splits unrealized into `price_pnl` + `accrued_pnl` only; realised coupons already received are carried in `pnl_history` (`coupon_income`), so the Overview headline adds cumulative coupon income back for a complete total return.
 - Realized P&L uses WAVG cost basis matching (consistent with Bloomberg PRISM / Advent Geneva).
 
 ### Day-count conventions
