@@ -3,22 +3,25 @@ Historical daily P&L using the dirty-price change method.
 
 For each business day in a range, per-CUSIP P&L is computed as:
 
-    price_pnl  = (clean_today  - clean_prev ) × net_nominal_sod / 100
-    accrual    = (accrued_today - accrued_prev) × net_nominal_sod / 100  + coupon cash
-    realized   = WAVG gains from trades that closed on this exact day
+    price_pnl  = (clean_today - clean_prev) × net_nominal_sod / 100
+    accrual    = interest earned into the accrued receivable, drawn down at coupon
+    realized   = WAVG gains from closing trades  +  coupon income collected today
     total_pnl  = price_pnl + accrual + realized
 
 net_nominal_sod is the start-of-day (= prior business day end-of-day) position.
 Using SOD nominal means bonds sold today are included in the daily price move;
 bonds bought today start contributing the following day (standard convention).
 
-The `accrued` component is the true net interest carry: the mark-to-market
-change in accrued interest PLUS the cash coupon paid on any coupon date crossed
-this step. On a coupon date the accrued mark resets to ~0 (a large drop) and the
-coupon cash lands on the same step, so the two net to the day's carry and a long
-never shows a spurious negative accrual across a coupon. This is the standard
-total-return decomposition (price return + income return) used by Bloomberg
-PRISM / Advent Geneva.
+Interest is booked on an accrual basis and realised at the coupon (the standard
+bond-book treatment). Each day the interest earned — the change in accrued
+interest plus any coupon cash crossed that step — accrues into a per-CUSIP
+receivable balance. On a coupon date that balance is collected: it moves into
+`realized` as coupon income, and `accrued` shows the drawdown, so the accrued
+series sawtooths up between coupons and back to ~0 at each coupon rather than
+trending up forever. Because the receivable only ever builds from interest
+earned while the position was held, a long's `accrued` never goes negative — not
+even for a bond bought mid-coupon-period. Total P&L is unchanged by the split;
+only the accrued-vs-realized attribution differs.
 
 Previous-day clean price is sourced from price_history.csv. For the first day
 of the range, if no prior-day price is in price_history, the `price` field from
@@ -117,6 +120,12 @@ def compute_daily_pnl(
         return dict(zip(row["cusip"], row["px_last"])) if not row.empty else {}
 
     records = []
+    # Running accrued-interest receivable per CUSIP, in cash units. Interest
+    # accrues into this balance each day and is collected (moved to realised
+    # income) on the coupon date. Because it only ever builds from interest
+    # actually earned while the position was held, it resets to ~0 at each coupon
+    # and never goes negative for a long — even for a bond bought mid-period.
+    coupon_carry: dict[str, float] = {}
     for day in business_days(start_date, end_date):
         prev_day = _prev_business_day(day)
 
@@ -151,31 +160,39 @@ def compute_daily_pnl(
             clean_prev = prev_price(cusip)
 
             price_pnl = None
-            acc_change = None
             if net_nominal != 0 and clean_t is not None and clean_prev is not None:
-                acc_t = accrued_interest(100, bond, day) if bond else 0.0
-                acc_prev = accrued_interest(100, bond, prev_day) if bond else 0.0
                 price_pnl = round(net_nominal * (clean_t - clean_prev) / 100, 2)
-                acc_change = net_nominal * (acc_t - acc_prev) / 100
 
-            # Coupon cash for any coupon date crossed this step, booked on the
-            # holder-of-record (SOD) nominal, independent of price availability —
-            # a coupon is a real cash flow whether or not the bond is marked.
-            # Folded into `accrued` so the interest line is the true net carry:
-            # the coupon offsets the accrued-reset drop on the coupon date, so a
-            # long never shows a spurious negative accrual. Shorts pay the coupon.
-            coupon = 0.0
+            # Interest carry — computed from the coupon schedule, independent of
+            # price. The day's true interest earned is the change in accrued
+            # interest PLUS any coupon cash crossed this step (on a coupon date
+            # accrued resets to ~0, so the coupon cash is what the mark drop
+            # becomes). That earned amount accrues into the receivable balance.
+            # On a coupon date the whole receivable is collected and booked as
+            # realised income; `accrued` shows the drawdown, so it sawtooths back
+            # to ~0 and never goes negative for a long. Shorts pay the coupon.
+            accrued = None
+            coupon_income = 0.0
             if net_nominal != 0 and bond is not None:
+                acc_t = accrued_interest(100, bond, day)
+                acc_prev = accrued_interest(100, bond, prev_day)
                 n_coupons = len(coupon_dates_between(bond, prev_day, day))
+                coupon_cash = coupon_amount_per_period(net_nominal, bond) * n_coupons
+                earned = net_nominal * (acc_t - acc_prev) / 100 + coupon_cash
+                carry = coupon_carry.get(cusip, 0.0) + earned
                 if n_coupons:
-                    coupon = coupon_amount_per_period(net_nominal, bond) * n_coupons
+                    coupon_income = round(carry, 2)     # receivable collected → income
+                    accrued = round(earned - carry, 2)  # draw the receivable back down
+                    coupon_carry[cusip] = 0.0
+                else:
+                    accrued = round(earned, 2)
+                    coupon_carry[cusip] = carry
+            elif net_nominal == 0:
+                coupon_carry.pop(cusip, None)  # flat position: no receivable carried
 
-            if acc_change is None and coupon == 0.0:
-                accrued = None
-            else:
-                accrued = round((acc_change or 0.0) + coupon, 2)
-
-            realized_gain = round(realized_today.get(cusip, 0.0), 2)
+            # Coupon income is realised interest (cash received), so it lands in
+            # the same bucket as realised trading gains.
+            realized_gain = round(realized_today.get(cusip, 0.0) + coupon_income, 2)
             total = (price_pnl or 0.0) + (accrued or 0.0) + realized_gain
 
             records.append({

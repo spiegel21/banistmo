@@ -563,7 +563,16 @@ trades_to_date = trades_df[trades_df["trade_date"] <= pd.Timestamp(as_of)] if no
 realized_df = total_realized_pnl(trades_to_date)
 mtm_df = mark_to_market(positions, prices, bonds_static, as_of)
 
-total_realized = realized_df["realized_gain"].sum() if not realized_df.empty else 0.0
+total_trading_realized = realized_df["realized_gain"].sum() if not realized_df.empty else 0.0
+# `Realized` here means realised trading gains + coupon income collected to date.
+# Coupon income is folded into pnl_history's realized_gain (booked at each coupon),
+# so sum that for the scope; fall back to trading-only when history isn't computed.
+_realized_hist = load_pnl_history(portfolio=hist_portfolio, end_date=as_of)
+_realized_hist = _apply_cusip_filter(_realized_hist, _filtered_cusips)
+total_realized = (
+    float(_realized_hist["realized_gain"].sum())
+    if not _realized_hist.empty else total_trading_realized
+)
 total_price = _nansum(mtm_df["price_pnl"]) if not mtm_df.empty else 0.0
 total_accrued = _nansum(mtm_df["accrued_pnl"]) if not mtm_df.empty else 0.0
 total_pnl = total_realized + total_price + total_accrued
@@ -1119,7 +1128,8 @@ with tab_mtm:
             f"Cost Px = WAVG purchase price.  Prev Px = {_prev_day} close.  "
             f"Px Change = today vs prev.  Vs Cost = today vs cost basis.  "
             f"Dirty Px = Clean Px + Accrued %.  MTM Value = Nominal × Dirty Px / 100.  "
-            f"Accrued P&L includes coupon cash received in the range.  "
+            f"Accrued P&L is the interest receivable earned in the range; coupon "
+            f"income is realised into Realized when each coupon is paid.  "
             f"Unrealized P&L = Valuation + Accrued P&L.  Net P&L = Unrealized P&L + Realized.  "
             f"P&L columns = sum from {mtm_start} to {mtm_end}. Positions as of {mtm_end}."
         )
