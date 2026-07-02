@@ -62,6 +62,31 @@ def test_total_pnl_no_double_count():
     assert (m["price_pnl"] + m["accrued_pnl"]).sum() == pytest.approx(m["mtm_gain"].sum())
 
 
+def test_net_pnl_reconciles_with_components():
+    """Net P&L (as surfaced in the dashboard) = Unrealized + Realized, and the
+    unrealized part is exactly the dirty-price mtm_gain — so Net always reconciles
+    with the underlying components with no double counting."""
+    allt = load_all_trades()
+    pos = compute_positions(allt, portfolio="HY")
+    bonds = load_bonds_static()
+    prices = {"037833100": 100.5}
+    as_of = date(2025, 3, 15)
+
+    m = mark_to_market(pos, prices, bonds, as_of)
+    hy_trades = allt[allt["portfolio"] == "HY"]
+    realized = realized_pnl(hy_trades)
+    realized_total = realized["realized_gain"].sum() if not realized.empty else 0.0
+
+    # Dashboard's Net P&L definition: (price + accrued) + realized
+    unrealized = (m["price_pnl"] + m["accrued_pnl"]).sum()
+    net = unrealized + realized_total
+
+    # Unrealized must equal total dirty-price mtm_gain (no double count)
+    assert unrealized == pytest.approx(m["mtm_gain"].sum())
+    # Net must equal the sum of its two disjoint parts
+    assert net == pytest.approx(m["mtm_gain"].sum() + realized_total)
+
+
 def test_mtm_missing_price_is_flagged():
     pos = compute_positions(load_all_trades(), portfolio="IG")
     m = mark_to_market(pos, {}, load_bonds_static(), date(2025, 3, 15))
