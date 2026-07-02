@@ -4,21 +4,21 @@ Historical daily P&L using the dirty-price change method.
 For each business day in a range, per-CUSIP P&L is computed as:
 
     price_pnl  = (clean_today  - clean_prev ) × net_nominal_sod / 100
-    accrual    = (accrued_today - accrued_prev) × net_nominal_sod / 100
-    coupon     = coupon cash paid on any coupon date in (prev_day, day]
+    accrual    = (accrued_today - accrued_prev) × net_nominal_sod / 100  + coupon cash
     realized   = WAVG gains from trades that closed on this exact day
-    total_pnl  = price_pnl + accrual + coupon + realized
+    total_pnl  = price_pnl + accrual + realized
 
 net_nominal_sod is the start-of-day (= prior business day end-of-day) position.
 Using SOD nominal means bonds sold today are included in the daily price move;
 bonds bought today start contributing the following day (standard convention).
 
-`accrual` is the mark-to-market change in accrued interest: it drops sharply on
-a coupon date, when accrued resets to ~0. `coupon` books the cash coupon
-received on that same step, so the two together are the true interest income
-(carry) for the day and a long never shows a spurious negative accrual across a
-coupon. This is the standard total-return decomposition (price return + income
-return) used by Bloomberg PRISM / Advent Geneva.
+The `accrued` component is the true net interest carry: the mark-to-market
+change in accrued interest PLUS the cash coupon paid on any coupon date crossed
+this step. On a coupon date the accrued mark resets to ~0 (a large drop) and the
+coupon cash lands on the same step, so the two net to the day's carry and a long
+never shows a spurious negative accrual across a coupon. This is the standard
+total-return decomposition (price return + income return) used by Bloomberg
+PRISM / Advent Geneva.
 
 Previous-day clean price is sourced from price_history.csv. For the first day
 of the range, if no prior-day price is in price_history, the `price` field from
@@ -49,7 +49,7 @@ log = get_logger(__name__)
 
 _COLUMNS = [
     "date", "portfolio", "cusip", "net_nominal",
-    "px_last", "price_pnl", "accrued", "coupon_income", "realized_gain", "total_pnl",
+    "px_last", "price_pnl", "accrued", "realized_gain", "total_pnl",
 ]
 
 
@@ -151,28 +151,32 @@ def compute_daily_pnl(
             clean_prev = prev_price(cusip)
 
             price_pnl = None
-            accrued = None
+            acc_change = None
             if net_nominal != 0 and clean_t is not None and clean_prev is not None:
                 acc_t = accrued_interest(100, bond, day) if bond else 0.0
                 acc_prev = accrued_interest(100, bond, prev_day) if bond else 0.0
                 price_pnl = round(net_nominal * (clean_t - clean_prev) / 100, 2)
-                accrued = round(net_nominal * (acc_t - acc_prev) / 100, 2)
+                acc_change = net_nominal * (acc_t - acc_prev) / 100
 
-            # Coupon cash for any coupon date crossed this step. Booked on the
+            # Coupon cash for any coupon date crossed this step, booked on the
             # holder-of-record (SOD) nominal, independent of price availability —
-            # a coupon is a real cash flow whether or not the bond is marked. It
-            # offsets the accrued-reset drop on the coupon date so a long's carry
-            # stays positive. Short positions (net_nominal < 0) pay the coupon.
-            coupon_income = 0.0
+            # a coupon is a real cash flow whether or not the bond is marked.
+            # Folded into `accrued` so the interest line is the true net carry:
+            # the coupon offsets the accrued-reset drop on the coupon date, so a
+            # long never shows a spurious negative accrual. Shorts pay the coupon.
+            coupon = 0.0
             if net_nominal != 0 and bond is not None:
                 n_coupons = len(coupon_dates_between(bond, prev_day, day))
                 if n_coupons:
-                    coupon_income = round(
-                        coupon_amount_per_period(net_nominal, bond) * n_coupons, 2
-                    )
+                    coupon = coupon_amount_per_period(net_nominal, bond) * n_coupons
+
+            if acc_change is None and coupon == 0.0:
+                accrued = None
+            else:
+                accrued = round((acc_change or 0.0) + coupon, 2)
 
             realized_gain = round(realized_today.get(cusip, 0.0), 2)
-            total = (price_pnl or 0.0) + (accrued or 0.0) + coupon_income + realized_gain
+            total = (price_pnl or 0.0) + (accrued or 0.0) + realized_gain
 
             records.append({
                 "date": day.isoformat(),
@@ -182,7 +186,6 @@ def compute_daily_pnl(
                 "px_last": clean_t,
                 "price_pnl": price_pnl,
                 "accrued": accrued,
-                "coupon_income": coupon_income,
                 "realized_gain": realized_gain,
                 "total_pnl": round(total, 2),
             })
@@ -224,8 +227,8 @@ def load_pnl_history(
 
     df = pd.read_csv(path, dtype={"cusip": str})
     df["date"] = pd.to_datetime(df["date"])
-    # Backfill columns absent from a pre-existing cache (e.g. coupon_income added
-    # later) so callers can rely on the full schema without a forced recompute.
+    # Backfill any columns absent from a pre-existing cache so callers can rely
+    # on the full schema without a forced recompute.
     for col in _COLUMNS:
         if col not in df.columns:
             df[col] = 0.0

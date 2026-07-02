@@ -31,33 +31,23 @@ def test_realized_appears_on_trade_day_not_after():
 
 def test_daily_total_equals_components():
     df = compute_daily_pnl(date(2025, 3, 3), date(2025, 3, 4), portfolio="HY")
-    recon = (
-        df["price_pnl"].fillna(0)
-        + df["accrued"].fillna(0)
-        + df["coupon_income"].fillna(0)
-        + df["realized_gain"]
-    ).round(2)
+    recon = (df["price_pnl"].fillna(0) + df["accrued"].fillna(0) + df["realized_gain"]).round(2)
     assert (recon == df["total_pnl"]).all()
 
 
-def test_coupon_income_booked_on_coupon_date():
+def test_coupon_cash_folded_into_accrued_on_coupon_date():
     # UST 912828XY9 (first_coupon 2024-09-20, semi-annual) pays on 2025-03-20.
     # IG holds 2M SOD → coupon = 2_000_000 * 0.03 / 2 = 30_000. No price history
-    # exists for that day, so coupon income must be booked independently of price.
+    # exists for that day, so the accrued mark change is absent and the accrued
+    # line is exactly the coupon cash — the coupon is folded into `accrued`, not
+    # booked as its own component, and it flows through to total_pnl.
     df = compute_daily_pnl(date(2025, 3, 19), date(2025, 3, 20), portfolio="IG")
     d320 = df[df["date"] == "2025-03-20"]
     d319 = df[df["date"] == "2025-03-19"]
-    assert d320["coupon_income"].sum() == pytest.approx(2_000_000 * 0.03 / 2, abs=1)
-    assert d319["coupon_income"].sum() == pytest.approx(0.0)
-    # Coupon flows into total even when price P&L is unavailable.
-    assert d320["total_pnl"].sum() == pytest.approx(d320["coupon_income"].sum(), abs=1)
-
-
-def test_no_coupon_income_off_coupon_date():
-    # Early March has no coupon for the HY Apple bond (coupons 12-15 / 06-15),
-    # so a long earns only the small positive daily accrual, never a coupon.
-    df = compute_daily_pnl(date(2025, 3, 3), date(2025, 3, 4), portfolio="HY")
-    assert df["coupon_income"].sum() == pytest.approx(0.0)
+    assert d320["accrued"].sum() == pytest.approx(2_000_000 * 0.03 / 2, abs=1)
+    assert d320["total_pnl"].sum() == pytest.approx(2_000_000 * 0.03 / 2, abs=1)
+    # No coupon on the prior day → accrued carries no coupon jump there.
+    assert d319["accrued"].fillna(0).sum() == pytest.approx(0.0, abs=1)
 
 
 def test_price_pnl_is_daily_clean_price_change():
