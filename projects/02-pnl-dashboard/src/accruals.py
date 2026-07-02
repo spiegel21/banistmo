@@ -120,6 +120,21 @@ def coupon_amount_per_period(nominal: float, bond: BondStatic) -> float:
     return nominal * bond.coupon_rate / bond.coupon_frequency
 
 
+def coupon_dates_between(bond: BondStatic, start: date, end: date) -> list[date]:
+    """Coupon payment dates ``c`` in the half-open interval ``start < c <= end``.
+
+    The half-open interval mirrors the daily-P&L stepping in ``history.py``: a
+    coupon detaches (accrued interest resets to ~0) on the first business day
+    whose prior-day boundary the coupon date has crossed. Recognising the coupon
+    cash on exactly that step lets the coupon income offset the drop in the
+    accrued mark, so a long position never shows a spurious negative carry on a
+    coupon date. Non-coupon-bearing bonds have no payment events.
+    """
+    if not bond.coupon_frequency:
+        return []
+    return [d for d in _coupon_dates(bond) if start < d <= end]
+
+
 def upcoming_coupons(
     positions: dict[str, Position],
     bonds_static: dict[str, BondStatic],

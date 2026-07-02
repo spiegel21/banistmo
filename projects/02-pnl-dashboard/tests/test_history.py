@@ -35,6 +35,21 @@ def test_daily_total_equals_components():
     assert (recon == df["total_pnl"]).all()
 
 
+def test_coupon_cash_folded_into_accrued_on_coupon_date():
+    # UST 912828XY9 (first_coupon 2024-09-20, semi-annual) pays on 2025-03-20.
+    # IG holds 2M SOD → coupon = 2_000_000 * 0.03 / 2 = 30_000. No price history
+    # exists for that day, so the accrued mark change is absent and the accrued
+    # line is exactly the coupon cash — the coupon is folded into `accrued`, not
+    # booked as its own component, and it flows through to total_pnl.
+    df = compute_daily_pnl(date(2025, 3, 19), date(2025, 3, 20), portfolio="IG")
+    d320 = df[df["date"] == "2025-03-20"]
+    d319 = df[df["date"] == "2025-03-19"]
+    assert d320["accrued"].sum() == pytest.approx(2_000_000 * 0.03 / 2, abs=1)
+    assert d320["total_pnl"].sum() == pytest.approx(2_000_000 * 0.03 / 2, abs=1)
+    # No coupon on the prior day → accrued carries no coupon jump there.
+    assert d319["accrued"].fillna(0).sum() == pytest.approx(0.0, abs=1)
+
+
 def test_price_pnl_is_daily_clean_price_change():
     # On Mar 3: SOD nominal = 1.8M (before the sell), prev close = 100.3, today close = 100.5
     # price_pnl = 1_800_000 * (100.5 - 100.3) / 100 = 3_600

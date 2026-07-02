@@ -1119,6 +1119,7 @@ with tab_mtm:
             f"Cost Px = WAVG purchase price.  Prev Px = {_prev_day} close.  "
             f"Px Change = today vs prev.  Vs Cost = today vs cost basis.  "
             f"Dirty Px = Clean Px + Accrued %.  MTM Value = Nominal × Dirty Px / 100.  "
+            f"Accrued P&L includes coupon cash received in the range.  "
             f"Unrealized P&L = Valuation + Accrued P&L.  Net P&L = Unrealized P&L + Realized.  "
             f"P&L columns = sum from {mtm_start} to {mtm_end}. Positions as of {mtm_end}."
         )

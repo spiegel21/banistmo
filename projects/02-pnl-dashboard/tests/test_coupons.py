@@ -5,6 +5,7 @@ import pytest
 
 from accruals import (
     next_coupon_date, coupon_amount_per_period, upcoming_coupons,
+    coupon_dates_between,
 )
 from models import BondStatic, Position
 
@@ -55,3 +56,19 @@ def test_upcoming_coupons_window_and_sign():
 def test_upcoming_coupons_empty_when_no_positions():
     cal = upcoming_coupons({}, {}, date(2026, 1, 1), date(2026, 12, 31))
     assert cal.empty
+
+
+def test_coupon_dates_between_is_half_open():
+    b = _bond()  # coupons on Jun 15 / Dec 15
+    # (start, end]: the start boundary is exclusive, the end boundary inclusive,
+    # so a coupon landing exactly on `end` is booked and one on `start` is not.
+    assert coupon_dates_between(b, date(2026, 6, 14), date(2026, 6, 15)) == [date(2026, 6, 15)]
+    assert coupon_dates_between(b, date(2026, 6, 15), date(2026, 6, 16)) == []
+    # A weekend-spanning business-day step captures a coupon dated on the weekend.
+    assert coupon_dates_between(b, date(2026, 6, 12), date(2026, 6, 15)) == [date(2026, 6, 15)]
+    # No coupon in a mid-period interval.
+    assert coupon_dates_between(b, date(2026, 7, 1), date(2026, 8, 1)) == []
+
+
+def test_coupon_dates_between_none_for_zero_coupon():
+    assert coupon_dates_between(_bond(coupon_frequency=0), date(2026, 1, 1), date(2026, 12, 31)) == []
