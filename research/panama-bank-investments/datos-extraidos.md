@@ -60,34 +60,44 @@ Notas:
 
 Fuente: IN-A 2024 (Nota 7, auditado) + Interino 30-sep-2025 (Nota 7, no auditado).
 
-| Métrica | Dic-2023 | Dic-2024 | Sep-2025 | Conf. |
-|---|---|---|---|---|
-| Inversiones en valores, neto | 1,459,161,128 | **1,548,786,610** | **1,620,459,320** | [AUD] |
-| — FVTPL (VRCR) | 172,580,394 (11.8%) | 530,775,476 (34.3%) | 591,503,419 (36.5%) | [AUD] |
-| — FVOCI (ORI) | 737,469,973 (50.5%) | 435,323,046 (28.1%) | 359,088,904 (22.2%) | [AUD] |
-| — Costo amortizado | 549,110,761 (37.6%) | 582,688,088 (37.6%) | 669,866,997 (41.3%) | [AUD] |
-| Activo total | n/d | 10,471.8 | ~10,511 | [AUD] |
-| % inversiones / activo | | **14.8%** | ~15.4% | [EST] |
+Fuente: **IN-A / EE.FF. Consolidados 2025 (Dic-2025, AUDITADO)**, Nota 7, p.85-87; activo p.10.
 
-**Composición por instrumento (Dic-2024, bruto por buckets):** [AUD]
-- **US Treasuries (Bonos EEUU):** 346.2M (FVTPL) + 37.2M (FVOCI) = **383.4M (~24.8%)**
-- **Soberano Panamá:** 132.0M (FVTPL) + 291.2M (FVOCI) = **423.3M (~27%)** + soberanos 26.3M (CA)
-- **Corporativos:** 24.7M (FVTPL) + 40.9M (FVOCI) + 565.8M (CA bruto) = **631.4M (~40%)**
-- Otros soberanos (Alemania, Rep.Dom, Colombia, Chile, México, Costa Rica): ~46M
-- Patrimonio/acciones: 7.4M (FVTPL) + 36.9M (FVOCI) = 44.3M
+| Métrica | Dic-2023 | Dic-2024 | Dic-2025 (aud.) | Conf. |
+|---|---|---|---|---|
+| Inversiones en valores, neto | 1,459,161,128 | 1,548,786,610 | **1,689,230,275** | [AUD] |
+| — FVTPL (VRCR) | 172,580,394 (11.8%) | 530,775,476 (34.3%) | 625,714,847 (37.0%) | [AUD] |
+| — FVOCI (ORI) | 737,469,973 (50.5%) | 435,323,046 (28.1%) | 328,871,417 (19.5%) | [AUD] |
+| — Costo amortizado | 549,110,761 (37.6%) | 582,688,088 (37.6%) | 734,644,011 (43.5%) | [AUD] |
+| Activo total | n/d | 10,471.8 | 10,570,213,274 | [AUD] |
+| % inversiones / activo | | 14.8% | **16.0%** | [EST] |
+
+(Interino Sep-2025 no auditado, para referencia: total 1,620,459,320; FVTPL 591.5M / FVOCI 359.1M / CA 669.9M.)
+
+**Composición por instrumento (Dic-2025 auditado, bruto por buckets):** [AUD]
+- **Corporativos:** 11.0M (FVTPL) + 10.4M (FVOCI) + **715.7M (CA)** = **737.1M (~43.6%)** — el 96% en costo
+  amortizado (held-to-maturity), por eso casi no se ve en las tablas de valor razonable/trading.
+- **Soberano Panamá:** 257.2M (FVTPL) + 253.8M (FVOCI) = **511.1M (~30.3%)** (+ soberanos 29.0M en CA)
+- **US Treasuries (Bonos EEUU):** 321.9M (FVTPL) + 8.0M (FVOCI) = **329.9M (~19.5%)**
+- Otros soberanos (México, Colombia, Costa Rica, Rep.Dom, Alemania, Chile) + CERPANES: ~59M
+- Patrimonio/acciones: 0 (FVTPL) + 32.8M (FVOCI) = 32.8M (~1.9%)
 - **Sin MBS** (solo bonos y acciones).
+
+**Verificación del ~40% corporativo (pregunta recurrente):** leído verbatim de la Nota 7.3, línea
+"Bonos corporativos": 715,722,265 (Dic-2025) / 565,776,724 (Dic-2024). Las tres categorías (FVTPL/FVOCI/CA)
+son mutuamente excluyentes → no hay doble conteo. Corporativo = 40.8% (Dic-24) → 41.9% (Sep-25) → 43.6% (Dic-25),
+**subiendo**. Alto porque el grueso es papel held-to-maturity a costo amortizado, invisible en vistas de trading.
 
 **Riesgo / duración (reporte S&P anexo al IN-A, dato a sep-2024):** [AUD cualit.]
 - **Duración promedio del portafolio: 2.5 años.** VaR sobre patrimonio < 1%.
-- Deuda pública Panamá + EEUU ≈ 50% del total (coincide con agregado: US 383M + Panamá 423M ≈ 52%).
+- Deuda pública Panamá + EEUU ≈ 50% del total (a Dic-2025: US 330M + Panamá 511M = 841M ≈ 50%).
 
-- **Ingreso por intereses de inversiones (2024, individual SBP):** 64.19 → **yield ≈ 4.3%**
-  = 64.19 / prom(1,459.2 ; 1,548.8). [EST] (ingreso individual vs. saldo consolidado → aprox.)
-- **Hallazgo estructural:** giro a *trading* pronunciado — FVTPL 11.8% (2023) → 34.3% (2024) → 36.5%
-  (sep-2025); FVOCI 50.5% → 22.2%. El más "trading" del perímetro.
+- **Ingreso por intereses de inversiones (2024, individual SBP):** 64.19 → **yield ≈ 4.3%** [EST]
+  (el EE.FF. consolidado 2025 no desglosa el ingreso por inversiones aparte; se mantiene la base 2024 individual).
+- **Hallazgo estructural:** giro a *trading + held-to-maturity* — FVTPL 11.8% (2023) → 34.3% (2024) → 37.0%
+  (Dic-2025); FVOCI 50.5% → 19.5%; costo amortizado 37.6% → 43.5%. El más "trading" del perímetro por FVTPL,
+  y a la vez el que más creció su libro a costo amortizado.
 - Banistmo **no publica** escalera de vencimientos ni tabla de ratings de cartera en la Nota 7
   (la duración proviene del reporte de la calificadora). [PEND emisor]
-- FY2025 anual (IN-A 2025) aún no publicado (esperado ~mar-2026).
 
 ---
 
@@ -262,10 +272,10 @@ Detalle de brackets leído de la fuente (US$, 2025 salvo Scotia oct-24):
   a costo amortizado 253.9M.) [AUD]
 - **Scotiabank:** VRCOUI AA+ a A 176.6 (los **UST**) · BBB+ a BBB- 142.2; CA AA+ a A− 23.9 · *BBB+ a BB+ 28.5*
   (*bracket frontera que cruza IG/sub-IG; contado aquí como sub-grado, conservador). Cartera casi íntegra IG. [AUD]
-- **Banistmo (inferido):** sin tabla de ratings en la Nota 7. Anclas verificables: **UST 383M ≈ AA+ (~25%)**,
-  Panamá 423M (frontera BBB-/BB+, ~27%), y ~40% **corporativo sin desglose de rating** (631M, emisores no
-  nombrados) → **no colapsable a IG/sub-IG sin especular**. S&P (anexo IN-A): deuda pública Panamá+EEUU ~50%,
-  duración 2.5a. [EST]
+- **Banistmo (inferido, Dic-2025):** sin tabla de ratings en la Nota 7. Anclas verificables: **UST 330M ≈ AA+
+  (~19.5%)**, Panamá 511M (frontera BBB-/BB+, ~30%), y ~44% **corporativo sin desglose de rating** (737M,
+  emisores no nombrados) → **no colapsable a IG/sub-IG sin especular**. S&P (anexo IN-A): deuda pública
+  Panamá+EEUU ~50%, duración 2.5a. [EST]
 
 **Caveat de comparabilidad — la línea IG/sub-IG depende de cómo cada banco trata el papel de Panamá.**
 Panamá quedó en frontera (S&P BBB, Fitch BB+ desde mar-2024, Moody's Baa3): BG y BAC lo clasifican como
@@ -279,26 +289,26 @@ sí es robusto.
 ## Resumen para gráficos del reporte
 
 **Tamaño cartera (último disponible):**
-BG 5,968.3 (Dic-25) · BAC 4,989.8 (Dic-25, CA) · Banistmo 1,620.5 (Sep-25) · Davivienda 1,248.5 (Dic-25) ·
+BG 5,968.3 (Dic-25) · BAC 4,989.8 (Dic-25, CA) · Banistmo 1,689.2 (Dic-25, aud.) · Davivienda 1,248.5 (Dic-25) ·
 Global 1,136.6 (jun-25) · Scotiabank 371.3 (oct-24, absorbido).
 
 **% inversiones / activo:**
-BG 28.6% · Davivienda 23.4% · Sistema (CBI) 21.6% · Banistmo 14.8% · Global 13.4% · BAC 12.3% · Scotia 9.7%.
+BG 28.6% · Davivienda 23.4% · Sistema (CBI) 21.6% · Banistmo 16.0% · Global 13.4% · BAC 12.3% · Scotia 9.7%.
 
 **Yield estimado:**
 BAC 5.9% · BG 5.0% · Banistmo 4.3% · Global 4.2% · Scotiabank 4.1% · Davivienda 4.05%.
 
 **Clasificación contable (% FVTPL / FVOCI / CA, último):**
-- Banistmo (Sep-25): 36.5 / 22.2 / 41.3 → **el más trading**
+- Banistmo (Dic-25 aud.): 37.0 / 19.5 / 43.5 → **el más trading** (FVTPL) y libro CA creciendo
 - BG (Dic-25): 15.8 / 84.2 / 0.05 → casi todo FVOCI
 - BAC (Dic-25): 0.9 / 95.3 / 3.8 → casi todo AFS
 - Global (jun-25): 6.1 / 59.3 / 33.8
 - Davivienda (Dic-25): 0.5 / 79.2 / 20.3
 - Scotiabank (oct-24): 0 / 85.9 / 14.1
 
-**Instrumentos — mapa definitivo:**
+**Instrumentos — mapa definitivo (último cierre de cada banco):**
 - **MBS/CMO:** SOLO Banco General (~3,056M, ~51%, agency GNMA/FNMA/FHLMC). Ningún otro banco los divulga.
-- **US Treasuries:** Scotiabank 176M (47%) · Banistmo 383M (25%) · BAC 703M gob-EEUU (14%) · BG 130M+ explícito.
+- **US Treasuries:** Scotiabank 176M (47%) · Banistmo 330M (19.5%, Dic-25) · BAC 703M gob-EEUU (14%) · BG 130M+ explícito.
   Global y Davivienda no los separan por país.
 - **Núcleo soberano local/regional:** BAC (Centroamérica), Davivienda (gob.), Banistmo y Global (Panamá + LatAm).
-- **Corporativo:** peso relevante en Banistmo (~40%) y Banco General (~35% ex-MBS).
+- **Corporativo:** peso relevante en Banistmo (**~44%, Dic-25**, casi todo held-to-maturity) y Banco General (~35% ex-MBS).
