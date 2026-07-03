@@ -96,8 +96,8 @@ son mutuamente excluyentes → no hay doble conteo. Corporativo = 40.8% (Dic-24)
 - **Hallazgo estructural:** giro a *trading + held-to-maturity* — FVTPL 11.8% (2023) → 34.3% (2024) → 37.0%
   (Dic-2025); FVOCI 50.5% → 19.5%; costo amortizado 37.6% → 43.5%. El más "trading" del perímetro por FVTPL,
   y a la vez el que más creció su libro a costo amortizado.
-- Banistmo **no publica** escalera de vencimientos ni tabla de ratings de cartera en la Nota 7
-  (la duración proviene del reporte de la calificadora). [PEND emisor]
+- Banistmo **sí publica** la tabla de ratings de la cartera (nota de riesgo, pp.66-67), aunque **no** una
+  escalera de vencimientos de inversiones (la duración ~2.5a proviene del reporte de la calificadora). [AUD/PEND]
 
 ---
 
@@ -258,7 +258,7 @@ Fuente: nota de riesgo de crédito de cada EE.FF. auditado (montos verificados y
 | Global Bank (jun-25) | toda la cartera | 562.5 (49.7%) | 186.1 (16.4%) | **383.8 (33.9%)** | 1,132.3 |
 | Davivienda (Dic-25) | VRCOUI+VRCR (excl. CA 253.9M) | 437.4 (44.3%) | **549.1 (55.6%)** | 1.8 (0.2%) | 988.3 |
 | Scotiabank (Oct-24) | toda la cartera | **342.7 (92.3%)** | 28.5 (7.7%)* | 0 | 371.3 |
-| Banistmo (Dic-24) | **no divulga tabla** — inferido por emisor | ver nota ↓ | | | 1,548.8 |
+| Banistmo (Dic-25) | toda la cartera (nota de riesgo) | 924.9 (54.8%) | 710.7 (42.1%) | 53.7 (3.2%) | 1,689.2 |
 
 Detalle de brackets leído de la fuente (US$, 2025 salvo Scotia oct-24):
 - **Banco General:** AAA→AA+ 3,334.0 · AA→BBB- 1,202.0 · <BBB- 1,395.1 · NR 0.05. El bucket <BBB- es
@@ -272,17 +272,18 @@ Detalle de brackets leído de la fuente (US$, 2025 salvo Scotia oct-24):
   a costo amortizado 253.9M.) [AUD]
 - **Scotiabank:** VRCOUI AA+ a A 176.6 (los **UST**) · BBB+ a BBB- 142.2; CA AA+ a A− 23.9 · *BBB+ a BB+ 28.5*
   (*bracket frontera que cruza IG/sub-IG; contado aquí como sub-grado, conservador). Cartera casi íntegra IG. [AUD]
-- **Banistmo (inferido, Dic-2025):** sin tabla de ratings en la Nota 7. Anclas verificables: **UST 330M ≈ AA+
-  (~19.5%)**, Panamá 511M (frontera BBB-/BB+, ~30%), y ~44% **corporativo sin desglose de rating** (737M,
-  emisores no nombrados) → **no colapsable a IG/sub-IG sin especular**. S&P (anexo IN-A): deuda pública
-  Panamá+EEUU ~50%, duración 2.5a. [EST]
+- **Banistmo (Dic-2025):** SÍ divulga la tabla de ratings de la cartera — en la **nota de administración de
+  riesgos (calidad de cartera, pp.66-67)**, no en la Nota 7. Brackets propios (AA-/AA+, A-/A+, BBB+/BBB-,
+  BB+ y menos, Sin calif.), cobertura de TODA la cartera, reconciliada exactamente con el total. Grado inversión
+  924.9M (54.8%), sub-grado 710.7M (42.1%), sin calif. 53.7M (3.2%). El sub-grado es casi todo **Panamá soberano
+  (BB+): ~567M**; buena parte del corporativo a costo amortizado es IG (AA/A: 134.6M + 338.9M). [AUD]
 
 **Caveat de comparabilidad — la línea IG/sub-IG depende de cómo cada banco trata el papel de Panamá.**
-Panamá quedó en frontera (S&P BBB, Fitch BB+ desde mar-2024, Moody's Baa3): BG y BAC lo clasifican como
-**sub-grado (<BBB-/BB+)**, Global lo deja **sin calificación internacional**, y Scotiabank lo trata como **IG
-(BBB)**. Por eso el % "grado de inversión" no es 1:1 entre bancos; el orden cualitativo (BG y Scotia = cartera
-de alta calidad; BAC y Davivienda = grueso sub-grado por soberanos regionales; Global = un tercio sin rating)
-sí es robusto.
+Panamá quedó en frontera (S&P BBB, Fitch BB+ desde mar-2024, Moody's Baa3): BG, BAC y **Banistmo** clasifican su
+papel panameño como **sub-grado (<BBB-/BB+)**, Global lo deja **sin calificación internacional**, y Scotiabank lo
+trata como **IG (BBB)**. Por eso el % "grado de inversión" no es 1:1 entre bancos; el orden cualitativo (BG y
+Scotia = cartera de alta calidad; Banistmo y Global = mitad IG; BAC y Davivienda = grueso sub-grado por soberanos
+regionales) sí es robusto. En Banistmo, el 42% sub-grado es casi todo Panamá soberano (~567M en BB+).
 
 ---
 
