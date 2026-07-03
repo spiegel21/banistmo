@@ -1,0 +1,16 @@
+# Dominios a habilitar en Network access → Custom → Allowed domains
+# (marcar tambien "Also include default list of common package managers")
+# El "*." es comodin de subdominio.
+*.bgeneral.com
+bgpaazspubst01.blob.core.windows.net
+*.baccredomatic.com
+assets.ctfassets.net
+*.banistmo.com
+*.globalbank.com.pa
+*.davibank.pa
+*.scotiabank.com
+*.superbancos.gob.pa
+*.supervalores.gob.pa
+files.latinexbolsa.com
+*.moodyslocal.com.pa
+*.fitchratings.com
