@@ -234,6 +234,48 @@ Fuente: EE.FF. FY2024 (31-oct-2024, Nota 8), con comparativo oct-2023. Último a
 
 ---
 
+## Distribución por calificación — normalizada (para comparabilidad)
+
+Cada banco publica su tabla de ratings con **cortes de letra y coberturas distintas**, así que se
+colapsan a tres brackets comparables sobre la **cartera calificada divulgada** de cada uno:
+**Grado de inversión (AAA→BBB-)** · **Sub-grado / monitoreo estándar (BB+ a B-)** · **Sin calificación (NR)**.
+Fuente: nota de riesgo de crédito de cada EE.FF. auditado (montos verificados y reconciliados con el total).
+
+| Banco (fecha) | Cobertura de la tabla | Grado inversión (AAA→BBB-) | Sub-grado (BB+ a B-) | Sin calif. | Total calificado |
+|---|---|---|---|---|---|
+| Banco General (Dic-25) | deuda (excl. acciones 37M) | **4,536.0 (76.5%)** | 1,395.1 (23.5%) | 0.05 (~0%) | 5,931.2 |
+| BAC (Dic-25) | bonos VRCR+VRCOUI+CA | 1,626.4 (32.7%) | **3,340.5 (67.3%)** | 0 | 4,966.8 |
+| Global Bank (jun-25) | toda la cartera | 562.5 (49.7%) | 186.1 (16.4%) | **383.8 (33.9%)** | 1,132.3 |
+| Davivienda (Dic-25) | VRCOUI+VRCR (excl. CA 253.9M) | 437.4 (44.3%) | **549.1 (55.6%)** | 1.8 (0.2%) | 988.3 |
+| Scotiabank (Oct-24) | toda la cartera | **342.7 (92.3%)** | 28.5 (7.7%)* | 0 | 371.3 |
+| Banistmo (Dic-24) | **no divulga tabla** — inferido por emisor | ver nota ↓ | | | 1,548.8 |
+
+Detalle de brackets leído de la fuente (US$, 2025 salvo Scotia oct-24):
+- **Banco General:** AAA→AA+ 3,334.0 · AA→BBB- 1,202.0 · <BBB- 1,395.1 · NR 0.05. El bucket <BBB- es
+  casi todo **papel local de Panamá** (local <BBB- 1,034.2). [AUD]
+- **BAC:** VRCOUI gob AA+ 728.3 · BBB 5.6 · BBB- 653.3 · **BB+ a B- 2,967.6**; corp IG 239.1 · corp BB+ a B-
+  159.1; CA gob BB+ a B- 64.7 · CA corp BB+ a B- 123.2; VRCR BB 25.9. El grueso sub-grado son **soberanos
+  de Centroamérica**. [AUD]
+- **Global Bank:** grado inversión 562.5 · monitoreo estándar (BB+ a B-) 186.1 · **sin calif. internacional
+  383.8**. El 34% sin calificar es papel local sin rating internacional. [AUD]
+- **Davivienda:** gob AAA→AA− 397.4 · A 8.0 · BBB 32.0 · **BB 549.1** · NR 1.8. (La tabla no cubre el bucket
+  a costo amortizado 253.9M.) [AUD]
+- **Scotiabank:** VRCOUI AA+ a A 176.6 (los **UST**) · BBB+ a BBB- 142.2; CA AA+ a A− 23.9 · *BBB+ a BB+ 28.5*
+  (*bracket frontera que cruza IG/sub-IG; contado aquí como sub-grado, conservador). Cartera casi íntegra IG. [AUD]
+- **Banistmo (inferido):** sin tabla de ratings en la Nota 7. Anclas verificables: **UST 383M ≈ AA+ (~25%)**,
+  Panamá 423M (frontera BBB-/BB+, ~27%), y ~40% **corporativo sin desglose de rating** (631M, emisores no
+  nombrados) → **no colapsable a IG/sub-IG sin especular**. S&P (anexo IN-A): deuda pública Panamá+EEUU ~50%,
+  duración 2.5a. [EST]
+
+**Caveat de comparabilidad — la línea IG/sub-IG depende de cómo cada banco trata el papel de Panamá.**
+Panamá quedó en frontera (S&P BBB, Fitch BB+ desde mar-2024, Moody's Baa3): BG y BAC lo clasifican como
+**sub-grado (<BBB-/BB+)**, Global lo deja **sin calificación internacional**, y Scotiabank lo trata como **IG
+(BBB)**. Por eso el % "grado de inversión" no es 1:1 entre bancos; el orden cualitativo (BG y Scotia = cartera
+de alta calidad; BAC y Davivienda = grueso sub-grado por soberanos regionales; Global = un tercio sin rating)
+sí es robusto.
+
+---
+
 ## Resumen para gráficos del reporte
 
 **Tamaño cartera (último disponible):**
