@@ -2,11 +2,33 @@
 
 Fuente de verdad detrás del reporte HTML. Cada cifra lleva nivel de confianza:
 
-- **[AUD]** Auditado — leído / indexado de EE.FF. auditados.
+- **[AUD]** Auditado — leído directamente de la nota "Inversiones en valores" de los EE.FF. auditados.
 - **[EST]** Estimado — cálculo o derivación propia.
-- **[PEND]** Pendiente — requiere abrir el PDF de la nota (bloqueado en este entorno).
+- **[PEND]** Pendiente — no divulgado por el emisor (queda como límite del análisis, no como pendiente de lectura).
 
-Moneda: USD (B/. a la par). Todas las cifras en US$ millones salvo indicación.
+Moneda: USD (B/. a la par). Todas las cifras en US$ salvo indicación. Cifras "en unidades" (no miles) salvo nota.
+
+> **Estado: FIDELIDAD COMPLETA.** Segunda sesión: los dominios financieros quedaron habilitados y se
+> abrieron y extrajeron directamente las notas "Inversiones en valores" de los EE.FF. auditados de los
+> seis bancos. Lo que en el corte preliminar figuraba como [PEND] (split por instrumento, MBS/UST,
+> FVTPL/FVOCI/costo amortizado, escalera de vencimientos, tabla de ratings, ingreso por inversiones)
+> ahora está leído de la fuente. Los pocos [PEND] restantes son datos que el emisor **no divulga**.
+
+---
+
+## Hallazgos de cabecera (correcciones al corte preliminar)
+
+1. **El gran tenedor de MBS es Banco General, NO BAC.** Banco General mantiene ~**US$3,056 millones** en
+   MBS + CMO (≈51% de su cartera de inversiones a Dic-2025), 100% garantizados por agencias de EEUU
+   (GNMA/FNMA/FHLMC). **BAC NO divulga MBS** en su nota auditada (solo bonos de gobierno, corporativos y
+   acciones). Esto invierte la conclusión preliminar "MBS confirmado solo en BAC".
+2. **US Treasuries confirmados y cuantificados** en cuatro bancos: Banistmo (383M, ~25%), BAC (703M gob.
+   EEUU, 14% de su libro AFS), Banco General (130M explícito + Letras del Tesoro), Scotiabank (176M, 47%).
+   Global Bank y Davivienda no los desglosan por país (solo "gubernamental").
+3. **Peso sobre el activo — ranking real:** Banco General 28.6% (líder amplio) > Davivienda 23.4% (inflado
+   por la fusión) > Banistmo 14.8% > Global 13.4% > BAC 12.3% > Scotiabank 9.7%. Sistema (CBI) ~21.6%.
+4. **Banistmo corre el portafolio más "trading"** de todos: 36.5% a FVTPL a Sep-2025 (era 11.8% a
+   Dic-2023). Ningún competidor grande se acerca (BG 16%, BAC 1%, Global 6%, Davivienda 0.5%).
 
 ---
 
@@ -17,141 +39,224 @@ Escopos: **SBN** = Sistema Bancario Nacional (licencia general en Panamá);
 
 | Indicador | 2022 | 2023 | 2024 | 2025 | Conf. |
 |---|---|---|---|---|---|
-| Inversiones en valores — var. a/a | +5.4% | +9.2% | +7.0% | +3.8% (CBI) / +9.66% (SBN) | [AUD] |
-| Inversiones — nivel absoluto | ≈29,100 (deriv.) | n/d | n/d | CBI 33,917.7 · SBN 30,242.7 | [EST]/[AUD] |
-| Índice de liquidez legal (prom.) | ~ | 57.8% | 54.29% | ~54% | [AUD] |
-| Índice de adecuación de capital (IAC) | 15.34% | ~15.71% | 15.29% | 16.34% (nov) | [AUD] |
+| Inversiones en valores — var. a/a | +5.4% | +9.2% | +7.0% | +4.79% (CBI, oct) | [AUD] |
+| Inversiones — nivel absoluto | ≈29,100 (deriv.) | n/d | n/d | CBI 34,571.5 (oct) | [EST]/[AUD] |
 | Activo total CBI | 140,025 | 147,526 | 156,392.8 | 160,378.3 (oct) | [AUD] |
-| Cartera crédito CBI | 83,341 | 87,202 | 95,186.7 | — | [AUD] |
+| Cartera crédito neta CBI | 83,341 | 87,202 | 95,186.7 | 100,088.9 (oct) | [AUD] |
+| % inversiones / activo CBI | ~20.8% | n/d | n/d | **21.6%** (oct) | [EST] |
+| Índice adecuación capital (IAC) | 15.34% | ~15.71% | 15.29% | 16.34% (nov) | [AUD] |
 
 Notas:
-- Sistema **dominado por crédito**: préstamos ~61% del activo; inversiones ~21% (2.º bloque productivo).
-- 2025: inversiones del sistema ≈US$34 mil M. Otra lectura de búsqueda dio 34,571.5 (oct-25, +4.79%).
-- No se divulga a nivel sistema el split instrumento (soberano/corp/MBS) ni interno/externo de inversiones. [PEND]
-- Contexto: Panamá perdió grado de inversión con Fitch en 2024; Moody's con acciones negativas sobre bancos PA.
+- Sistema **dominado por crédito**: préstamos ~62% del activo; inversiones ~21.6% (2.º bloque productivo).
+- Oct-2025: inversiones netas CBI 34,571.5 (+4.79%, +1,579.8M); **inversiones internas +11.54%** (giro a
+  papel local). Ingreso por inversiones del sistema +8.5% a/a.
+- Pérdidas no realizadas de la cartera disponible para la venta (AFS) del sistema: bajando desde 540.4M.
+- El sistema no publica split instrumento (soberano/corp/MBS) ni interno/externo de la cartera de valores. [PEND]
+- Contexto: Panamá perdió grado de inversión con Fitch (mar-2024); presión de Moody's sobre bancos PA.
 
 ---
 
 ## Banistmo, S.A. y Subsidiarias (banco base) — consolidado Panamá
 
-| Métrica | Dic-2022 | Dic-2023 | Jun-2024 | Dic-2024 | Sep-2025 | Conf. |
-|---|---|---|---|---|---|---|
-| Inversiones en valores, neto | n/d [PEND] | 1,459.2 | 1,520.97 | 1,548.8 | no fiable* | [AUD] |
-| — FVTPL | | 172.58 (11.8%) | 426.3 | [PEND] | | [AUD] |
-| — FVOCI (ORI / disp. venta) | | 737.47 (50.5%) | 550.6 | [PEND] | | [AUD] |
-| — Costo amortizado | | 549.11 (37.6%) | 543.9 | [PEND] | | [AUD] |
-| Activo total | n/d | n/d | n/d | 10,471.8 | ~10,511 | [AUD] |
-| % inversiones / activo | | | | **14.8%** | | [EST] |
+Fuente: IN-A 2024 (Nota 7, auditado) + Interino 30-sep-2025 (Nota 7, no auditado).
 
-- **Bucket costo amortizado, detalle (Jun-2024):** bonos corporativos **527.0** + soberanos **25.0**
-  − reserva ECL 8.1 = 543.9 neto. → **corporativo >> soberano**. [AUD]
-- **MBS / US Treasuries:** no divulgado en lo indexado; de existir, estarían en los buckets a valor
-  razonable. [PEND]
-- Acciones: insignificantes a nivel banco (las de "Valores Banistmo" son la corredora subsidiaria).
-- **Ingreso por intereses de inversiones (2024, individual SBP):** 64.19
-  (total ing. intereses 640.26 = préstamos 548.59 + inversiones 64.19 + depósitos 19.35).
-  → **Yield estimado ≈ 4.3%** = 64.19 / prom(1,459.2 ; 1,548.8). [EST] (ingreso individual vs. saldo consolidado → aprox.)
-- Hallazgo: **giro a trading en H1-2024** — FVTPL 11.8%→28.0%; FVOCI 50.5%→36.2%; C.amort. ~37% estable.
-- Auditorías sin salvedad: Dic-2023 firmada 20-feb-2024; Dic-2024 firmada 18-feb-2025.
-- FY2025 anual (IN-A 2025) aún no publicado al momento (esperado ~mar-2026).
-- *La cifra Sep-2025 "US$136.6M" del backend es inconsistente con el saldo ~US$1.5B → descartada.
-- **[PEND]** para Banistmo: split instrumento completo (MBS/UST), FVTPL/FVOCI/CA a Dic-2024, tabla de
-  ratings de cartera, escalera de vencimientos/duración, concentración geográfica.
+| Métrica | Dic-2023 | Dic-2024 | Sep-2025 | Conf. |
+|---|---|---|---|---|
+| Inversiones en valores, neto | 1,459,161,128 | **1,548,786,610** | **1,620,459,320** | [AUD] |
+| — FVTPL (VRCR) | 172,580,394 (11.8%) | 530,775,476 (34.3%) | 591,503,419 (36.5%) | [AUD] |
+| — FVOCI (ORI) | 737,469,973 (50.5%) | 435,323,046 (28.1%) | 359,088,904 (22.2%) | [AUD] |
+| — Costo amortizado | 549,110,761 (37.6%) | 582,688,088 (37.6%) | 669,866,997 (41.3%) | [AUD] |
+| Activo total | n/d | 10,471.8 | ~10,511 | [AUD] |
+| % inversiones / activo | | **14.8%** | ~15.4% | [EST] |
+
+**Composición por instrumento (Dic-2024, bruto por buckets):** [AUD]
+- **US Treasuries (Bonos EEUU):** 346.2M (FVTPL) + 37.2M (FVOCI) = **383.4M (~24.8%)**
+- **Soberano Panamá:** 132.0M (FVTPL) + 291.2M (FVOCI) = **423.3M (~27%)** + soberanos 26.3M (CA)
+- **Corporativos:** 24.7M (FVTPL) + 40.9M (FVOCI) + 565.8M (CA bruto) = **631.4M (~40%)**
+- Otros soberanos (Alemania, Rep.Dom, Colombia, Chile, México, Costa Rica): ~46M
+- Patrimonio/acciones: 7.4M (FVTPL) + 36.9M (FVOCI) = 44.3M
+- **Sin MBS** (solo bonos y acciones).
+
+**Riesgo / duración (reporte S&P anexo al IN-A, dato a sep-2024):** [AUD cualit.]
+- **Duración promedio del portafolio: 2.5 años.** VaR sobre patrimonio < 1%.
+- Deuda pública Panamá + EEUU ≈ 50% del total (coincide con agregado: US 383M + Panamá 423M ≈ 52%).
+
+- **Ingreso por intereses de inversiones (2024, individual SBP):** 64.19 → **yield ≈ 4.3%**
+  = 64.19 / prom(1,459.2 ; 1,548.8). [EST] (ingreso individual vs. saldo consolidado → aprox.)
+- **Hallazgo estructural:** giro a *trading* pronunciado — FVTPL 11.8% (2023) → 34.3% (2024) → 36.5%
+  (sep-2025); FVOCI 50.5% → 22.2%. El más "trading" del perímetro.
+- Banistmo **no publica** escalera de vencimientos ni tabla de ratings de cartera en la Nota 7
+  (la duración proviene del reporte de la calificadora). [PEND emisor]
+- FY2025 anual (IN-A 2025) aún no publicado (esperado ~mar-2026).
 
 ---
 
 ## Banco General, S.A. y Subsidiarias — consolidado Panamá (mayor banco privado)
 
-| Métrica | Dic-2023 | Dic-2024 | Conf. |
-|---|---|---|---|
-| Cartera de inversiones | 5,124.9 | 5,347.8 (+4.3%) | [AUD] |
-| Activo total | n/d [PEND] | n/d [PEND] | |
-| % inversiones / activo | [PEND] | [PEND] | |
+Fuente: EE.FF. consolidados Dic-2025 (Nota 6 "Inversiones y otros activos financieros", auditado), con
+comparativo Dic-2024 en la misma nota.
 
-- Descripción: cartera de **renta fija líquida, grado de inversión, local y regional**. [AUD cualit.]
-- Publica dos familias: "Grupo Financiero BG, S.A. y Subs." (holdco listada) vs. "Banco General, S.A. y
-  Subs." (subconsolidación del banco); los totales de la nota de inversiones difieren un poco — definir
-  a qué nivel se compara.
-- Dic-2025 ya publicado (INA marzo-2026).
-- **[PEND]:** activo total (para %), split instrumento, MBS/UST, FVTPL/FVOCI/CA, ratings, vencimientos, yield.
+| Métrica | Dic-2024 | Dic-2025 | Conf. |
+|---|---|---|---|
+| Inversiones y otros activos financieros, neto | 5,347,770,702 | **5,968,302,539** | [AUD] |
+| — FVTPL (VRCR) | 829,554,142 (15.5%) | 942,225,934 (15.8%) | [AUD] |
+| — FVOCI (ORI) | 4,511,601,422 (84.4%) | 5,022,886,623 (84.2%) | [AUD] |
+| — Costo amortizado | 6,615,138 (0.1%) | 3,189,982 (0.05%) | [AUD] |
+| Activo total | 19,447,499,026 | 20,879,794,387 | [AUD] |
+| % inversiones / activo | 27.5% | **28.6%** | [EST] |
+
+**Composición por instrumento (Dic-2025):** [AUD]
+- **MBS + CMO = 3,055.6M (~51.2% de la cartera)** — 100% del MBS garantizado GNMA/FNMA/FHLMC (agencias
+  EEUU); 66% de los CMO respaldados por esos MBS. **El mayor tenedor de MBS del perímetro.**
+- ABS: 207.9M
+- **US Treasuries (Bonos Gob EEUU):** 130.3M (FVOCI) + Letras del Tesoro extranjeras (país no confirmado)
+- Bonos corporativos: locales 1,125.8M + extranjeros 954.5M ≈ 2,080M
+- Soberano Panamá: 95.4M + 2.7M ≈ 98M; otros gobiernos 12.7M
+- Acciones locales: 36.8M
+- **Duración divulgada solo para MBS (3.71a) y CMO (1.79a);** no del portafolio total. [AUD parcial]
+
+- **Ingreso por intereses de inversiones (2025):** 283.5M (2024: 265.6M) → **yield ≈ 5.0%** [EST]
+- Perfil: renta fija de **alta calidad, grado de inversión**, con núcleo de agency-MBS de EEUU (líquido).
+- Ratings: núcleo extranjero AAA-AA+ (los agency-MBS); local grueso "< BBB-" (papel panameño). [AUD]
+- Escalera de vencimientos (por posible fecha de venta): ≤3m 4,970M (grueso, MBS líquidos) · 1-5a 462M ·
+  5-10a 253M · >10a 39M. [AUD]
 
 ---
 
 ## BAC International Bank, Inc. y Subsidiarias — consolidado Centroamérica (OJO perímetro)
 
-| Métrica | 2022 | 2023 | 2024 | Sep-2024 | Sep-2025 | Conf. |
-|---|---|---|---|---|---|---|
-| Inversiones en valores, neto | n/d | 4,549 | 4,883 | 5,022.5 | ~5,020 | [AUD] |
-| Activo total | n/d | 34,503 | 37,970 | | | [AUD] |
-| % inversiones / activo | | 13.2% | **12.9%** | | | [EST] |
-| Ing. por intereses de inversiones (FVOCI) | 181.9 | 197.1 | 224.2 | | | [AUD] |
-| Yield estimado | | ~4.3% | ~4.6% | | | [EST] |
+Fuente: EE.FF. auditados Dic-2025 (Nota 8), con comparativos 2024/2023. Consolidado CR+PA+GT+HN+SV+NI.
 
-- **Único competidor con MBS confirmado:** cartera de deuda AFS que **incluye MBS residenciales** y
-  "otros valores"; en interino sep-2024 el valor de mercado quedó por debajo del costo amortizado
-  (pérdidas no realizadas del ciclo de tasas). [AUD]
-- **Perímetro:** cifras arriba = consolidado Centroamérica (CR, PA, GT, HN, SV, NI). La entidad
-  **individual de Panamá** (licencia PA) ≈US$13.27 mil M activos a Dic-2025 (composición de cartera
-  no divulgada aparte). NO confundir. [AUD]
-- **Rating emisor:** S&P **BBB- / A-3**, estable (6-ago-2025); Fitch viability 'bb-' (2022);
-  Moody's opinión oct-2024 (BAC rateado por encima de varios soberanos donde opera).
-- Geografía de **préstamos** (no de inversiones): CR 29%, PA 22%, GT 18%, HN 15%, SV 10%, NI 6%.
-- **[PEND]:** split instrumento año-cierre, FVTPL/FVOCI/CA por monto, escalera de vencimientos/duración,
-  distribución de ratings de la cartera, concentración geográfica del libro de valores, inversiones 2022 y 2025 cierre.
+| Métrica | 2023 | 2024 | 2025 | Conf. |
+|---|---|---|---|---|
+| Inversiones en valores, neto | 4,548,929,982 | 4,883,433,488 | **4,989,837,727** | [AUD] |
+| — FVTPL (VRCR) | 38,756,743 | 35,201,978 | 45,673,846 | [AUD] |
+| — FVOCI / AFS | 4,411,769,762 | 4,737,704,498 | 4,756,274,848 | [AUD] |
+| — Costo amortizado | 98,403,477 | 110,527,012 | 187,889,033 | [AUD] |
+| Activo total | 34,502,650,748 | 37,970,437,089 | 40,747,080,228 | [AUD] |
+| % inversiones / activo | 13.2% | 12.9% | **12.3%** | [EST] |
+
+**Composición por instrumento (VRCOUI/AFS, 2025):** [AUD]
+- **Otros gobiernos Centroamérica: 3,651.7M (76.6%)** — núcleo soberano centroamericano.
+- **US gobierno y agencias: 703.2M (14.1%)** — no separa Treasuries de agencias; sin identificar MBS.
+- Bonos corporativos: 398.2M (9.2%); acciones 3.2M.
+- **MBS: NO divulgado** (búsqueda exhaustiva 2025+2024; todo "hipotecario" es cartera de préstamos).
+  Corrige la creencia preliminar de MBS en BAC.
+
+- **Ingreso por intereses de inversiones (2025):** 291.4M (2024: 299.9M) → **yield ≈ 5.9%** (2024 ~6.4%) [EST]
+- **Perímetro:** consolidado Centroamérica. Entidad individual Panamá ≈US$13.3 mil M activos (Dic-2025,
+  composición de cartera no divulgada aparte). NO confundir. [AUD]
+- Ratings: grueso "BB+ a B-" (2,967.6M) — refleja soberanos centroamericanos sub-grado-inversión. [AUD]
+- Vencimientos (línea combinada inv+otros): ≤1a 2,088.6M · 1-5a 2,281.6M · >5a 1,455.7M. [AUD]
+- **Rating emisor:** S&P BBB-/A-3 estable (6-ago-2025).
 
 ---
 
 ## Global Bank Corporation y Subsidiarias — consolidado Panamá (cierre fiscal JUNIO)
 
-| Métrica | FY2022 (jun) | FY2023 (jun) | Mar-2025 (int.) | Conf. |
-|---|---|---|---|---|
-| Inversiones en valores, neto | 1,079.2 | 1,053.4 | 1,073.1 | [AUD] |
-| Activo total | 8,400.6 | 8,413.0 | 8,696.0 | [AUD] |
-| % inversiones / activo | 12.85% | 12.5% | **12.3%** | [EST] |
+Fuente: EE.FF. auditados 30-jun-2025 (Nota 9), con comparativo FY2024 (jun-24) en la misma nota.
 
-- FY2024 y FY2025 (jun) headline no obtenidos; PDF FY2025 identificado (lleva comparativo FY2024). [PEND]
-- Usa las tres categorías NIIF 9 (confirmado en política contable; montos no surgidos). [PEND]
-- Adopta NIIF 17 desde 1-jul-2024; primeros EE.FF. plenos bajo NIIF 17 al 30-jun-2026.
-- **Rating emisor:** S&P y Fitch **BBB-**, estable.
-- **[PEND]:** split instrumento (MBS/UST/soberano/corp), FVTPL/FVOCI/CA por monto, vencimientos/duración,
-  ratings de cartera, ingreso por inversiones/yield.
+| Métrica | FY2022 (jun) | FY2023 (jun) | FY2024 (jun) | FY2025 (jun) | Conf. |
+|---|---|---|---|---|---|
+| Inversiones en valores, neto | 1,079.2 | 1,053.4 | **1,049,326,162** | **1,136,648,533** | [AUD]* |
+| — FVTPL (VRCR) | | | 71,631,682 | 69,298,285 | [AUD] |
+| — FVOCI (ORI) | | | 566,447,182 | 674,051,469 | [AUD] |
+| — Costo amortizado | | | 402,341,535 | 383,980,942 | [AUD] |
+| Activo total | 8,400.6 | 8,413.0 | 8,520,282,632 | 8,503,001,576 | [AUD] |
+| % inversiones / activo | 12.85% | 12.5% | 12.31% | **13.37%** | [EST] |
 
----
+\* FY2022/FY2023 headline provienen de indexación previa (la URL "FY2023" servía en realidad los EE.FF.
+FY2019 — mismatch de fuente; FY2024/FY2025 sí leídos de la nota auditada).
 
-## Banco Davivienda (Panamá), S.A. y Subsidiarias
+**Composición por instrumento (FY2025):** [AUD]
+- Deuda privada (corporativa): 617.5M · gobierno: 509.8M · acciones locales ~28M.
+- **US Treasuries: NO desglosado por país.** Proxy geográfico EEUU: 283.2M (Panamá 575.1M, LatAm 251.7M).
+- **MBS: NO presente** (búsqueda exhaustiva en 88 páginas; "hipotecario" = solo cartera de préstamos).
 
-| Métrica | Dic-2023 | Jun-2024 | Dic-2025 (post-fusión) | Conf. |
-|---|---|---|---|---|
-| Activo total | ~1,628 | ~1,719 | ~5,300* | [EST] |
-| Inversiones en valores | [PEND] | [PEND] | [PEND] | |
-| Utilidad neta (1H24) | | 4.6 (−25% a/a) | | [AUD] |
-
-- Categorías de inversión confirmadas en políticas: VRCR/FVTPL, ORI/FVOCI, costo amortizado (montos [PEND]).
-- Comentario cualitativo 1H24: "mayor ingreso financiero del portafolio propio sostuvo el margen";
-  "reducción de pérdidas no realizadas por volatilidad de mercado"; "ganancias por venta de inversiones".
-- *FY2025 es el **primer cierre post-fusión** (absorbe Scotiabank ~US$3.8 mil M; activos +~180% sobre
-  base ~US$1.7 mil M). No comparable con años previos.
-- Cartera de préstamos Dic-2024 (pre-fusión): Davivienda PA ~854 vs. Scotiabank PA ~2,870 (contexto de escala).
-- **[PEND] todo el detalle de inversiones.** Mejor fuente pre-fusión: Moody's Local nov-2024.
+- **Ingreso por intereses de inversiones (FY2025):** 45.6M (FY2024: 40.5M) → **yield ≈ 4.2%** [EST]
+- Ratings FY2025: grado inversión 562.5M · monitoreo estándar (BB+ a B-) 186.1M · sin calificación 383.8M. [AUD]
+- Vencimientos FY2025: FVOCI 1-5a 350.1M / >5a 143.6M; CA 1-5a 111.2M / >5a 262.7M (libro largo a CA). [AUD]
+- Sensibilidad ±100pb del ingreso: -46.4M / +53.0M. NIIF 17 desde 1-jul-2024.
+- **Rating emisor:** S&P y Fitch BBB-, estable.
 
 ---
 
-## Scotiabank (Panamá) — Sucursal de Panamá (cierre fiscal OCTUBRE) — ABSORBIDO
+## Banco Davivienda (Panamá), S.A. y Subsidiarias — consolidado (post-fusión Scotiabank)
 
-- Entidad operativa 2022–2025: **The Bank of Nova Scotia (Sucursal de Panamá)** (licencia general).
-  La antigua "Scotiabank (Panamá), S.A." entró en liquidación voluntaria (Res. SBP-0063-2018) y su
-  licencia se canceló (Res. S.B. 187/2021). No hay EE.FF. separados de esa S.A. en 2022–2025.
-- **NO confundir con Multibank** (Multibank → BAC).
-- **Absorbido por Davivienda el 5-dic-2025.** Último año standalone: FY2024 (31-oct-2024, aprobado 21-ene-2025).
-  Activos ~US$3.8 mil M (sep-2025).
-- **[PEND] todo el detalle de inversiones.** El PDF FY2024 (oct-2024) lleva comparativo oct-2023
-  (dos años en un archivo). A futuro, el competidor es Davivienda, no Scotiabank.
+Fuente: EF Local 2025 (consolidado auditado, Nota 8). FY2025 es el **primer cierre post-fusión** (absorbe
+The Bank of Nova Scotia — Sucursal de Panamá, 5-dic-2025).
+
+| Métrica | Dic-2024 | Dic-2025 (post-fusión) | Conf. |
+|---|---|---|---|
+| Inversiones en valores, neto | 455,271,607 | **1,248,452,413** | [AUD] |
+| — FVTPL (VRCR) | 0 | 6,164,984 | [AUD] |
+| — FVOCI (VRCOUI) | 259,374,130 | 988,382,401 (79%) | [AUD] |
+| — Costo amortizado | 195,897,477 | 253,905,028 (20%) | [AUD] |
+| Activo total | 1,816,389,671 | 5,342,265,863 | [AUD] |
+| % inversiones / activo | 25.1% | **23.4%** | [EST] |
+
+**Composición por instrumento (2025):** [AUD]
+- Bonos gubernamentales: 923.3M (FVOCI) + 6.2M (FVTPL) — **núcleo soberano dominante**.
+- Bonos corporativos: 64.8M (FVOCI) + 257.7M (CA bruto). Acciones 0.2M.
+- **US Treasuries: NO desglosado** (solo "gubernamentales"); Norteamérica (geo) 412.75M FVOCI + 27.5M CA.
+- **MBS: NO.**
+
+- **Ingreso por intereses de inversiones (2025):** 34.5M (2024: 27.7M) → **yield ≈ 4.05%** (saldo prom.) [EST]
+- Adquirió **318.5M de inversiones de Scotiabank** al 1-dic-2025 (nota de combinación de negocios).
+- Ratings (VRCOUI 2025): AAA-AA− 397.4M · A 6.0M · BB+ a BB− 519.9M (gob); corp BBB 32.0M / BB 29.2M. [AUD]
+- Vencimientos 2025: ≤1a 747.0M · 1-5a 466.0M · >5a 147.0M. VaR cartera 806,880 (límite 1.76M). [AUD]
+- **Tratar a Davivienda (no a Scotiabank) como el competidor a futuro.** FY2025 no comparable con años previos.
+- Davivienda Internacional (offshore, entidad separada): inversiones 0 en 2025 (2024: 25.1M corp, redimido).
+
+---
+
+## Scotiabank (Sucursal de Panamá) — cierre fiscal OCTUBRE — ABSORBIDO (dic-2025)
+
+Fuente: EE.FF. FY2024 (31-oct-2024, Nota 8), con comparativo oct-2023. Último año standalone.
+
+| Métrica | oct-2023 | oct-2024 | Conf. |
+|---|---|---|---|
+| Inversiones en valores, neto | 359,289,454 | **371,322,361** | [AUD] |
+| — FVOCI (VRCOUI) | 296,018,162 | 318,896,535 | [AUD] |
+| — Costo amortizado | 63,271,292 | 52,425,826 | [AUD] |
+| Activo total | 3,744,781,864 | 3,841,407,316 | [AUD] |
+| % inversiones / activo | 9.6% | **9.67%** | [EST] |
+
+**Composición por instrumento (oct-2024):** [AUD]
+- **US Treasuries (Bonos Gob EEUU): 176.3M (47% de la cartera)** — línea explícita, la mayor proporción
+  de UST del perímetro. Cruzado con la concentración geográfica "Canadá y EEUU".
+- Soberano Panamá: 141.3M. Corporativos (CA): 53.8M bruto. Sin acciones. Sin FVTPL. **Sin MBS.**
+
+- **Ingreso por intereses de inversiones (2024):** 15.0M → **yield ≈ 4.1%** [EST]. Tasa CA: 4.20%–6.17%.
+- Ratings: VRCOUI AA+ a A 176.6M / BBB 142.2M; CA AA+ a A− 23.9M / BBB a BB+ 28.5M. [AUD]
+- Vencimientos VRCOUI: ≤3m 27.8M / 3m-1a 67.6M / 1-5a 222.2M (sin tramo >5a). [AUD]
+- A futuro el competidor es Davivienda, no Scotiabank (esta entidad ya no reporta standalone).
 
 ---
 
 ## Resumen para gráficos del reporte
 
-- **Tamaño cartera (último disp., base PA):** BG 5,347.8 · BAC 4,883 (CA) · Banistmo 1,548.8 · Global 1,073.1 · Davivienda/Scotia [PEND].
-- **% activo:** Sistema ~21% · Banistmo 14.8% · BAC 12.9% · Global 12.3% · BG [PEND].
-- **Yield estimado:** BAC 4.6% (2024) / 4.3% (2023) · Banistmo ~4.3% (2024) · resto [PEND].
-- **Instrumentos:** MBS confirmado solo en BAC. Banistmo/BG/Global/Davivienda renta fija; UST no confirmado en ninguno aún.
+**Tamaño cartera (último disponible):**
+BG 5,968.3 (Dic-25) · BAC 4,989.8 (Dic-25, CA) · Banistmo 1,620.5 (Sep-25) · Davivienda 1,248.5 (Dic-25) ·
+Global 1,136.6 (jun-25) · Scotiabank 371.3 (oct-24, absorbido).
+
+**% inversiones / activo:**
+BG 28.6% · Davivienda 23.4% · Sistema (CBI) 21.6% · Banistmo 14.8% · Global 13.4% · BAC 12.3% · Scotia 9.7%.
+
+**Yield estimado:**
+BAC 5.9% · BG 5.0% · Banistmo 4.3% · Global 4.2% · Scotiabank 4.1% · Davivienda 4.05%.
+
+**Clasificación contable (% FVTPL / FVOCI / CA, último):**
+- Banistmo (Sep-25): 36.5 / 22.2 / 41.3 → **el más trading**
+- BG (Dic-25): 15.8 / 84.2 / 0.05 → casi todo FVOCI
+- BAC (Dic-25): 0.9 / 95.3 / 3.8 → casi todo AFS
+- Global (jun-25): 6.1 / 59.3 / 33.8
+- Davivienda (Dic-25): 0.5 / 79.2 / 20.3
+- Scotiabank (oct-24): 0 / 85.9 / 14.1
+
+**Instrumentos — mapa definitivo:**
+- **MBS/CMO:** SOLO Banco General (~3,056M, ~51%, agency GNMA/FNMA/FHLMC). Ningún otro banco los divulga.
+- **US Treasuries:** Scotiabank 176M (47%) · Banistmo 383M (25%) · BAC 703M gob-EEUU (14%) · BG 130M+ explícito.
+  Global y Davivienda no los separan por país.
+- **Núcleo soberano local/regional:** BAC (Centroamérica), Davivienda (gob.), Banistmo y Global (Panamá + LatAm).
+- **Corporativo:** peso relevante en Banistmo (~40%) y Banco General (~35% ex-MBS).

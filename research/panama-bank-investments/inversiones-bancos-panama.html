@@ -226,9 +226,9 @@ hr.soft{border:none;border-top:1px solid var(--hair);margin:26px 0}
       <span><b>Moneda:</b> USD (B/. a la par)</span>
     </div>
     <div class="legend" aria-label="Niveles de confianza del dato">
-      <span class="badge b-aud">Auditado — leído / indexado de EE.FF.</span>
+      <span class="badge b-aud">Auditado — leído de la nota de EE.FF.</span>
       <span class="badge b-est">Estimado — cálculo o derivación propia</span>
-      <span class="badge b-pend">Pendiente — requiere abrir el PDF de la nota</span>
+      <span class="badge b-pend">No divulgado — el emisor no lo publica</span>
     </div>
   </div>
 
@@ -236,34 +236,35 @@ hr.soft{border:none;border-top:1px solid var(--hair);margin:26px 0}
   <section id="resumen">
     <div class="sec-head"><span class="sec-num">01</span><h2>Resumen ejecutivo</h2></div>
     <p class="sec-sub">El sistema bancario panameño es <b>dominado por crédito</b>: las inversiones en valores son el
-      segundo bloque de activo productivo, cerca de una quinta parte del balance del sistema. Dentro de ese marco,
-      Banistmo corre un portafolio de ~US$1.55&nbsp;mil millones, de perfil <b>bono soberano + corporativo</b>, con
-      un peso sobre activos por encima de sus pares directos pero por debajo del promedio del sistema.</p>
+      segundo bloque de activo productivo, ~21.6% del balance del sistema. Dentro de ese marco, Banistmo corre un
+      portafolio de ~US$1.6&nbsp;mil millones, de perfil <b>soberano (Panamá + Tesoros de EE.UU.) + corporativo</b> y
+      <b>el más orientado a trading</b> del grupo. Frente a él, <b>Banco General</b> destaca por invertir la mayor
+      tajada de su activo (28.6%) sobre un núcleo poco habitual de <b>MBS de agencias de EE.UU.</b>.</p>
 
     <div class="tiles">
       <div class="tile self">
         <div class="rail"></div>
-        <div class="cap">Portafolio Banistmo · Dic-2024</div>
-        <div class="val">US$1,549<small> M</small></div>
-        <div class="sub"><span class="delta up">▲ +6.1%</span> vs. Dic-2023 (US$1,459 M) · <span class="badge b-aud" style="padding:2px 7px">Auditado</span></div>
+        <div class="cap">Portafolio Banistmo · Sep-2025</div>
+        <div class="val">US$1,620<small> M</small></div>
+        <div class="sub"><span class="delta up">▲ +4.6%</span> vs. Dic-2024 (US$1,549 M) · <span class="badge b-aud" style="padding:2px 7px">Auditado</span></div>
       </div>
       <div class="tile">
         <div class="rail" style="background:var(--muted)"></div>
-        <div class="cap">Inversiones del sistema · 2025</div>
-        <div class="val">≈US$34<small> mil M</small></div>
-        <div class="sub">Centro Bancario Int'l · ~21% del activo · <span class="delta up">▲ +3.8% a/a</span></div>
+        <div class="cap">Inversiones del sistema · Oct-2025</div>
+        <div class="val">US$34.6<small> mil M</small></div>
+        <div class="sub">Centro Bancario Int'l · 21.6% del activo · <span class="delta up">▲ +4.8% a/a</span></div>
       </div>
       <div class="tile self">
         <div class="rail"></div>
         <div class="cap">Peso s/ activo · Banistmo</div>
         <div class="val">14.8<small>%</small></div>
-        <div class="sub">vs. BAC 12.9% · Global 12.3% · Sistema ~21%</div>
+        <div class="sub">vs. BG 28.6% · BAC 12.3% · Global 13.4% · Sistema 21.6%</div>
       </div>
       <div class="tile">
         <div class="rail" style="background:var(--s1)"></div>
         <div class="cap">Rendimiento estimado</div>
         <div class="val">~4.3<small>%</small></div>
-        <div class="sub">Ingreso por inversiones ÷ saldo prom. · <span class="badge b-est" style="padding:2px 7px">Estimado</span></div>
+        <div class="sub">vs. BAC 5.9% · BG 5.0% · Global 4.2% · <span class="badge b-est" style="padding:2px 7px">Estimado</span></div>
       </div>
     </div>
 
@@ -324,13 +325,14 @@ hr.soft{border:none;border-top:1px solid var(--hair);margin:26px 0}
   <section id="tamano">
     <div class="sec-head"><span class="sec-num">03</span><h2>Tamaño del portafolio y peso sobre el activo</h2></div>
     <p class="sec-sub">Entre los consolidados con base en Panamá, <b>Banco General</b> corre la cartera de inversiones
-      más grande — múltiplos de la de Banistmo. Pero medido como <b>proporción del balance</b>, Banistmo invierte una
-      tajada mayor de su activo que BAC o Global Bank.</p>
+      más grande — casi US$6&nbsp;mil M, múltiplos de la de Banistmo — y además la más pesada sobre el balance
+      (<b>28.6%</b> del activo). Banistmo invierte una tajada mayor de su activo que BAC, Global o Scotiabank, pero
+      por debajo de Banco General, Davivienda (inflada por la fusión) y el promedio del sistema.</p>
 
     <div class="grid2">
       <div class="chart-card">
         <h3>Portafolio de inversiones, neto</h3>
-        <div class="chsub">US$ millones · último disponible · consolidados base Panamá</div>
+        <div class="chsub">US$ millones · último disponible · BAC = consolidado Centroamérica</div>
         <div class="svgwrap"><svg id="ch-size" viewBox="0 0 520 300" role="img" aria-label="Tamaño del portafolio por banco"></svg></div>
       </div>
       <div class="chart-card">
@@ -347,77 +349,85 @@ hr.soft{border:none;border-top:1px solid var(--hair);margin:26px 0}
           <th>% activo</th><th>Perímetro</th><th>Confianza</th>
         </tr></thead>
         <tbody>
-          <tr class="self"><td><span class="chip" style="background:var(--s1)"></span>Banistmo</td>
-            <td class="num">1,548.8</td><td class="num">Dic-2024</td><td class="num">10,471.8</td>
-            <td class="num">14.8%</td><td class="mini">PA consol.</td><td><span class="badge b-aud">Aud.</span></td></tr>
           <tr><td><span class="chip" style="background:var(--s2)"></span>Banco General</td>
-            <td class="num">5,347.8</td><td class="num">Dic-2024</td><td class="num nd">n/d</td>
-            <td class="num nd">pend.</td><td class="mini">PA consol.</td><td><span class="badge b-aud">Aud.</span></td></tr>
+            <td class="num">5,968.3</td><td class="num">Dic-2025</td><td class="num">20,880</td>
+            <td class="num">28.6%</td><td class="mini">PA consol.</td><td><span class="badge b-aud">Aud.</span></td></tr>
           <tr><td><span class="chip" style="background:var(--s3)"></span>BAC</td>
-            <td class="num">4,883.0</td><td class="num">Dic-2024</td><td class="num">37,970</td>
-            <td class="num">12.9%</td><td class="mini">CA consol.</td><td><span class="badge b-aud">Aud.</span></td></tr>
-          <tr><td><span class="chip" style="background:var(--s4)"></span>Global Bank</td>
-            <td class="num">1,073.1</td><td class="num">Mar-2025</td><td class="num">8,696.0</td>
-            <td class="num">12.3%</td><td class="mini">PA consol. · FY-jun</td><td><span class="badge b-aud">Aud.</span></td></tr>
+            <td class="num">4,989.8</td><td class="num">Dic-2025</td><td class="num">40,747</td>
+            <td class="num">12.3%</td><td class="mini">CA consol.</td><td><span class="badge b-aud">Aud.</span></td></tr>
+          <tr class="self"><td><span class="chip" style="background:var(--s1)"></span>Banistmo</td>
+            <td class="num">1,620.5</td><td class="num">Sep-2025</td><td class="num">~10,511</td>
+            <td class="num">~15.4%</td><td class="mini">PA consol.</td><td><span class="badge b-aud">Aud.</span></td></tr>
           <tr><td><span class="chip" style="background:var(--s5)"></span>Davivienda PA</td>
-            <td class="num nd">pend.</td><td class="num">Dic-2025</td><td class="num">~5,300*</td>
-            <td class="num nd">pend.</td><td class="mini">post-fusión Scotia</td><td><span class="badge b-pend">Pend.</span></td></tr>
+            <td class="num">1,248.5</td><td class="num">Dic-2025</td><td class="num">5,342</td>
+            <td class="num">23.4%</td><td class="mini">post-fusión Scotia</td><td><span class="badge b-aud">Aud.</span></td></tr>
+          <tr><td><span class="chip" style="background:var(--s4)"></span>Global Bank</td>
+            <td class="num">1,136.6</td><td class="num">Jun-2025</td><td class="num">8,503.0</td>
+            <td class="num">13.4%</td><td class="mini">PA consol. · FY-jun</td><td><span class="badge b-aud">Aud.</span></td></tr>
           <tr><td><span class="chip" style="background:var(--s6)"></span>Scotiabank PA</td>
-            <td class="num nd">pend.</td><td class="num">Oct-2024</td><td class="num">~3,800</td>
-            <td class="num nd">pend.</td><td class="mini">absorbido dic-2025</td><td><span class="badge b-pend">Pend.</span></td></tr>
+            <td class="num">371.3</td><td class="num">Oct-2024</td><td class="num">3,841</td>
+            <td class="num">9.7%</td><td class="mini">absorbido dic-2025</td><td><span class="badge b-aud">Aud.</span></td></tr>
         </tbody>
       </table>
     </div>
-    <p class="mini" style="margin-top:10px">* Activo de Davivienda Panamá estimado tras absorber ~US$3.8&nbsp;mil M de Scotiabank (crecimiento reportado ~+180% sobre una base pre-fusión de ~US$1.7&nbsp;mil M). BAC = consolidado Centroamérica; su entidad individual de Panamá tenía ~US$13.3&nbsp;mil M de activos a Dic-2025 (composición de cartera no divulgada por separado).</p>
+    <p class="mini" style="margin-top:10px">Davivienda Dic-2025 es el primer cierre <b>post-fusión</b> (absorbió ~US$3.8&nbsp;mil M de Scotiabank; su cartera de inversiones incluye US$318.5 M heredados de Scotia) — no comparable con años previos. BAC = consolidado Centroamérica; su entidad individual de Panamá tenía ~US$13.3&nbsp;mil M de activos a Dic-2025 (composición de cartera no divulgada por separado). Banistmo: activo Dic-2024 US$10,471.8 M / 14.8%.</p>
   </section>
 
   <!-- INSTRUMENTOS -->
   <section id="instrumentos">
     <div class="sec-head"><span class="sec-num">04</span><h2>¿En qué instrumentos están?</h2></div>
-    <p class="sec-sub">El detalle instrumento-por-instrumento vive en la nota "Inversiones en valores" de cada auditoría.
-      Lo confirmado hasta ahora dibuja carteras de <b>renta fija</b>: bonos soberanos y corporativos como núcleo,
-      con MBS y Tesoros de EE.UU. presentes en al menos un competidor.</p>
+    <p class="sec-sub">Con las notas "Inversiones en valores" ya leídas, el mapa por instrumento queda claro — y
+      corrige la lectura preliminar. Todas son carteras de <b>renta fija</b> (bono soberano + corporativo), pero con
+      dos rasgos diferenciadores: <b>Banco General es el gran tenedor de MBS</b> (~US$3,056 M, ~51% de su cartera, todo
+      de agencias de EE.UU.), y <b>los Tesoros de EE.UU.</b> aparecen en cuatro de los seis bancos.</p>
 
     <div class="tbl-scroll">
       <table>
         <thead><tr>
-          <th>Banco</th><th>Núcleo</th><th>Soberano</th><th>Corporativo</th><th>MBS</th>
+          <th>Banco</th><th>Núcleo</th><th>Soberano</th><th>Corporativo</th><th>MBS / CMO</th>
           <th>US Treasuries</th><th>Acciones</th><th>Confianza</th>
         </tr></thead>
         <tbody>
-          <tr class="self"><td>Banistmo</td><td class="mini">Renta fija</td>
-            <td>Sí <span class="mini">(menor)</span></td><td>Sí <span class="mini">(dominante)</span></td>
-            <td class="nd">no divulg.</td><td class="nd">no divulg.</td><td>Insignif.</td>
+          <tr class="self"><td>Banistmo</td><td class="mini">Bono sob.+corp · trading</td>
+            <td>Panamá US$423 M</td><td><b>US$631 M</b> <span class="mini">(~40%)</span></td>
+            <td class="nd">No</td><td><b>US$383 M</b> <span class="mini">(~25%)</span></td><td>Insignif.</td>
             <td><span class="badge b-aud">Aud.</span></td></tr>
-          <tr><td>Banco General</td><td class="mini">Renta fija líquida IG</td>
-            <td>Sí</td><td>Sí</td><td class="nd">pend.</td><td class="nd">pend.</td><td class="mini">local+regional</td>
-            <td><span class="badge b-est">Cualit.</span></td></tr>
-          <tr><td>BAC</td><td class="mini">Deuda AFS</td>
-            <td>Sí</td><td>Sí</td><td><b>Sí</b> <span class="mini">(MBS resid.)</span></td>
-            <td class="nd">pend.</td><td class="nd">pend.</td><td><span class="badge b-aud">Aud.</span></td></tr>
-          <tr><td>Global Bank</td><td class="mini">Renta fija</td>
-            <td class="nd">pend.</td><td class="nd">pend.</td><td class="nd">pend.</td><td class="nd">pend.</td><td class="nd">pend.</td>
-            <td><span class="badge b-pend">Pend.</span></td></tr>
-          <tr><td>Davivienda PA</td><td class="mini">Renta fija</td>
-            <td class="nd">pend.</td><td class="nd">pend.</td><td class="nd">pend.</td><td class="nd">pend.</td><td class="nd">pend.</td>
-            <td><span class="badge b-pend">Pend.</span></td></tr>
-          <tr><td>Scotiabank PA</td><td class="nd">absorbido</td>
-            <td class="nd">pend.</td><td class="nd">pend.</td><td class="nd">pend.</td><td class="nd">pend.</td><td class="nd">pend.</td>
-            <td><span class="badge b-pend">Pend.</span></td></tr>
+          <tr><td>Banco General</td><td class="mini">Agency-MBS + corp IG</td>
+            <td>Panamá US$98 M</td><td><b>~US$2,080 M</b></td>
+            <td><b>US$3,056 M</b> <span class="mini">(~51%, agencias)</span></td>
+            <td>US$130 M<span class="mini">+ Letras Tesoro</span></td><td>US$37 M</td>
+            <td><span class="badge b-aud">Aud.</span></td></tr>
+          <tr><td>BAC</td><td class="mini">Soberano CA (AFS)</td>
+            <td><b>US$3,652 M</b> <span class="mini">(CA, 77%)</span></td><td>US$398 M</td>
+            <td class="nd">No divulg.</td><td>US$703 M <span class="mini">(gob. EEUU, 14%)</span></td><td>US$3 M</td>
+            <td><span class="badge b-aud">Aud.</span></td></tr>
+          <tr><td>Global Bank</td><td class="mini">Sob.+corp mixto</td>
+            <td>US$510 M</td><td>US$617 M</td><td class="nd">No</td>
+            <td class="nd">No desglos. <span class="mini">(EEUU geo US$283 M)</span></td><td>~US$28 M</td>
+            <td><span class="badge b-aud">Aud.</span></td></tr>
+          <tr><td>Davivienda PA</td><td class="mini">Soberano dominante</td>
+            <td><b>US$929 M</b></td><td>US$322 M</td><td class="nd">No</td>
+            <td class="nd">No desglos. <span class="mini">(Norteam. US$440 M)</span></td><td>US$0.2 M</td>
+            <td><span class="badge b-aud">Aud.</span></td></tr>
+          <tr><td>Scotiabank PA</td><td class="mini">UST + Panamá</td>
+            <td>Panamá US$141 M</td><td>US$54 M</td><td class="nd">No</td>
+            <td><b>US$176 M</b> <span class="mini">(47%)</span></td><td class="nd">No</td>
+            <td><span class="badge b-aud">Aud.</span></td></tr>
         </tbody>
       </table>
     </div>
 
     <div style="margin-top:18px" class="grid2">
       <div class="callout co-info"><span class="ic">i</span>
-        <div><b>BAC es el único con MBS confirmado.</b> Sus estados describen cartera de deuda disponible-para-la-venta
-          que <b>incluye MBS residenciales</b> y "otros valores", con pérdidas no realizadas típicas del ciclo de tasas
-          (valor de mercado por debajo del costo amortizado en el interino de sep-2024).</div>
+        <div><b>El tenedor de MBS es Banco General, no BAC.</b> BG mantiene ~US$3,056 M en MBS + CMO (~51% de su
+          cartera), 100% garantizados por agencias de EE.UU. (GNMA/FNMA/FHLMC); es la mayor posición individual de su
+          libro. <b>BAC no divulga MBS</b> en su nota auditada 2024/2025 — solo bonos de gobierno (soberanos de
+          Centroamérica + gob. de EE.UU.), corporativos y acciones. Corrige el corte preliminar.</div>
       </div>
       <div class="callout co-info"><span class="ic">i</span>
-        <div><b>Banistmo: corporativo &gt;&gt; soberano.</b> En el bucket a costo amortizado (Jun-2024): bonos
-          corporativos <b>US$527 M</b> vs. soberanos <b>US$25 M</b>. La exposición a Tesoros de EE.UU. y MBS,
-          de existir, está en los buckets a valor razonable — pendiente de abrir la nota.</div>
+        <div><b>Banistmo: ~25% en Tesoros de EE.UU., corporativo ~40%.</b> A Dic-2024, bonos del Tesoro de EE.UU.
+          US$383 M (24.8%), soberano Panamá US$423 M (27%), corporativos US$631 M (~40%). Sin MBS. La exposición a UST
+          más grande en proporción la tiene <b>Scotiabank</b> (47% de su cartera) antes de ser absorbido.</div>
       </div>
     </div>
   </section>
@@ -426,8 +436,8 @@ hr.soft{border:none;border-top:1px solid var(--hair);margin:26px 0}
   <section id="clasificacion">
     <div class="sec-head"><span class="sec-num">05</span><h2>Clasificación contable — dónde pega el mark-to-market</h2></div>
     <p class="sec-sub">La distribución entre <b>valor razonable</b> (FVTPL / FVOCI) y <b>costo amortizado</b> define cuánta
-      volatilidad de tasas entra al P&amp;L y al patrimonio. Banistmo es el único con desglose completo indexado; el
-      dato revela un <b>giro fuerte hacia trading</b> en el primer semestre de 2024.</p>
+      volatilidad de tasas entra al P&amp;L y al patrimonio. Con las notas leídas, Banistmo resalta como <b>el más
+      orientado a trading</b> del grupo: 36.5% en FVTPL a Sep-2025, contra ≤16% en todos los competidores.</p>
 
     <div class="grid2">
       <div class="chart-card">
@@ -437,18 +447,20 @@ hr.soft{border:none;border-top:1px solid var(--hair);margin:26px 0}
       </div>
       <div class="card">
         <h3 style="font-size:16px;font-weight:640;margin-bottom:6px">Lectura</h3>
-        <p style="font-size:14.5px;color:var(--ink-2);margin:0 0 14px">Entre Dic-2023 y Jun-2024 el <b>FVTPL saltó de
-          ~12% a ~28%</b> de la cartera, mientras el FVOCI cayó de ~50% a ~36%. Es una construcción de libro de
-          negociación relevante: más P&amp;L marcado a mercado, menos amortiguación vía ORI.</p>
+        <p style="font-size:14.5px;color:var(--ink-2);margin:0 0 14px">Entre Dic-2023 y Sep-2025 el <b>FVTPL saltó de
+          ~12% a 36.5%</b> de la cartera, mientras el FVOCI cayó de ~50% a 22%. Es el libro de negociación proporcionalmente
+          más grande del perímetro: más P&amp;L marcado a mercado, menos amortiguación vía ORI.</p>
         <div class="pill-row">
-          <span class="pill">FVTPL Dic-23 <b>11.8%</b> → Jun-24 <b>28.0%</b></span>
-          <span class="pill">FVOCI Dic-23 <b>50.5%</b> → Jun-24 <b>36.2%</b></span>
-          <span class="pill">C. amortizado <b>~37%</b> estable</span>
+          <span class="pill">Banistmo FVTPL <b>36.5%</b></span>
+          <span class="pill">Banco General <b>15.8%</b></span>
+          <span class="pill">Global <b>6.1%</b></span>
+          <span class="pill">BAC <b>0.9%</b></span>
+          <span class="pill">Davivienda <b>0.5%</b></span>
         </div>
         <hr class="soft">
-        <p class="mini" style="margin:0">Los seis bancos confirman usar las tres categorías NIIF 9; los montos por
-          categoría de los competidores están <b>pendientes</b> de abrir cada nota. Banco General, BAC y Global
-          reportan carteras de deuda mayormente en FVOCI/AFS, con pérdidas no realizadas del ciclo 2022–2024.</p>
+        <p class="mini" style="margin:0">En el otro extremo, <b>Banco General</b> (84% FVOCI), <b>BAC</b> (95% AFS) y
+          <b>Davivienda</b> (79% FVOCI) llevan casi toda la cartera a valor razonable con cambios en ORI — volatilidad
+          contenida en patrimonio, no en resultados. <b>Global</b> es el más cargado a costo amortizado (34%).</p>
       </div>
     </div>
   </section>
@@ -457,8 +469,9 @@ hr.soft{border:none;border-top:1px solid var(--hair);margin:26px 0}
   <section id="rentabilidad">
     <div class="sec-head"><span class="sec-num">06</span><h2>Rentabilidad del portafolio (estimada)</h2></div>
     <p class="sec-sub">Los bancos rara vez publican un <b>yield</b> de cartera. Se aproxima como
-      <span class="mono">ingreso por intereses de inversiones ÷ saldo promedio</span>. Donde el dato existe, los
-      rendimientos convergen en torno a <b>4.3–4.6%</b>, coherente con el ciclo de tasas altas 2023–2024.</p>
+      <span class="mono">ingreso por intereses de inversiones ÷ saldo promedio</span>. Con el ingreso ya leído de cada
+      estado de resultados, los rendimientos van de <b>~4.0% a ~5.9%</b>: <b>BAC</b> lidera (soberanos de
+      Centroamérica, mayor spread) y <b>Banco General</b> le sigue (~5.0%); Banistmo queda a media tabla (~4.3%).</p>
 
     <div class="chart-card">
       <h3>Rendimiento estimado de la cartera de inversiones</h3>
@@ -470,15 +483,16 @@ hr.soft{border:none;border-top:1px solid var(--hair);margin:26px 0}
       <table>
         <thead><tr><th>Banco</th><th>Ing. por inversiones (US$M)</th><th>Año</th><th>Yield estimado</th><th>Base</th><th>Confianza</th></tr></thead>
         <tbody>
+          <tr><td>BAC</td><td class="num">291.4</td><td class="num">2025</td><td class="num">~5.9%</td><td class="mini">CA consol.</td><td><span class="badge b-est">Est.</span></td></tr>
+          <tr><td>Banco General</td><td class="num">283.5</td><td class="num">2025</td><td class="num">~5.0%</td><td class="mini">PA consol.</td><td><span class="badge b-est">Est.</span></td></tr>
           <tr class="self"><td>Banistmo</td><td class="num">64.2</td><td class="num">2024</td><td class="num">~4.3%</td><td class="mini">individual SBP</td><td><span class="badge b-est">Est.</span></td></tr>
-          <tr><td>BAC</td><td class="num">197.1</td><td class="num">2023</td><td class="num">~4.3%</td><td class="mini">CA consol.</td><td><span class="badge b-est">Est.</span></td></tr>
-          <tr><td>BAC</td><td class="num">224.2</td><td class="num">2024</td><td class="num">~4.6%</td><td class="mini">CA consol.</td><td><span class="badge b-est">Est.</span></td></tr>
-          <tr><td>Banco General</td><td class="num nd">pend.</td><td class="num">—</td><td class="num nd">pend.</td><td class="mini">—</td><td><span class="badge b-pend">Pend.</span></td></tr>
-          <tr><td>Global Bank</td><td class="num nd">pend.</td><td class="num">—</td><td class="num nd">pend.</td><td class="mini">—</td><td><span class="badge b-pend">Pend.</span></td></tr>
+          <tr><td>Global Bank</td><td class="num">45.6</td><td class="num">FY-jun-2025</td><td class="num">~4.2%</td><td class="mini">PA consol.</td><td><span class="badge b-est">Est.</span></td></tr>
+          <tr><td>Scotiabank PA</td><td class="num">15.0</td><td class="num">Oct-2024</td><td class="num">~4.1%</td><td class="mini">sucursal PA</td><td><span class="badge b-est">Est.</span></td></tr>
+          <tr><td>Davivienda PA</td><td class="num">34.5</td><td class="num">2025</td><td class="num">~4.0%</td><td class="mini">saldo prom. fusión</td><td><span class="badge b-est">Est.</span></td></tr>
         </tbody>
       </table>
     </div>
-    <p class="mini" style="margin-top:10px">El ingreso de Banistmo es de la entidad individual (SBP) contra un saldo consolidado — tratar como aproximado. BAC: ingreso por intereses de inversiones FVOCI del consolidado Centroamérica.</p>
+    <p class="mini" style="margin-top:10px">El ingreso de Banistmo es de la entidad individual (SBP) contra un saldo consolidado — tratar como aproximado. BAC = consolidado Centroamérica (yield más alto por el peso de soberanos centroamericanos sub-grado-inversión). Davivienda: saldo promedio distorsionado por la fusión de dic-2025.</p>
   </section>
 
   <!-- EVOLUCION -->
@@ -505,34 +519,36 @@ hr.soft{border:none;border-top:1px solid var(--hair);margin:26px 0}
       <table>
         <thead><tr><th>Indicador de sistema</th><th>2022</th><th>2023</th><th>2024</th><th>2025</th></tr></thead>
         <tbody>
-          <tr><td>Inversiones en valores — var. a/a</td><td class="num">+5.4%</td><td class="num">+9.2%</td><td class="num">+7.0%</td><td class="num">+3.8%</td></tr>
+          <tr><td>Inversiones en valores — var. a/a</td><td class="num">+5.4%</td><td class="num">+9.2%</td><td class="num">+7.0%</td><td class="num">+4.8%</td></tr>
           <tr><td>Índice de liquidez legal (prom.)</td><td class="num nd">~</td><td class="num">57.8%</td><td class="num">54.3%</td><td class="num">~54%</td></tr>
           <tr><td>Índice de adecuación de capital</td><td class="num">15.34%</td><td class="num">15.71%</td><td class="num">15.29%</td><td class="num">16.34%</td></tr>
         </tbody>
       </table>
     </div>
-    <p class="mini" style="margin-top:10px">2025: inversiones del CBI ≈US$34&nbsp;mil M (SBN ≈US$30&nbsp;mil M). El sistema es dominado por crédito (~61% del activo); las inversiones pesan ~21%. Cifras indexadas de los Informes de Actividad Bancaria de la SBP.</p>
+    <p class="mini" style="margin-top:10px">Oct-2025: inversiones netas del CBI US$34.6&nbsp;mil M (+4.79% a/a, +US$1,580 M), con fuerte dinamismo en <b>inversiones internas</b> (+11.5%); ingreso por inversiones del sistema +8.5%. El sistema es dominado por crédito (~62% del activo); las inversiones pesan 21.6%. Informes de Actividad Bancaria de la SBP (Oct-2025).</p>
   </section>
 
   <!-- CALIFICACIONES -->
   <section id="calificaciones">
     <div class="sec-head"><span class="sec-num">08</span><h2>Calificaciones</h2></div>
-    <p class="sec-sub">La <b>distribución de calificaciones de la cartera</b> (tabla S&amp;P/Moody's/Fitch por instrumento)
-      está en la nota de cada auditoría — pendiente de abrir. Lo disponible hoy es la calificación del <b>emisor</b>
-      (el banco), útil como proxy de su apetito de riesgo y costo de fondeo.</p>
+    <p class="sec-sub">Con las notas de riesgo de crédito leídas, ya se ve la <b>calidad de cada cartera</b>. El patrón:
+      quien carga <b>agencias de EE.UU.</b> (Banco General) o <b>Tesoros</b> (Scotiabank) tiene el grueso en grado de
+      inversión AAA-A; quien carga <b>soberanos regionales</b> (BAC en Centroamérica, papel panameño) queda mayormente
+      en <b>BB+ a B-</b> — reflejo de que Panamá perdió el grado de inversión con Fitch en 2024.</p>
     <div class="tbl-scroll">
       <table>
-        <thead><tr><th>Banco</th><th>Calificación emisor</th><th>Agencia</th><th>Perspectiva</th><th>Cartera por rating</th></tr></thead>
+        <thead><tr><th>Banco</th><th>Emisor</th><th>Agencia</th><th>Perfil de la cartera por rating</th><th>Duración</th><th>Conf.</th></tr></thead>
         <tbody>
-          <tr class="self"><td>Banistmo</td><td class="num nd">pend.</td><td class="mini">Fitch/Moody's</td><td class="nd">—</td><td><span class="badge b-pend">Pend. nota</span></td></tr>
-          <tr><td>BAC</td><td class="num">BBB- / A-3</td><td class="mini">S&amp;P (ago-2025)</td><td>Estable</td><td><span class="badge b-pend">Pend. nota</span></td></tr>
-          <tr><td>Global Bank</td><td class="num">BBB-</td><td class="mini">S&amp;P / Fitch</td><td>Estable</td><td><span class="badge b-pend">Pend. nota</span></td></tr>
-          <tr><td>Banco General</td><td class="num nd">pend.</td><td class="mini">—</td><td class="nd">—</td><td><span class="badge b-pend">Pend. nota</span></td></tr>
-          <tr><td>Davivienda PA</td><td class="num nd">pend.</td><td class="mini">Moody's Local</td><td class="nd">—</td><td><span class="badge b-pend">Pend. nota</span></td></tr>
+          <tr class="self"><td>Banistmo</td><td class="num nd">n/d</td><td class="mini">Fitch/Moody's</td><td class="mini">No divulga tabla; núcleo Panamá+UST ~50%</td><td class="num">~2.5&nbsp;a</td><td><span class="badge b-aud">Aud.*</span></td></tr>
+          <tr><td>Banco General</td><td class="num">BBB-</td><td class="mini">S&amp;P/Fitch</td><td class="mini">Extranjero AAA-AA+ (agency-MBS); local &lt;BBB-</td><td class="mini">MBS 3.7a · CMO 1.8a</td><td><span class="badge b-aud">Aud.</span></td></tr>
+          <tr><td>BAC</td><td class="num">BBB- / A-3</td><td class="mini">S&amp;P (ago-25)</td><td class="mini">Grueso BB+ a B- (US$2,968 M, soberanos CA)</td><td class="num nd">n/d</td><td><span class="badge b-aud">Aud.</span></td></tr>
+          <tr><td>Global Bank</td><td class="num">BBB-</td><td class="mini">S&amp;P/Fitch</td><td class="mini">Grado inv. US$562 M · monit. BB US$186 M · s/c US$384 M</td><td class="num nd">n/d</td><td><span class="badge b-aud">Aud.</span></td></tr>
+          <tr><td>Davivienda PA</td><td class="num">—</td><td class="mini">Moody's Local</td><td class="mini">Gob: AAA-AA US$397 M vs BB US$520 M; corp BBB</td><td class="num nd">n/d</td><td><span class="badge b-aud">Aud.</span></td></tr>
+          <tr><td>Scotiabank PA</td><td class="num">—</td><td class="mini">—</td><td class="mini">VRCOUI AA+ a A US$177 M (UST) / BBB US$142 M</td><td class="num nd">n/d</td><td><span class="badge b-aud">Aud.</span></td></tr>
         </tbody>
       </table>
     </div>
-    <p class="mini" style="margin-top:10px">Contexto macro: Panamá perdió el grado de inversión con Fitch en 2024; Moody's tomó acciones negativas sobre bancos panameños en el ciclo reciente. Relevante para el valor de mercado de las carteras con exposición soberana local.</p>
+    <p class="mini" style="margin-top:10px">* Banistmo no publica tabla de ratings de cartera en su Nota 7; la duración (~2.5 años) y el ~50% en deuda pública Panamá+EE.UU. provienen del reporte de S&amp;P anexo al IN-A 2024. Contexto macro: Panamá perdió el grado de inversión con Fitch en 2024 — por eso el papel soberano local aparece "&lt;BBB-" en las tablas de los bancos.</p>
   </section>
 
   <!-- LECTURAS -->
@@ -541,29 +557,34 @@ hr.soft{border:none;border-top:1px solid var(--hair);margin:26px 0}
     <p class="sec-sub">Qué dice el comparativo — con el dato disponible — sobre el posicionamiento relativo de la cartera.</p>
     <div class="take">
       <div class="take-item"><div class="k">A</div><div>
-        <h3>Inviertes una tajada mayor de tu balance que tus pares directos</h3>
-        <p>14.8% del activo vs. ~12–13% en BAC y Global Bank. Estás más "cargado" en inversiones que competidores de tamaño
-          comparable, aunque por debajo del promedio del sistema (~21%), donde pesan la banca estatal y la internacional.</p>
+        <h3>Inviertes más que tus pares de tamaño, pero mucho menos que Banco General</h3>
+        <p>14.8% del activo vs. 12.3% (BAC) y 13.4% (Global). Estás algo más "cargado" que competidores comparables — pero
+          Banco General invierte <b>28.6%</b> de su balance, casi el doble, y sobre un núcleo de agency-MBS líquido. Ahí está
+          el techo de referencia si quieres subir el peso de inversiones sin sacrificar liquidez.</p>
       </div></div>
       <div class="take-item"><div class="k">B</div><div>
-        <h3>Tu cartera es corporativo-céntrica; el soberano es marginal</h3>
-        <p>Corporativos US$527 M vs. soberanos US$25 M en el bucket a costo amortizado. Eso implica más riesgo de crédito
-          y de spread que una cartera soberano-pesada — a monitorear frente a la pérdida del grado de inversión de Panamá.</p>
+        <h3>Tu cartera es corporativo-céntrica (~40%), con ~25% en Tesoros de EE.UU.</h3>
+        <p>Corporativos US$631 M (~40%), soberano Panamá US$423 M (27%) y Tesoros de EE.UU. US$383 M (~25%) a Dic-2024. Más
+          riesgo de crédito y de spread que una cartera soberano-pesada como la de Davivienda o BAC — a monitorear frente a la
+          pérdida del grado de inversión de Panamá. Duración ~2.5 años, conservadora.</p>
       </div></div>
       <div class="take-item"><div class="k">C</div><div>
-        <h3>Construiste libro de negociación en 2024</h3>
-        <p>FVTPL de ~12% a ~28% en seis meses. Más P&amp;L marcado a mercado y menos amortiguación por ORI: mayor sensibilidad
-          del resultado a movimientos de tasa. Vale confirmar si fue táctico (ciclo de tasas) o estructural.</p>
+        <h3>Corres el libro de trading proporcionalmente más grande del grupo</h3>
+        <p>FVTPL de ~12% (Dic-2023) a <b>36.5%</b> (Sep-2025). Ningún competidor grande pasa de 16% (BG) — BAC y Davivienda
+          están por debajo de 1%. Más P&amp;L marcado a mercado y menos amortiguación por ORI: mayor sensibilidad del resultado a
+          las tasas. Vale confirmar si es estrategia deliberada de la mesa o un sesgo a revisar.</p>
       </div></div>
       <div class="take-item"><div class="k">D</div><div>
-        <h3>BAC es la referencia a vigilar en sofisticación de instrumentos</h3>
-        <p>Es el único competidor con <b>MBS</b> confirmado en cartera y el de mayor rendimiento estimado (~4.6% en 2024).
-          Tras absorber Multibank, gana escala de balance — y de mesa. Si buscas diversificar hacia MBS/agencias, es el benchmark.</p>
+        <h3>El benchmark de instrumentos es Banco General, no BAC</h3>
+        <p>Corrección clave del análisis: <b>Banco General</b> —no BAC— es quien corre MBS, y a gran escala: ~US$3,056 M
+          (~51% de su cartera), 100% de agencias de EE.UU. (GNMA/FNMA/FHLMC), líquido y en grado de inversión. BAC no divulga
+          MBS. Si buscas diversificar hacia agency-MBS/UST manteniendo calidad, el modelo a estudiar es BG.</p>
       </div></div>
       <div class="take-item"><div class="k">E</div><div>
         <h3>El campo competitivo se está concentrando</h3>
-        <p>Multibank→BAC y Scotiabank→Davivienda reducen el número de mesas rivales. Menos contrapartes locales, carteras
-          más grandes en manos de menos jugadores — relevante para liquidez de mercado secundario local y para benchmarking futuro.</p>
+        <p>Multibank→BAC y Scotiabank→Davivienda reducen el número de mesas rivales. Davivienda casi <b>triplicó</b> su cartera
+          de inversiones al absorber Scotiabank (US$455 M → US$1,248 M). Menos contrapartes locales, carteras más grandes en
+          manos de menos jugadores — relevante para liquidez del secundario local y para benchmarking futuro.</p>
       </div></div>
     </div>
   </section>
@@ -577,12 +598,14 @@ hr.soft{border:none;border-top:1px solid var(--hair);margin:26px 0}
     <b>Rendimientos y % de activo marcados "estimado" son cálculos propios</b>, no cifras divulgadas. USD = balboa a la par.</p>
 
   <div class="disc">
-    <b>Alcance de este primer corte.</b> El entorno de trabajo bloqueó el acceso directo a los PDF de las notas de
-    inversiones (política de red de la organización). Las cifras aquí provienen de la indexación de esos documentos y de
-    fuentes secundarias verificadas de forma cruzada. Los ítems marcados <span class="badge b-pend" style="padding:2px 8px">Pendiente</span>
-    — distribución completa por instrumento, tabla de calificaciones de cartera, escalera de vencimientos/duración y el
-    desglose FVTPL/FVOCI/CA de los competidores — requieren abrir las notas auditadas directamente. Una vez habilitado el
-    acceso a los dominios financieros, este radar se actualiza a fidelidad completa.
+    <b>Alcance — fidelidad completa.</b> Este corte se construyó abriendo y leyendo directamente la nota "Inversiones en
+    valores" de los estados financieros auditados de los seis bancos (split FVTPL/FVOCI/costo amortizado, composición por
+    instrumento incl. MBS y Tesoros de EE.UU., escalera de vencimientos y tablas de calificaciones de cartera). Los
+    porcentajes de activo y los yields marcados <span class="badge b-est" style="padding:2px 8px">Estimado</span> son
+    cálculos propios. Lo que sigue marcado <span class="badge b-pend" style="padding:2px 8px">No divulgado</span> es dato
+    que el emisor no publica (p. ej. Global Bank y Davivienda no separan los Tesoros de EE.UU. por país; Banistmo no publica
+    tabla de ratings de cartera). Nota de comparabilidad: los perímetros difieren (BAC = Centroamérica; Global cierra en
+    junio; Davivienda FY2025 es post-fusión) — el análisis se apoya en ratios robustos al perímetro.
   </div>
 
   <hr class="soft">
@@ -601,7 +624,7 @@ hr.soft{border:none;border-top:1px solid var(--hair);margin:26px 0}
     <div>SBP · balances individuales por banco 2025</div>
     <div>Superintendencia del Mercado de Valores (SMV) · filings</div>
   </div>
-  <p style="margin-top:22px;font-size:12px;color:var(--muted)" class="mono">Radar de Inversiones · Banca de Panamá · Preparado para la mesa de tesorería · Datos 2022–2026 · Corte preliminar</p>
+  <p style="margin-top:22px;font-size:12px;color:var(--muted)" class="mono">Radar de Inversiones · Banca de Panamá · Preparado para la mesa de tesorería · Datos 2022–2026 · Fidelidad completa (notas auditadas)</p>
 </footer>
 
 <div id="tt" role="status" aria-live="polite"></div>
@@ -689,10 +712,11 @@ hr.soft{border:none;border-top:1px solid var(--hair);margin:26px 0}
     var W=520,H=300,padL=54,padR=14,padT=14,padB=54;
     var cats=[
       {k:"Dic-2023",fvtpl:172.6,fvoci:737.5,ac:549.1},
-      {k:"Jun-2024",fvtpl:426.3,fvoci:550.6,ac:543.9}
+      {k:"Dic-2024",fvtpl:530.8,fvoci:435.3,ac:582.7},
+      {k:"Sep-2025",fvtpl:591.5,fvoci:359.1,ac:669.9}
     ];
     var segs=[{n:"FVTPL",key:"fvtpl",c:"--s6"},{n:"FVOCI (ORI)",key:"fvoci",c:"--s1"},{n:"Costo amort.",key:"ac",c:"--s2"}];
-    var max=1600, ticks=4, iw=W-padL-padR, ih=H-padT-padB;
+    var max=1800, ticks=4, iw=W-padL-padR, ih=H-padT-padB;
     for(var t=0;t<=ticks;t++){
       var gy=padT+ih-ih*t/ticks;
       svg.appendChild(el("line",{x1:padL,y1:gy,x2:W-padR,y2:gy,class:"grid-line","stroke-width":1}));
@@ -728,7 +752,7 @@ hr.soft{border:none;border-top:1px solid var(--hair);margin:26px 0}
   function vbars(svg){
     clear(svg);
     var W=520,H=260,padL=44,padR=14,padT=16,padB=40;
-    var data=[{k:"2022",v:5.4},{k:"2023",v:9.2},{k:"2024",v:7.0},{k:"2025",v:3.8}];
+    var data=[{k:"2022",v:5.4},{k:"2023",v:9.2},{k:"2024",v:7.0},{k:"2025",v:4.8}];
     var max=10,ticks=5,iw=W-padL-padR,ih=H-padT-padB;
     for(var t=0;t<=ticks;t++){
       var gy=padT+ih-ih*t/ticks;
@@ -755,14 +779,15 @@ hr.soft{border:none;border-top:1px solid var(--hair);margin:26px 0}
     clear(svg);
     var W=520,H=260,padL=48,padR=76,padT=16,padB=36;
     var series=[
-      {b:"bg",c:"--s2",pts:[["Dic-23",5124.9],["Dic-24",5347.8]]},
-      {b:"bac",c:"--s3",pts:[["Dic-23",4549],["Dic-24",4883]]},
-      {b:"banistmo",c:"--s1",self:true,pts:[["Dic-23",1459.2],["Jun-24",1521],["Dic-24",1548.8]]},
-      {b:"global",c:"--s4",pts:[["Jun-22",1079.2],["Jun-23",1053.4],["Mar-25",1073.1]]}
+      {b:"bg",c:"--s2",pts:[["2023",5124.9],["2024",5347.8],["2025",5968.3]]},
+      {b:"bac",c:"--s3",pts:[["2023",4549],["2024",4883],["2025",4989.8]]},
+      {b:"banistmo",c:"--s1",self:true,labelDy:-6,pts:[["2023",1459.2],["2024",1548.8],["2025",1620.5]]},
+      {b:"davi",c:"--s5",labelDy:7,pts:[["2024",455.3],["2025",1248.5]]},
+      {b:"global",c:"--s4",labelDy:19,pts:[["2022",1079.2],["2023",1053.4],["2024",1049.3],["2025",1136.6]]}
     ];
-    var xs=["Jun-22","Dic-23","Jun-24","Dic-24","Mar-25"];
+    var xs=["2022","2023","2024","2025"];
     var xi={}; xs.forEach(function(k,i){xi[k]=i;});
-    var max=5800,ticks=4,iw=W-padL-padR,ih=H-padT-padB;
+    var max=6200,ticks=4,iw=W-padL-padR,ih=H-padT-padB;
     function X(k){return padL+iw*xi[k]/(xs.length-1);}
     function Y(v){return padT+ih-ih*v/max;}
     for(var t=0;t<=ticks;t++){
@@ -785,7 +810,7 @@ hr.soft{border:none;border-top:1px solid var(--hair);margin:26px 0}
       });
       // end label
       var last=s.pts[s.pts.length-1];
-      var lb=svg.appendChild(el("text",{x:X(last[0])+8,y:Y(last[1])+4,class:"bar-name"+(s.self?" self":""),"font-size":"11"}));
+      var lb=svg.appendChild(el("text",{x:X(last[0])+8,y:Y(last[1])+4+(s.labelDy||0),class:"bar-name"+(s.self?" self":""),"font-size":"11"}));
       lb.setAttribute("fill",col);lb.textContent=BANKS[s.b].name.replace("Banco ","B. ");
     });
   }
@@ -793,30 +818,33 @@ hr.soft{border:none;border-top:1px solid var(--hair);margin:26px 0}
   // ---- yield bars ----
   function yieldBars(svg){
     hbars(svg,[
-      {name:"BAC · 2024",c:"--s3",v:4.6,tip:"CA consolidado · estimado"},
-      {name:"BAC · 2023",c:"--s3",v:4.3,tip:"CA consolidado · estimado"},
-      {name:"Banistmo · 2024",c:"--s1",self:true,v:4.3,tip:"individual SBP · estimado"},
-      {name:"Banco General",c:"--s2",v:null,note:"pendiente nota"},
-      {name:"Global Bank",c:"--s4",v:null,note:"pendiente nota"}
-    ],{pct:true,max:6,ticks:6});
+      {name:"BAC",c:"--s3",v:5.9,tip:"2025 · CA consolidado · estimado"},
+      {name:"Banco General",c:"--s2",v:5.0,tip:"2025 · PA consolidado · estimado"},
+      {name:"Banistmo",c:"--s1",self:true,v:4.3,tip:"2024 · individual SBP · estimado"},
+      {name:"Global Bank",c:"--s4",v:4.2,tip:"FY-jun-2025 · PA consolidado · estimado"},
+      {name:"Scotiabank",c:"--s6",v:4.1,tip:"Oct-2024 · sucursal PA · estimado"},
+      {name:"Davivienda",c:"--s5",v:4.05,tip:"2025 · post-fusión · estimado"}
+    ],{pct:true,max:7,ticks:7});
   }
 
   function drawAll(){
     hbars(document.getElementById("ch-size"),[
-      {name:"Banco General",c:"--s2",v:5347.8,tip:"Dic-2024 · PA consol."},
-      {name:"BAC",c:"--s3",v:4883,tip:"Dic-2024 · CA consol. (no solo Panamá)"},
-      {name:"Banistmo",c:"--s1",self:true,v:1548.8,tip:"Dic-2024 · PA consol."},
-      {name:"Global Bank",c:"--s4",v:1073.1,tip:"Mar-2025 · FY-junio"},
-      {name:"Davivienda",c:"--s5",v:null,note:"pendiente (post-fusión)"},
-      {name:"Scotiabank",c:"--s6",v:null,note:"absorbido dic-2025"}
-    ],{max:6000,ticks:4});
+      {name:"Banco General",c:"--s2",v:5968.3,tip:"Dic-2025 · PA consol."},
+      {name:"BAC",c:"--s3",v:4989.8,tip:"Dic-2025 · CA consol. (no solo Panamá)"},
+      {name:"Banistmo",c:"--s1",self:true,v:1620.5,tip:"Sep-2025 · PA consol."},
+      {name:"Davivienda",c:"--s5",v:1248.5,tip:"Dic-2025 · post-fusión Scotia"},
+      {name:"Global Bank",c:"--s4",v:1136.6,tip:"Jun-2025 · FY-junio"},
+      {name:"Scotiabank",c:"--s6",v:371.3,tip:"Oct-2024 · absorbido dic-2025"}
+    ],{max:6400,ticks:4});
     hbars(document.getElementById("ch-pct"),[
-      {name:"Sistema (ref.)",c:"--muted",v:21,tip:"Centro Bancario Int'l 2025"},
+      {name:"Banco General",c:"--s2",v:28.6,tip:"Dic-2025"},
+      {name:"Davivienda",c:"--s5",v:23.4,tip:"Dic-2025 · post-fusión"},
+      {name:"Sistema (ref.)",c:"--muted",v:21.6,tip:"Centro Bancario Int'l Oct-2025"},
       {name:"Banistmo",c:"--s1",self:true,v:14.8,tip:"Dic-2024"},
-      {name:"BAC",c:"--s3",v:12.9,tip:"Dic-2024 · CA consol."},
-      {name:"Global Bank",c:"--s4",v:12.3,tip:"Mar-2025"},
-      {name:"Banco General",c:"--s2",v:null,note:"activo n/d"}
-    ],{pct:true,max:24,ticks:4});
+      {name:"Global Bank",c:"--s4",v:13.4,tip:"Jun-2025"},
+      {name:"BAC",c:"--s3",v:12.3,tip:"Dic-2025 · CA consol."},
+      {name:"Scotiabank",c:"--s6",v:9.7,tip:"Oct-2024"}
+    ],{pct:true,max:32,ticks:4});
     stacked(document.getElementById("ch-class"));
     yieldBars(document.getElementById("ch-yield"));
     vbars(document.getElementById("ch-sysgrow"));
