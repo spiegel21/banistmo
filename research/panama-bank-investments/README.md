@@ -21,40 +21,41 @@ El reporte publicado como artifact vive en:
 `https://claude.ai/code/artifact/8214a9e7-a100-446c-a1a8-a1c6803793ad`
 (redeploy sobre la misma URL editando el HTML y volviendo a publicar).
 
-## Estado: CORTE PRELIMINAR
+## Estado: FIDELIDAD COMPLETA
 
-Este es un primer corte. La política de red de este entorno **bloqueó el acceso directo
-a los PDF** de las notas "Inversiones en valores" de los EE.FF. auditados (denegación
-403 de la organización sobre todos los dominios financieros de Panamá + WAF de origen).
-Las cifras provienen de la **indexación** de esos documentos vía búsqueda web y de fuentes
-secundarias verificadas de forma cruzada — no de la lectura directa de las tablas.
+Segunda sesión (jul-2026): con los dominios financieros habilitados en la política de red,
+se **abrieron y leyeron directamente** las notas "Inversiones en valores" de los EE.FF.
+auditados de los seis bancos. Todo lo que en el corte preliminar figuraba como *Pendiente*
+—split FVTPL/FVOCI/costo amortizado, composición por instrumento (incl. MBS y Tesoros de
+EE.UU.), escalera de vencimientos, tablas de calificaciones de cartera e ingreso por
+inversiones para el yield— está ahora leído de la fuente. `datos-extraidos.md` y el HTML se
+actualizaron y el artifact se redeployó sobre la misma URL.
 
-Lo que quedó **sólido**: tamaños de cartera, % sobre activo, dirección de la mezcla de
-instrumentos, hechos de fusión/adquisición, tendencias de sistema.
+### Correcciones de cabecera respecto al corte preliminar
 
-Lo que quedó **pendiente** (requiere abrir los PDF): distribución completa por instrumento,
-tabla de calificaciones de la cartera, escalera de vencimientos / duración, y el desglose
-FVTPL / FVOCI / costo amortizado de los competidores.
+- **El gran tenedor de MBS es Banco General, no BAC.** BG mantiene ~US$3,056 M en MBS+CMO
+  (~51% de su cartera), 100% de agencias de EE.UU. (GNMA/FNMA/FHLMC). **BAC no divulga MBS**
+  en su nota auditada. Invierte la conclusión preliminar "MBS confirmado solo en BAC".
+- **Tesoros de EE.UU. confirmados y cuantificados** en Banistmo (US$383 M, ~25%), Scotiabank
+  (US$176 M, 47%), BAC (US$703 M gob-EEUU, 14%) y Banco General (US$130 M explícito). Global
+  y Davivienda no los separan por país.
+- **Peso sobre activo — ranking real:** BG 28.6% > Davivienda 23.4% (post-fusión) > sistema
+  21.6% > Banistmo 14.8% > Global 13.4% > BAC 12.3% > Scotiabank 9.7%.
+- **Banistmo corre el libro más "trading"** del grupo: 36.5% a FVTPL a Sep-2025.
 
-## Cómo llegar a fidelidad completa (para la próxima sesión)
+### Datos que siguen [No divulgado] (límite del emisor, no de acceso)
 
-1. **Habilitar los dominios** de `allowlist-domains.txt` en la política de red del entorno:
-   claude.ai/code → icono de nube → editar entorno → **Network access** → **Custom** →
-   pegar la lista en **Allowed domains** → marcar "Also include default list of common
-   package managers" → guardar. (Si el selector está bloqueado en un plan Enterprise/Team,
-   lo debe habilitar un admin del workspace.)
-2. **Iniciar una NUEVA sesión** en ese entorno (la política de red se fija al arrancar la
-   sesión; la sesión actual no toma el cambio).
-3. **Prompt sugerido para la nueva sesión:**
+- Global Bank y Davivienda no desglosan los Tesoros de EE.UU. por país (solo "gubernamental").
+- Banistmo no publica tabla de ratings de cartera en su Nota 7 (la duración ~2.5 años viene
+  del reporte de S&P anexo al IN-A 2024).
 
-   > Retoma el trabajo en `research/panama-bank-investments/`. Los dominios financieros ya
-   > están habilitados en la política de red. Abre los PDF listados en `fuentes-pdfs.md`,
-   > extrae de la nota "Inversiones en valores" de cada banco lo que quedó marcado como
-   > *Pendiente* en `datos-extraidos.md` (composición por instrumento incl. MBS y US
-   > Treasuries, desglose FVTPL/FVOCI/costo amortizado, escalera de vencimientos/duración,
-   > tabla de calificaciones de la cartera, e ingreso por intereses de inversiones para el
-   > yield estimado), actualiza `datos-extraidos.md` y el HTML, y redeploya el artifact sobre
-   > la misma URL.
+### Notas de fuente descubiertas
+
+- La URL de "Global Bank FY2023 auditado" en `fuentes-pdfs.md` en realidad sirve los EE.FF.
+  **FY2019** (mismatch en el CDN de la web del banco). Los FY2024/FY2025 sí se leyeron del
+  PDF auditado jun-2025; los headline FY2022/FY2023 se conservan de la indexación previa.
+- `globalbank.com.pa` está detrás de un WAF (Incapsula) que a veces devuelve una página de
+  bloqueo en vez del PDF; reintentar suele resolverlo.
 
 ## Metodología
 

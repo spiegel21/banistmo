@@ -49,7 +49,11 @@ extracción a fidelidad completa de las notas "Inversiones en valores".
   Moody's oct-2024 https://www.baccredomatic.com/sites/default/files/2024-10/PAN_ReporteMoodys_Oct2024.pdf
 
 ## Global Bank (globalbank.com.pa) — cierre junio
-- FY2023 auditado (+ comparativo FY2022):
+> Nota (jul-2026): `globalbank.com.pa` está detrás de un WAF (Incapsula) que a veces sirve una
+> página de bloqueo en lugar del PDF — reintentar suele resolverlo. Además, la URL "FY2023"
+> de abajo **sirve en realidad los EE.FF. FY2019** (mismatch del CDN); usar el PDF FY2025
+> (jun-2025) para los headline FY2024/FY2025 leídos.
+- FY2023 auditado (+ comparativo FY2022) — ⚠ el archivo entregado es FY2019, no FY2023:
   https://www.globalbank.com.pa/sites/default/files/media/estados_financieros/global_bank/2023-12/global_bank_corp._y_subsidiarias_-_estados_financieros_auditados_al_30_d.pdf
 - FY2025 auditado (+ comparativo FY2024):
   https://www.globalbank.com.pa/sites/default/files/media/estados_financieros/global_bank/2025-09/ef-global-bank-junio-2025.pdf
