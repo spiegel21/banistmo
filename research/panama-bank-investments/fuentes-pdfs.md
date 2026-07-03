@@ -5,6 +5,8 @@ sesión de origen). Abrir estas desde una sesión con los dominios habilitados p
 extracción a fidelidad completa de las notas "Inversiones en valores".
 
 ## Banistmo (assets.ctfassets.net / Latinex)
+- **IN-A 2025 (auditado FY2025, Dic-2025 + comparativo Dic-2024)** — última data:
+  https://assets.ctfassets.net/catp2t59asao/6O6mUVR44lRk8akq6XWJrF/375a01b2e9a567b36968d3e9103ba63e/Informe-y-Estados-Financieros-Consolidados-2025.pdf
 - IN-A 2024 (auditado FY2024 + comparativo Dic-2023):
   https://assets.ctfassets.net/catp2t59asao/3lqEk2MTnqbrkiEBi9wYH2/b38e67bd52cfb1970552d529f81e76b2/IN-A-BANISTMO-2024.pdf
 - Interino 30-sep-2025 (+ comparativo Dic-2024):
