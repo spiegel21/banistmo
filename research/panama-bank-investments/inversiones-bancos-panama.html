@@ -131,6 +131,10 @@ svg{display:block;max-width:100%}
 .bar-label{fill:var(--ink);font-family:var(--mono);font-size:12.5px;font-weight:600}
 .bar-name{fill:var(--ink-2);font-family:var(--sans);font-size:13px}
 .bar-name.self{fill:var(--ink);font-weight:680}
+.seg-label{fill:#fff;font-family:var(--mono);font-size:11px;font-weight:600}
+.rlegend{display:flex;flex-wrap:wrap;gap:14px;margin-top:12px;font-family:var(--mono);font-size:11px;color:var(--muted)}
+.rlegend span{display:inline-flex;align-items:center;gap:6px}
+.rlegend i{width:11px;height:11px;border-radius:3px;display:inline-block}
 .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
 @media(max-width:760px){.grid2{grid-template-columns:1fr}}
 
@@ -531,24 +535,73 @@ hr.soft{border:none;border-top:1px solid var(--hair);margin:26px 0}
   <!-- CALIFICACIONES -->
   <section id="calificaciones">
     <div class="sec-head"><span class="sec-num">08</span><h2>Calificaciones</h2></div>
-    <p class="sec-sub">Con las notas de riesgo de crédito leídas, ya se ve la <b>calidad de cada cartera</b>. El patrón:
-      quien carga <b>agencias de EE.UU.</b> (Banco General) o <b>Tesoros</b> (Scotiabank) tiene el grueso en grado de
-      inversión AAA-A; quien carga <b>soberanos regionales</b> (BAC en Centroamérica, papel panameño) queda mayormente
-      en <b>BB+ a B-</b> — reflejo de que Panamá perdió el grado de inversión con Fitch en 2024.</p>
-    <div class="tbl-scroll">
+    <p class="sec-sub">Cada banco publica su tabla de ratings con <b>cortes de letra y coberturas distintas</b>. Para
+      compararlas se colapsan a tres brackets: <b>grado de inversión</b> (AAA→BBB-), <b>sub-grado</b> (BB+ a B-) y
+      <b>sin calificación</b>, sobre la cartera calificada de cada uno. El patrón queda nítido: <b>Banco General</b> y
+      <b>Scotiabank</b> corren carteras de alta calidad; <b>BAC</b> y <b>Davivienda</b> quedan mayoritariamente en
+      sub-grado por su núcleo de <b>soberanos regionales</b>; <b>Global Bank</b> deja un tercio sin rating.</p>
+
+    <div class="chart-card">
+      <h3>Distribución por calificación — normalizada</h3>
+      <div class="chsub">% de la cartera calificada divulgada · tres brackets comparables</div>
+      <div class="svgwrap"><svg id="ch-ratings" viewBox="0 0 520 300" role="img" aria-label="Distribución por calificación normalizada por banco"></svg></div>
+      <div class="rlegend" aria-hidden="true">
+        <span><i style="background:var(--s2)"></i>Grado inversión (AAA→BBB-)</span>
+        <span><i style="background:var(--s6)"></i>Sub-grado (BB+ a B-)</span>
+        <span><i style="background:var(--muted)"></i>Sin calificación</span>
+      </div>
+    </div>
+
+    <div style="margin-top:18px" class="tbl-scroll">
       <table>
-        <thead><tr><th>Banco</th><th>Emisor</th><th>Agencia</th><th>Perfil de la cartera por rating</th><th>Duración</th><th>Conf.</th></tr></thead>
+        <thead><tr>
+          <th>Banco</th><th>Grado inv. (AAA→BBB-)</th><th>Sub-grado (BB+ a B-)</th><th>Sin calif.</th>
+          <th>Cobertura de la tabla</th><th>Conf.</th>
+        </tr></thead>
         <tbody>
-          <tr class="self"><td>Banistmo</td><td class="num nd">n/d</td><td class="mini">Fitch/Moody's</td><td class="mini">No divulga tabla; núcleo Panamá+UST ~50%</td><td class="num">~2.5&nbsp;a</td><td><span class="badge b-aud">Aud.*</span></td></tr>
-          <tr><td>Banco General</td><td class="num">BBB-</td><td class="mini">S&amp;P/Fitch</td><td class="mini">Extranjero AAA-AA+ (agency-MBS); local &lt;BBB-</td><td class="mini">MBS 3.7a · CMO 1.8a</td><td><span class="badge b-aud">Aud.</span></td></tr>
-          <tr><td>BAC</td><td class="num">BBB- / A-3</td><td class="mini">S&amp;P (ago-25)</td><td class="mini">Grueso BB+ a B- (US$2,968 M, soberanos CA)</td><td class="num nd">n/d</td><td><span class="badge b-aud">Aud.</span></td></tr>
-          <tr><td>Global Bank</td><td class="num">BBB-</td><td class="mini">S&amp;P/Fitch</td><td class="mini">Grado inv. US$562 M · monit. BB US$186 M · s/c US$384 M</td><td class="num nd">n/d</td><td><span class="badge b-aud">Aud.</span></td></tr>
-          <tr><td>Davivienda PA</td><td class="num">—</td><td class="mini">Moody's Local</td><td class="mini">Gob: AAA-AA US$397 M vs BB US$520 M; corp BBB</td><td class="num nd">n/d</td><td><span class="badge b-aud">Aud.</span></td></tr>
-          <tr><td>Scotiabank PA</td><td class="num">—</td><td class="mini">—</td><td class="mini">VRCOUI AA+ a A US$177 M (UST) / BBB US$142 M</td><td class="num nd">n/d</td><td><span class="badge b-aud">Aud.</span></td></tr>
+          <tr><td>Banco General</td>
+            <td class="num"><b>4,536 M</b> · 76.5%</td><td class="num">1,395 M · 23.5%</td><td class="num nd">~0</td>
+            <td class="mini">deuda (excl. acciones)</td><td><span class="badge b-aud">Aud.</span></td></tr>
+          <tr><td>Scotiabank PA</td>
+            <td class="num"><b>343 M</b> · 92.3%</td><td class="num">28 M · 7.7%*</td><td class="num nd">0</td>
+            <td class="mini">toda la cartera · Oct-24</td><td><span class="badge b-aud">Aud.</span></td></tr>
+          <tr><td>Global Bank</td>
+            <td class="num">562 M · 49.7%</td><td class="num">186 M · 16.4%</td><td class="num"><b>384 M · 33.9%</b></td>
+            <td class="mini">toda la cartera · jun-25</td><td><span class="badge b-aud">Aud.</span></td></tr>
+          <tr><td>Davivienda PA</td>
+            <td class="num">437 M · 44.3%</td><td class="num"><b>549 M · 55.6%</b></td><td class="num">2 M · 0.2%</td>
+            <td class="mini">VRCOUI+VRCR (excl. CA)</td><td><span class="badge b-aud">Aud.</span></td></tr>
+          <tr><td>BAC</td>
+            <td class="num">1,626 M · 32.7%</td><td class="num"><b>3,340 M · 67.3%</b></td><td class="num nd">0</td>
+            <td class="mini">bonos · CA consol.</td><td><span class="badge b-aud">Aud.</span></td></tr>
+          <tr class="self"><td>Banistmo</td>
+            <td class="num nd" colspan="3" style="text-align:left">Sin tabla divulgada — inferido por emisor: UST 383 M ≈ AA+ (~25%), Panamá 423 M (frontera BBB-/BB+, ~27%), ~40% corporativo <b>sin rating desglosado</b>. Duración ~2.5 a (S&amp;P).</td>
+            <td class="mini">no divulga tabla</td><td><span class="badge b-est">Inf.</span></td></tr>
         </tbody>
       </table>
     </div>
-    <p class="mini" style="margin-top:10px">* Banistmo no publica tabla de ratings de cartera en su Nota 7; la duración (~2.5 años) y el ~50% en deuda pública Panamá+EE.UU. provienen del reporte de S&amp;P anexo al IN-A 2024. Contexto macro: Panamá perdió el grado de inversión con Fitch en 2024 — por eso el papel soberano local aparece "&lt;BBB-" en las tablas de los bancos.</p>
+    <p class="mini" style="margin-top:10px">* Scotiabank: bracket "BBB+ a BB+" de US$28 M cruza la frontera IG/sub-grado; contado como sub-grado (conservador). Montos leídos de la nota de riesgo de crédito de cada auditoría y reconciliados con el total de cada cartera.</p>
+
+    <div style="margin-top:16px" class="callout co-warn"><span class="ic">!</span>
+      <div><b>La línea "grado de inversión" no es 1:1 entre bancos — depende de cómo cada uno trata el papel de
+        Panamá.</b> Panamá quedó en frontera (S&amp;P BBB, Fitch BB+ desde mar-2024, Moody's Baa3): <b>Banco General y
+        BAC</b> clasifican su papel panameño/regional como <b>sub-grado</b>, <b>Global Bank</b> lo deja <b>sin
+        calificación internacional</b> (de ahí su 34% "NR"), y <b>Scotiabank</b> lo trata como <b>grado de inversión</b>.
+        El orden cualitativo sí es robusto; el % exacto de IG hay que leerlo con esa salvedad. <b>Banistmo</b> no publica
+        tabla, así que su ~40% corporativo no es colapsable a IG/sub-grado sin especular.</div>
+    </div>
+
+    <div style="margin-top:16px" class="tbl-scroll">
+      <table>
+        <thead><tr><th>Emisor (banco)</th><th>Rating emisor</th><th>Agencia</th><th>Duración cartera</th></tr></thead>
+        <tbody>
+          <tr class="self"><td>Banistmo</td><td class="num nd">n/d</td><td class="mini">Fitch/Moody's</td><td class="num">~2.5&nbsp;a <span class="mini">(S&amp;P)</span></td></tr>
+          <tr><td>Banco General</td><td class="num">BBB-</td><td class="mini">S&amp;P/Fitch</td><td class="mini">MBS 3.7a · CMO 1.8a</td></tr>
+          <tr><td>BAC</td><td class="num">BBB- / A-3</td><td class="mini">S&amp;P (ago-25)</td><td class="num nd">n/d</td></tr>
+          <tr><td>Global Bank</td><td class="num">BBB-</td><td class="mini">S&amp;P/Fitch</td><td class="num nd">n/d</td></tr>
+        </tbody>
+      </table>
+    </div>
   </section>
 
   <!-- LECTURAS -->
@@ -827,6 +880,36 @@ hr.soft{border:none;border-top:1px solid var(--hair);margin:26px 0}
     ],{pct:true,max:7,ticks:7});
   }
 
+  // ---- ratings 100% stacked bars ----
+  function ratings(svg){
+    var W=520,H=+svg.getAttribute("viewBox").split(" ")[3];
+    var padL=118,padR=16,padT=10,padB=8;
+    var rows=[
+      {b:"Scotiabank",tot:"US$371 M",seg:[["Grado inversión",92.3,"343 M","--s2"],["Sub-grado",7.7,"28 M","--s6"],["Sin calif.",0,"0","--muted"]]},
+      {b:"Banco General",tot:"US$5,931 M",seg:[["Grado inversión",76.5,"4,536 M","--s2"],["Sub-grado",23.5,"1,395 M","--s6"],["Sin calif.",0.05,"~0","--muted"]]},
+      {b:"Global Bank",tot:"US$1,132 M",seg:[["Grado inversión",49.7,"562 M","--s2"],["Sub-grado",16.4,"186 M","--s6"],["Sin calif.",33.9,"384 M","--muted"]]},
+      {b:"Davivienda",tot:"US$988 M",seg:[["Grado inversión",44.3,"437 M","--s2"],["Sub-grado",55.6,"549 M","--s6"],["Sin calif.",0.2,"2 M","--muted"]]},
+      {b:"BAC",tot:"US$4,967 M",seg:[["Grado inversión",32.7,"1,626 M","--s2"],["Sub-grado",67.3,"3,340 M","--s6"],["Sin calif.",0,"0","--muted"]]}
+    ];
+    var n=rows.length, gap=15, iw=W-padL-padR;
+    var bh=(H-padT-padB-gap*(n-1))/n;
+    rows.forEach(function(r,i){
+      var y=padT+i*(bh+gap), x=padL;
+      var nm=svg.appendChild(el("text",{x:padL-12,y:y+bh/2+4,"text-anchor":"end",class:"bar-name"}));
+      nm.textContent=r.b;
+      r.seg.forEach(function(s){
+        var w=iw*s[1]/100;
+        if(w<=0.3)return;
+        var rect=el("rect",{x:x,y:y,width:Math.max(1,w),height:bh,fill:cssv(s[3]),rx:2});
+        rect.style.cursor="pointer";
+        (function(seg,total){rect.addEventListener("mousemove",function(e){showTip(e,"<b>"+r.b+" · "+seg[0]+"</b><br>"+seg[1].toFixed(1)+"% · US$"+seg[2]+"<br><span style='color:var(--muted)'>cartera calif. "+total+"</span>");});rect.addEventListener("mouseleave",hideTip);})(s,r.tot);
+        svg.appendChild(rect);
+        if(w>40){var t=svg.appendChild(el("text",{x:x+w/2,y:y+bh/2+4,"text-anchor":"middle",class:"seg-label"}));t.textContent=Math.round(s[1])+"%";}
+        x+=w;
+      });
+    });
+  }
+
   function drawAll(){
     hbars(document.getElementById("ch-size"),[
       {name:"Banco General",c:"--s2",v:5968.3,tip:"Dic-2025 · PA consol."},
@@ -849,6 +932,7 @@ hr.soft{border:none;border-top:1px solid var(--hair);margin:26px 0}
     yieldBars(document.getElementById("ch-yield"));
     vbars(document.getElementById("ch-sysgrow"));
     trend(document.getElementById("ch-trend"));
+    ratings(document.getElementById("ch-ratings"));
   }
   drawAll();
 })();
