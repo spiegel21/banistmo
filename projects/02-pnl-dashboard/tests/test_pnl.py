@@ -12,10 +12,11 @@ from mtm import mark_to_market
 def test_realized_wavg_long():
     detail = realized_pnl(load_all_trades())
     g = detail[detail["cusip"] == "037833100"]["realized_gain"].sum()
-    # Inception 300k@0.97 + buy 1M@0.986 + buy 500k@0.996 → wavg = 1775000/1800000
-    # Sell 600k at unit 601000/600000; gain = 600k × (sell_unit − wavg)
-    wavg = (300_000 * 0.97 + 1_000_000 * 0.986 + 500_000 * 0.996) / 1_800_000
-    expected = 600_000 * (601_000 / 600_000 - wavg)
+    # Clean-price cost basis (accrued excluded from trading realized):
+    # inception 300k@97.0 + buy 1M@98.5 + buy 500k@99.5 → wavg (fraction of par).
+    # Sell 600k @100.0; gain = 600k × (1.00 − wavg).
+    wavg = (300_000 * 0.970 + 1_000_000 * 0.985 + 500_000 * 0.995) / 1_800_000
+    expected = 600_000 * (1.00 - wavg)
     assert g == pytest.approx(expected, abs=1)
 
 
