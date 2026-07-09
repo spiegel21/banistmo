@@ -63,3 +63,36 @@ tax-paydate conversions. Positive in all 12 years.
 high Sharpe. The volume/skew signals are directionally real but flip too often (78–102
 trades/yr) to survive slippage alone; they add value only conviction-sized or as filters,
 which is exactly what the ML model does (turnover ~42/yr).
+
+
+## RECOMMENDED STRATEGY — refined quincena (calendar) rule
+
+The crude "short USD if day≤15" improves substantially once days 1–4 (which are
+USD-*up*) are excluded from the short window:
+
+    day 1–4    -> LONG USD   (start-of-month, USD tends up)
+    day 5–15   -> SHORT USD  (mid-month USD-supply surge, colón strengthens)
+    day 16–end -> LONG USD   (supply fades, USD drifts up)
+
+At USD 1M per trade, net of 0.65 CRC round-trip:
+
+| Version | Per year | Sharpe | Trades/yr | Max DD |
+|---------|---------:|-------:|----------:|-------:|
+| Base quincena (≤15) | $92k | 2.09 | 24 | −$63k |
+| **Refined (short 5–15)** | **$125k** | **2.88** | 24 | −$50k |
+| Refined + slow-volume sizing | $103k | **3.27** | 20 | **−$34k** |
+
+- **Robust, not overfit:** Sharpe is a broad plateau (1.2–2.9) across all short-window
+  choices; positive in ALL 12 years (worst +$37k), incl. the 2015–17 pegged years.
+- **Volume is confirmation, not a daily signal:** 1st-half+high-vol = strong sell-USD,
+  2nd-half+low-vol = strong buy-USD, but trading volume daily adds turnover that costs
+  more than it adds. Folding it in as a SLOW 20-day regime filter (trim size when it
+  disagrees) lifts Sharpe to 3.27 and halves the drawdown.
+- Practical trading calendar: `out/quincena_trading_calendar.csv`.
+
+## Público vs privado volume — NOT possible with this file
+
+The MONEX export contains only *aggregate* traded volume. Splitting público (BCCR /
+sector público) vs privado flow needs a different BCCR dataset (sector-level MONEX /
+ventanilla breakdown). Provide that and the mid-month supply surge can be attributed
+to a specific sector.

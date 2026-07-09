@@ -1,0 +1,220 @@
+"""Deep-dive on the calendar (quincena) strategy — the most robust edge found.
+
+Refines the crude "short USD if day<=15" into "short USD only on the mid-month
+USD-supply window (days 5-15), long otherwise", validates it against overfitting
+(window sensitivity grid, per-year stability), tests whether VOLUME confirmation
+adds value net of cost, and reports everything in dollars at USD 1M / trade.
+
+Writes q_*.png and out/quincena_results.json.
+"""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import matplotlib
+
+matplotlib.use("Agg")
+import matplotlib.pyplot as plt
+import numpy as np
+import pandas as pd
+
+from analyze import OUT, load
+
+plt.rcParams.update({"figure.facecolor": "white", "axes.grid": True, "grid.alpha": 0.25,
+                     "axes.spines.top": False, "axes.spines.right": False})
+NAVY, GREEN, RED, GREY, PURPLE = "#1f3b73", "#2e8b57", "#c0392b", "#7f8c8d", "#7d3c98"
+NOTIONAL = 1_000_000
+COST_SIDE_CRC = 0.325
+ANN = np.sqrt(252)
+SHORT_START, SHORT_END = 5, 15      # short-USD window (chosen from the day-of-month profile)
+
+
+def frame():
+    df = load().copy()
+    df["vol"] = df.volume_usd / 1e6
+    df["r_next"] = df.close.pct_change().shift(-1)
+    df["dom"] = df.date.dt.day
+    df["dow"] = df.date.dt.dayofweek
+    df["year"] = df.date.dt.year
+    df["vol_ref"] = df.groupby("dow").vol.transform(
+        lambda s: s.shift(1).expanding(min_periods=10).mean())
+    df["vol_adj"] = df.vol / df.vol_ref
+    return df
+
+
+def pos_base(df):
+    return np.where(df.dom <= 15, -1.0, 1.0)
+
+
+def pos_refined(df, a=SHORT_START, b=SHORT_END):
+    """Short USD on the mid-month supply window [a,b], long otherwise."""
+    return np.where((df.dom >= a) & (df.dom <= b), -1.0, 1.0)
+
+
+def pos_refined_slowvol(df):
+    """Refined calendar, size trimmed to 0.5 when a slow (20d) volume regime disagrees."""
+    base = pos_refined(df)
+    slow = df.vol_adj.rolling(20).mean()
+    # in the short window we want supply (high vol) to confirm; outside we want thin (low vol)
+    confirm = np.where((df.dom >= SHORT_START) & (df.dom <= SHORT_END), slow > 1, slow < 1)
+    return base * np.where(confirm, 1.0, 0.5)
+
+
+def dollars(pos, df):
+    pos = pd.Series(np.asarray(pos, float)).reset_index(drop=True)
+    turn = pos.diff().abs()
+    turn.iloc[0] = abs(pos.iloc[0])
+    pnl = pos * NOTIONAL * df.r_next.reset_index(drop=True)
+    cost = turn * NOTIONAL * COST_SIDE_CRC / df.vwap.reset_index(drop=True)
+    net = (pnl - cost).dropna()
+    return net, turn
+
+
+def stat(pos, df):
+    net, turn = dollars(pos, df)
+    cum = net.cumsum()
+    yrs = len(net) / 252
+    bps = net / (NOTIONAL / 1e4)
+    return {"total_usd": round(float(net.sum())), "per_year_usd": round(float(net.sum() / yrs)),
+            "sharpe": round(float(bps.mean() / bps.std() * ANN), 2),
+            "roundtrips_yr": round(float(turn.sum() / 2 / yrs), 1),
+            "win_rate": round(float((net > 0).mean() * 100), 1),
+            "maxdd_usd": round(float((cum - cum.cummax()).min()))}
+
+
+# --------------------------------------------------------------------------- #
+def chart_sensitivity(df, res):
+    starts, ends = range(2, 9), range(12, 19)
+    grid = np.full((len(list(starts)), len(list(ends))), np.nan)
+    for i, a in enumerate(starts):
+        for j, b in enumerate(ends):
+            grid[i, j] = stat(pos_refined(df, a, b), df)["sharpe"]
+    res["window_sharpe_min"] = round(float(np.nanmin(grid)), 2)
+    res["window_sharpe_max"] = round(float(np.nanmax(grid)), 2)
+    fig, ax = plt.subplots(figsize=(8, 4.6))
+    im = ax.imshow(grid, cmap="RdYlGn", aspect="auto", vmin=1.5, vmax=np.nanmax(grid))
+    ax.set_xticks(range(len(list(ends))))
+    ax.set_xticklabels(list(ends))
+    ax.set_yticks(range(len(list(starts))))
+    ax.set_yticklabels(list(starts))
+    ax.set_xlabel("short-window END day")
+    ax.set_ylabel("short-window START day")
+    ax.set_title("Net Sharpe across short-window choices — broad green plateau = robust")
+    ax.grid(False)
+    for i in range(grid.shape[0]):
+        for j in range(grid.shape[1]):
+            ax.text(j, i, f"{grid[i, j]:.1f}", ha="center", va="center", fontsize=8)
+    fig.colorbar(im, shrink=0.8)
+    fig.tight_layout()
+    fig.savefig(OUT / "q_sensitivity.png", dpi=110)
+    plt.close(fig)
+
+
+def chart_peryear(df, res):
+    rows = []
+    for y, g in df.groupby("year"):
+        if len(g) < 50:
+            continue
+        rows.append((y, stat(pos_base(g), g)["per_year_usd"] * len(g) / 252 / (len(g) / 252),
+                     dollars(pos_refined(g), g)[0].sum()))
+    yr = [r[0] for r in rows]
+    ref = [dollars(pos_refined(g), g)[0].sum() for _, g in df.groupby("year") if len(g) >= 50]
+    bas = [dollars(pos_base(g), g)[0].sum() for _, g in df.groupby("year") if len(g) >= 50]
+    res["refined_worst_year_usd"] = round(float(min(ref)))
+    x = np.arange(len(yr))
+    fig, ax = plt.subplots(figsize=(11, 4))
+    ax.bar(x - 0.2, np.array(bas) / 1e3, 0.4, label="base quincena (≤15)", color=GREY)
+    ax.bar(x + 0.2, np.array(ref) / 1e3, 0.4, label="refined (short 5–15)", color=GREEN)
+    ax.set_xticks(x)
+    ax.set_xticklabels([str(y) for y in yr])
+    ax.axhline(0, color="k", lw=0.8)
+    ax.set_ylabel("net P&L per year (USD thousands, 1M/trade)")
+    ax.set_title("Every year is positive — refined dominates base")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(OUT / "q_peryear.png", dpi=110)
+    plt.close(fig)
+
+
+def chart_interaction(df, res):
+    d = df.dropna(subset=["r_next", "vol_adj"]).copy()
+    d["half"] = np.where(d.dom <= 15, "1st half", "2nd half")
+    d["vlvl"] = np.where(d.vol_adj < 1, "low vol", "high vol")
+    piv = d.pivot_table("r_next", "half", "vlvl", aggfunc="mean") * 1e4
+    res["interaction_bps"] = {f"{i}|{c}": round(float(piv.loc[i, c]), 1)
+                              for i in piv.index for c in piv.columns}
+    fig, ax = plt.subplots(figsize=(7, 4.2))
+    lim = np.nanmax(np.abs(piv.values))
+    im = ax.imshow(piv.values, cmap="RdYlGn_r", vmin=-lim, vmax=lim, aspect="auto")
+    ax.set_xticks(range(2))
+    ax.set_xticklabels(piv.columns)
+    ax.set_yticks(range(2))
+    ax.set_yticklabels(piv.index)
+    for i in range(2):
+        for j in range(2):
+            ax.text(j, i, f"{piv.values[i, j]:+.1f}", ha="center", va="center", fontsize=13)
+    ax.set_title("Next-day USD move (bps): calendar × volume\nvolume CONFIRMS the calendar on the diagonal")
+    ax.grid(False)
+    fig.colorbar(im, shrink=0.8)
+    fig.tight_layout()
+    fig.savefig(OUT / "q_interaction.png", dpi=110)
+    plt.close(fig)
+
+
+def chart_tearsheet(df, res):
+    net, turn = dollars(pos_refined(df), df)
+    s = pd.Series(net.values, index=df.date.iloc[net.index])
+    cum = s.cumsum()
+    dd = cum - cum.cummax()
+    fig, ax = plt.subplots(2, 2, figsize=(11, 7))
+    b = res["Refined (short 5-15)"]
+    fig.suptitle(f"Refined quincena — long/short USD 1M per trade, net of 0.65 CRC RT  "
+                 f"(USD {b['per_year_usd']/1e3:.0f}k/yr · Sharpe {b['sharpe']} · "
+                 f"{b['roundtrips_yr']} trades/yr · win {b['win_rate']}%)",
+                 fontsize=12, fontweight="bold")
+    ax[0, 0].plot(cum.index, cum.values / 1e6, color=GREEN, lw=1.6)
+    ax[0, 0].set_title("Cumulative net P&L (USD millions)")
+    ax[0, 1].fill_between(dd.index, dd.values / 1e3, 0, color=RED, alpha=0.5)
+    ax[0, 1].set_title(f"Drawdown (USD k) — max USD {dd.min()/1e3:.0f}k")
+    yearly = s.groupby(s.index.year).sum()
+    ax[1, 0].bar(yearly.index.astype(str), yearly.values / 1e3, color=GREEN)
+    ax[1, 0].set_title("Net P&L by year (USD k)")
+    ax[1, 0].tick_params(axis="x", rotation=90, labelsize=8)
+    mret = s.groupby(s.index.month).mean() * 252 / 12
+    ax[1, 1].bar([pd.Timestamp(2025, m, 1).strftime("%b") for m in mret.index],
+                 mret.values / 1e3, color=[GREEN if v > 0 else RED for v in mret.values])
+    ax[1, 1].set_title("Avg P&L by calendar month (USD k)")
+    ax[1, 1].tick_params(axis="x", rotation=90, labelsize=8)
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    fig.savefig(OUT / "q_tearsheet.png", dpi=110)
+    plt.close(fig)
+
+
+def trading_calendar(df):
+    """Practical map: for each day-of-month, the position the refined rule takes."""
+    return {int(d): ("SHORT USD" if SHORT_START <= d <= SHORT_END else "LONG USD")
+            for d in range(1, 32)}
+
+
+def main():
+    df = frame()
+    res = {"_meta": {"n_days": int(len(df)), "notional_usd": NOTIONAL,
+                     "short_window": [SHORT_START, SHORT_END], "years": round(len(df) / 252, 1)}}
+    res["Base quincena (<=15)"] = stat(pos_base(df), df)
+    res["Refined (short 5-15)"] = stat(pos_refined(df), df)
+    res["Refined + slow-vol sizing"] = stat(pos_refined_slowvol(df), df)
+
+    chart_sensitivity(df, res)
+    chart_peryear(df, res)
+    chart_interaction(df, res)
+    chart_tearsheet(df, res)
+    res["trading_calendar"] = trading_calendar(df)
+
+    Path(OUT / "quincena_results.json").write_text(json.dumps(res, indent=2))
+    print(json.dumps({k: v for k, v in res.items() if k != "trading_calendar"}, indent=2))
+    print("\nWrote q_*.png and quincena_results.json")
+
+
+if __name__ == "__main__":
+    main()

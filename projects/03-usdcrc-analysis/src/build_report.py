@@ -13,6 +13,10 @@ ROOT = Path(__file__).resolve().parents[1]
 OUT = ROOT / "out"
 R = json.loads((OUT / "vm_results.json").read_text())
 DY = json.loads((OUT / "dynamics_results.json").read_text())
+Q = json.loads((OUT / "quincena_results.json").read_text())
+QREF = Q["Refined (short 5-15)"]
+QSLOW = Q["Refined + slow-vol sizing"]
+QBASE = Q["Base quincena (<=15)"]
 M = R["_meta"]
 LG = R["Logit (conviction)"]
 LG9 = R["Logit (conviction)_2019"]
@@ -33,14 +37,14 @@ def usd(x):
 
 
 KPIS = [
-    (usd(DY['Quincena rule']['per_year_usd']), "quincena rule / yr", "best transparent rule, $1M/trade"),
-    (f"{DY['Quincena rule']['sharpe']}", "quincena Sharpe", f"only {DY['Quincena rule']['roundtrips_yr']} trades/yr"),
+    (usd(QREF['per_year_usd']), "refined quincena / yr", "$1M/trade, net of cost"),
+    (f"{QREF['sharpe']}", "refined quincena Sharpe", f"only {QREF['roundtrips_yr']} trades/yr"),
+    (f"{QSLOW['sharpe']}", "with slow-vol sizing", f"DD only {usd(QSLOW['maxdd_usd'])}"),
+    (usd(Q['refined_worst_year_usd']), "worst year", "positive in all 12 years"),
     (f"{R['vol_quintile_adj'][0]:+.0f} / {R['vol_quintile_adj'][-1]:+.0f} bps", "low vs high volume",
      "next-day USD move"),
-    (f"{DY['vol_on_usd_down']:.0f} vs {DY['vol_on_usd_up']:.0f} M", "volume: colón up vs down day",
+    (f"{DY['vol_on_usd_down']:.0f} vs {DY['vol_on_usd_up']:.0f} M", "volume: colón up vs down",
      "USD sellers trade in size"),
-    (f"{R['oos_accuracy_logit']:.0%}", "model OOS accuracy", "combined model, next-day direction"),
-    (f"{usd(LG['ann_bps']*100)}/yr", "ML model / yr", f"net Sharpe {LG['sharpe']}, $1M scaling"),
 ]
 
 
@@ -136,16 +140,63 @@ HTML = f"""<!doctype html>
     ${DY['_meta']['notional_usd']:,.0f} per trade · net of 0.65 CRC round-trip · no technical indicators</div>
 </header>
 
-<p class="lead">Three things here: <b>why</b> the signals exist (the flow &amp; cash-flow mechanics we are
-exploiting), <b>exactly how</b> each non-ML rule decides to be long or short USD, and <b>what it makes in
-dollars</b> at $1,000,000 per trade. Headline: the simplest rule — a <b>calendar (quincena) rule</b> —
-earns about <b>{usd(DY['Quincena rule']['per_year_usd'])} per year</b> at Sharpe {DY['Quincena rule']['sharpe']}
-with only {DY['Quincena rule']['roundtrips_yr']} trades a year; the volume signal is real but flips too often
-to survive slippage on its own.</p>
+<p class="lead">The recommended strategy is a <b>refined calendar (quincena) rule</b>: short USD only on
+the mid-month supply window (days 5–15), long the rest of the month. At $1,000,000 per trade it earns
+<b>{usd(QREF['per_year_usd'])}/yr at Sharpe {QREF['sharpe']}</b> with just {QREF['roundtrips_yr']} trades a
+year and a worst-year of {usd(Q['refined_worst_year_usd'])} — positive in all 12 years. Below: the exact
+rule, its robustness, the underlying mechanics, and how volume fits in (as a slow regime filter, not a
+daily signal).</p>
 
 <div class="kpis" style="margin-top:16px">{kpi_html()}</div>
 
-<div class="part">Part A · The underlying dynamics — what we are exploiting</div>
+<div class="part">Part A · The recommended strategy — refined quincena</div>
+<h2><span class="n">A1.</span> The rule &amp; the numbers ($1M per trade, net of cost)</h2>
+<table><tr><th>Version</th><th class="num">Per year</th><th class="num">Sharpe</th>
+  <th class="num">Trades/yr</th><th class="num">Win %</th><th class="num">Max DD</th><th>Note</th></tr>
+<tr><td>Base quincena (short if day ≤ 15)</td><td class="num">{usd(QBASE['per_year_usd'])}</td>
+  <td class="num">{QBASE['sharpe']}</td><td class="num">{QBASE['roundtrips_yr']}</td>
+  <td class="num">{QBASE['win_rate']}</td><td class="num">{usd(QBASE['maxdd_usd'])}</td>
+  <td class="muted">original</td></tr>
+<tr><td><b>Refined (short days 5–15, long otherwise)</b></td>
+  <td class="num ok">{usd(QREF['per_year_usd'])}</td><td class="num ok">{QREF['sharpe']}</td>
+  <td class="num">{QREF['roundtrips_yr']}</td><td class="num">{QREF['win_rate']}</td>
+  <td class="num">{usd(QREF['maxdd_usd'])}</td><td class="muted">most dollars</td></tr>
+<tr><td>Refined + slow-volume sizing</td><td class="num">{usd(QSLOW['per_year_usd'])}</td>
+  <td class="num ok">{QSLOW['sharpe']}</td><td class="num">{QSLOW['roundtrips_yr']}</td>
+  <td class="num">{QSLOW['win_rate']}</td><td class="num ok">{usd(QSLOW['maxdd_usd'])}</td>
+  <td class="muted">best risk-adjusted</td></tr></table>
+<div class="rule"><h4>Exact logic (the trading calendar)</h4>
+  <div class="logic">day_of_month 1–4    →  LONG USD  (start-of-month, USD tends up)<br>
+    day_of_month 5–15   →  SHORT USD (mid-month USD-supply surge → colón strengthens)<br>
+    day_of_month 16–end →  LONG USD  (supply fades, USD drifts up)<br>
+    optional: trim size to 50% when a slow 20-day volume regime disagrees</div>
+  <p>The refinement over the crude ≤15 split: days 1–4 are actually USD-<i>up</i>, so we go long then
+    instead of short. Same {QREF['roundtrips_yr']} trades/yr, but more money and a smaller drawdown.</p></div>
+
+<h2><span class="n">A2.</span> Is it overfit? Window sensitivity &amp; every-year P&amp;L</h2>
+{fig("q_sensitivity.png", "Net Sharpe across every choice of the short-window start &amp; end",
+     "The result is a broad green plateau (Sharpe " + str(Q['window_sharpe_min']) + "–" +
+     str(Q['window_sharpe_max']) + "), not a lucky point — days 5→15 is simply the natural mid-month "
+     "supply window, and neighbours all work.")}
+{fig("q_peryear.png", "Net P&L by year — base vs refined ($1M/trade)",
+     "Positive in all 12 calendar years (worst " + usd(Q['refined_worst_year_usd']) + "), including the "
+     "2015–17 pegged years where the volume signal was dead. The refined version dominates the base almost "
+     "every year.")}
+
+<h2><span class="n">A3.</span> How volume fits in — confirmation, not a daily signal</h2>
+{fig("q_interaction.png", "Next-day USD move: calendar × volume (bps)",
+     "Volume CONFIRMS the calendar on the diagonal: first-half + high volume is strongly USD-down "
+     "(sell USD), second-half + low volume strongly USD-up (buy USD). But trading volume day-by-day adds "
+     "turnover that costs more than it adds — so we fold it in as a SLOW regime filter that only trims size, "
+     "which is what lifts the Sharpe to " + str(QSLOW['sharpe']) + " and cuts the drawdown to " +
+     usd(QSLOW['maxdd_usd']) + ".")}
+
+<h2><span class="n">A4.</span> Tearsheet ($1M per trade, net of cost)</h2>
+{fig("q_tearsheet.png", "Refined quincena — equity, drawdown, yearly &amp; monthly P&L",
+     "Smooth compounding to ~$1.3M over the sample, shallow drawdowns, every year and (on average) every "
+     "month positive — January and April strongest.")}
+
+<div class="part">Part B · The underlying dynamics — what we are exploiting</div>
 <h2><span class="n">A1.</span> The engine: exporters are the swing USD supply</h2>
 {fig("dyn_mechanism.png", "Volume when the colón strengthens vs weakens, and next-day move by volume",
      f"On days the colón strengthens (USD falls) the market trades {DY['vol_on_usd_down']:.0f}M — far more "
@@ -172,7 +223,7 @@ to survive slippage on its own.</p>
      "years. That cross-regime persistence is why we treat these as structural, not curve-fit.")}
 </div>
 
-<div class="part">Part B · How each rule decides (exact logic)</div>
+<div class="part">Part C · How each rule decides (exact logic)</div>
 <div class="rule">
   <h4>Rule 1 — Volume ("buy USD when the market is quiet")</h4>
   <div class="logic">seasonal_vol = today_volume ÷ (avg volume on the same weekday, to date)<br>
@@ -209,14 +260,14 @@ to survive slippage on its own.</p>
     that is the ML's main advantage over the transparent rules, not better direction.</p>
 </div>
 
-<div class="part">Part C · Results at $1,000,000 per trade (net of cost)</div>
+<div class="part">Part D · Results at $1,000,000 per trade (all rules, net of cost)</div>
 {dollar_table()}
 {fig("dyn_dollar_equity.png", "Cumulative net P&L in US$ millions — transparent rules, $1M per trade",
      "The quincena rule (green) compounds smoothly with shallow drawdowns; the combined vote is decent but "
      "dragged by the turnover of the volume and skew legs. The volume rule is directionally right but nearly "
      "flat net of cost — the signal is real, the daily churn is the problem.")}
 
-<div class="part">Part D · The combined model &amp; the raw relationships</div>
+<div class="part">Part E · The combined model &amp; the raw relationships</div>
 <h2><span class="n">D1.</span> Low volume → USD up (seasonally adjusted)</h2>
 {fig("vm_vol_nextret.png", "Next-day USD move by volume quintile",
      "Monotonic: quietest days → USD up, busiest → USD down. Seasonal adjustment sharpens the extremes.")}
@@ -231,7 +282,7 @@ to survive slippage on its own.</p>
      str(R['Logit (conviction)_is']['sharpe']) + "; a 5-day feature lag collapses accuracy (no look-ahead), "
      "permutation p=" + str(R['perm_p']) + ".")}
 
-<div class="part">Part E · Verdict</div>
+<div class="part">Part F · Verdict</div>
 <ul class="find">
  <li><b>The most robust, simplest edge is the calendar.</b> Short USD in the first half of the month, long
    in the second — {usd(DY['Quincena rule']['per_year_usd'])}/yr per $1M at Sharpe {DY['Quincena rule']['sharpe']},

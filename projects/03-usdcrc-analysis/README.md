@@ -13,6 +13,8 @@ src/analyze.py         # descriptive analysis (price formation, seasonality, pro
 src/eda.py             # exploratory charts (returns/ACF, volume->move, calendar)
 src/strategies.py      # strategy tearsheets
 src/backtest.py        # rigorous, overfitting-aware tests -> backtest_results.json
+src/dynamics.py        # underlying-mechanism deep-dive + $1M/trade dollar rules
+src/quincena.py        # refined quincena strategy (recommended) + trading calendar
 src/build_report.py    # assembles the self-contained HTML report (reads the json)
 out/                   # PNG charts + report.html + report.pdf (generated)
 FINDINGS.md            # written conclusions

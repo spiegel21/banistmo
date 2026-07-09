@@ -1,0 +1,77 @@
+{
+  "_meta": {
+    "n_days": 2663,
+    "notional_usd": 1000000,
+    "short_window": [
+      5,
+      15
+    ],
+    "years": 10.6
+  },
+  "Base quincena (<=15)": {
+    "total_usd": 971924,
+    "per_year_usd": 92008,
+    "sharpe": 2.09,
+    "roundtrips_yr": 24.2,
+    "win_rate": 55.0,
+    "maxdd_usd": -62890
+  },
+  "Refined (short 5-15)": {
+    "total_usd": 1321651,
+    "per_year_usd": 125115,
+    "sharpe": 2.88,
+    "roundtrips_yr": 24.2,
+    "win_rate": 58.0,
+    "maxdd_usd": -49794
+  },
+  "Refined + slow-vol sizing": {
+    "total_usd": 1090059,
+    "per_year_usd": 103191,
+    "sharpe": 3.27,
+    "roundtrips_yr": 19.9,
+    "win_rate": 57.8,
+    "maxdd_usd": -33760
+  },
+  "window_sharpe_min": 1.19,
+  "window_sharpe_max": 2.88,
+  "refined_worst_year_usd": 36509,
+  "interaction_bps": {
+    "1st half|high vol": -10.1,
+    "1st half|low vol": 1.2,
+    "2nd half|high vol": 1.7,
+    "2nd half|low vol": 7.1
+  },
+  "trading_calendar": {
+    "1": "LONG USD",
+    "2": "LONG USD",
+    "3": "LONG USD",
+    "4": "LONG USD",
+    "5": "SHORT USD",
+    "6": "SHORT USD",
+    "7": "SHORT USD",
+    "8": "SHORT USD",
+    "9": "SHORT USD",
+    "10": "SHORT USD",
+    "11": "SHORT USD",
+    "12": "SHORT USD",
+    "13": "SHORT USD",
+    "14": "SHORT USD",
+    "15": "SHORT USD",
+    "16": "LONG USD",
+    "17": "LONG USD",
+    "18": "LONG USD",
+    "19": "LONG USD",
+    "20": "LONG USD",
+    "21": "LONG USD",
+    "22": "LONG USD",
+    "23": "LONG USD",
+    "24": "LONG USD",
+    "25": "LONG USD",
+    "26": "LONG USD",
+    "27": "LONG USD",
+    "28": "LONG USD",
+    "29": "LONG USD",
+    "30": "LONG USD",
+    "31": "LONG USD"
+  }
+}
