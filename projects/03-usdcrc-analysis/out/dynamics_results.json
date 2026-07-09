@@ -1,0 +1,104 @@
+{
+  "_meta": {
+    "n_days": 2663,
+    "notional_usd": 1000000,
+    "cost_crc_roundtrip": 0.65,
+    "usd_per_bp": 100.0,
+    "years": 10.6
+  },
+  "vol_on_usd_up": 18.4,
+  "vol_on_usd_down": 28.9,
+  "nextmove_after_lowvol": 7.5,
+  "nextmove_after_highvol": -11.3,
+  "skew_corr": 0.198,
+  "stability": {
+    "2015": {
+      "vol_corr": 0.11,
+      "quincena_spread": 5.6
+    },
+    "2016": {
+      "vol_corr": 0.02,
+      "quincena_spread": 3.9
+    },
+    "2017": {
+      "vol_corr": -0.07,
+      "quincena_spread": 1.5
+    },
+    "2018": {
+      "vol_corr": -0.14,
+      "quincena_spread": 12.1
+    },
+    "2019": {
+      "vol_corr": -0.32,
+      "quincena_spread": 11.2
+    },
+    "2020": {
+      "vol_corr": -0.25,
+      "quincena_spread": 15.2
+    },
+    "2021": {
+      "vol_corr": -0.21,
+      "quincena_spread": 3.4
+    },
+    "2022": {
+      "vol_corr": -0.36,
+      "quincena_spread": 15.0
+    },
+    "2023": {
+      "vol_corr": -0.16,
+      "quincena_spread": 13.8
+    },
+    "2024": {
+      "vol_corr": -0.2,
+      "quincena_spread": 14.6
+    },
+    "2025": {
+      "vol_corr": -0.14,
+      "quincena_spread": 6.0
+    },
+    "2026": {
+      "vol_corr": -0.22,
+      "quincena_spread": 14.9
+    }
+  },
+  "Volume rule": {
+    "total_usd": 177049,
+    "per_year_usd": 16761,
+    "per_trade_usd": 216,
+    "trades_total": 820,
+    "roundtrips_yr": 77.7,
+    "win_rate": 49.0,
+    "sharpe": 0.37,
+    "maxdd_usd": -273908
+  },
+  "Quincena rule": {
+    "total_usd": 971924,
+    "per_year_usd": 92008,
+    "per_trade_usd": 3804,
+    "trades_total": 256,
+    "roundtrips_yr": 24.2,
+    "win_rate": 55.0,
+    "sharpe": 2.09,
+    "maxdd_usd": -62890
+  },
+  "Precio-ponderado skew rule": {
+    "total_usd": -78416,
+    "per_year_usd": -7423,
+    "per_trade_usd": -73,
+    "trades_total": 1080,
+    "roundtrips_yr": 102.2,
+    "win_rate": 46.0,
+    "sharpe": -0.17,
+    "maxdd_usd": -472595
+  },
+  "Combined vote (3 signals)": {
+    "total_usd": 542598,
+    "per_year_usd": 51365,
+    "per_trade_usd": 603,
+    "trades_total": 900,
+    "roundtrips_yr": 85.2,
+    "win_rate": 50.8,
+    "sharpe": 1.15,
+    "maxdd_usd": -327012
+  }
+}

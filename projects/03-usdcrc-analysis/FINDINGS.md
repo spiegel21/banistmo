@@ -36,3 +36,30 @@ version of this rule nets Sharpe ~1.8.
   unpriceable risk is a BCCR re-peg / intervention, which would mute both signals.
 - Net of slippage on close-to-close fills; gross of financing/borrow and market impact; the
   colón is not freely shortable for all participants (a directional/treasury edge).
+
+
+## Underlying dynamics (why it works) & dollar results ($1M/trade)
+
+**The engine — exporters are the swing USD supply.** On days the colón strengthens
+the market trades ~29M vs ~18M on days it weakens: USD sellers (exporters, remittances,
+FDI) come in size, USD buyers trickle. So high volume = supply present = colón up; low
+volume = thin market = USD drifts up next day. That asymmetry is the volume signal.
+
+**The quincena is a cash-flow cycle.** Volume peaks mid-month (~day 13–15) and the colón
+strengthens hardest right then, reversing in the second half — exporter settlements /
+tax-paydate conversions. Positive in all 12 years.
+
+**Transparent rules at $1,000,000 per trade, net of 0.65 CRC round-trip:**
+
+| Rule | Logic | Per year | Sharpe | Trades/yr |
+|------|-------|---------:|-------:|----------:|
+| Quincena | dom≤15 → short USD; dom>15 → long | **$92k** | **2.09** | 24 |
+| Volume | seasonal-vol<1 → long USD; else short | $17k | 0.37 | 78 |
+| Precio-ponderado skew | VWAP>simple → long USD; else short | −$7k | −0.17 | 102 |
+| Combined vote (majority of the 3) | — | $51k | 1.15 | 85 |
+| ML (conviction-sized, all features) | logistic P(up), size=clip((P−.5)×5,±1) | ~$61k | 2.23 | 42 |
+
+**Lesson:** the calendar (quincena) rule is the best *standalone* — cheap to trade and
+high Sharpe. The volume/skew signals are directionally real but flip too often (78–102
+trades/yr) to survive slippage alone; they add value only conviction-sized or as filters,
+which is exactly what the ML model does (turnover ~42/yr).
