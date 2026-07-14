@@ -14,6 +14,8 @@ OUT = ROOT / "out"
 R = json.loads((OUT / "vm_results.json").read_text())
 DY = json.loads((OUT / "dynamics_results.json").read_text())
 Q = json.loads((OUT / "quincena_results.json").read_text())
+BV = json.loads((OUT / "backtest_vwap_results.json").read_text())
+BVM = BV["_meta"]
 QREF = Q["Refined (short 5-15)"]
 QSLOW = Q["Refined + slow-vol sizing"]
 QBASE = Q["Base quincena (<=15)"]
@@ -54,6 +56,27 @@ def kpi_html():
     return "".join(f'<div class="kpi"><div class="kpi-v">{v}</div>'
                    f'<div class="kpi-l">{lab}</div><div class="kpi-s">{s}</div></div>'
                    for v, lab, s in KPIS)
+
+
+def vwap_table():
+    """Close-print vs VWAP execution, same signals & same 0.65 CRC slippage."""
+    order = ["Order-flow daily", "Donchian-40 trend", "SMA-120 trend"]
+    cv = BV["close_vs_vwap"]
+    out = ['<table><tr><th>Strategy (net of 0.65 CRC round-trip, VWAP-to-VWAP)</th>'
+           '<th class="num">Close Sharpe</th><th class="num">VWAP Sharpe</th>'
+           '<th class="num">Close bps/yr</th><th class="num">VWAP bps/yr</th>'
+           '<th class="num">Trades/yr</th></tr>']
+    for k in order:
+        c = cv[k]
+        b = BV[k]
+        cls = "ok" if c["vwap_sharpe"] >= c["close_sharpe"] else "no"
+        out.append(f'<tr><td>{k}</td><td class="num">{c["close_sharpe"]}</td>'
+                   f'<td class="num {cls}">{c["vwap_sharpe"]}</td>'
+                   f'<td class="num">{c["close_ann_bps"]:.0f}</td>'
+                   f'<td class="num {cls}">{c["vwap_ann_bps"]:.0f}</td>'
+                   f'<td class="num">{b["roundtrips_yr"]}</td></tr>')
+    out.append("</table>")
+    return "".join(out)
 
 
 def dollar_table():
@@ -306,7 +329,31 @@ daily signal).</p>
      str(R['Logit (conviction)_is']['sharpe']) + "; a 5-day feature lag collapses accuracy (no look-ahead), "
      "permutation p=" + str(R['perm_p']) + ".")}
 
-<div class="part">Part F · Verdict</div>
+<div class="part">Part F · Realistic execution — the VWAP-priced backtest</div>
+<h2><span class="n">F1.</span> Same signals, same 0.65 CRC slippage, filled at the session VWAP</h2>
+<p class="lead">The rule backtests above mark every fill to the session's <b>closing print</b>. On MONEX you
+cannot count on trading that last tick — but a desk <i>can</i> work an order to the day's
+<b>volume-weighted average price (VWAP)</b>. Re-pricing the identical order-flow and trend signals on a
+<b>VWAP-to-VWAP</b> basis, with the same 0.65 CRC round-trip slippage, is the more realistic assumption — and
+it <b>does not haircut the edge; it slightly improves it</b>, because the VWAP is a steadier fill reference
+than a single closing tick. Over {BVM['n_days']:,} sessions ({BVM['date_min']} → {BVM['date_max']}):</p>
+{vwap_table()}
+{fig("bt_vwap_close_compare.png", "Same strategies &amp; slippage — close-print vs VWAP execution",
+     "Left: priced at the close (as in <code>backtest.py</code>). Right: priced at the VWAP (this run). The "
+     "trend books (Donchian-40 " + str(BV['close_vs_vwap']['Donchian-40 trend']['close_sharpe']) + "→" +
+     str(BV['close_vs_vwap']['Donchian-40 trend']['vwap_sharpe']) + ", SMA-120 " +
+     str(BV['close_vs_vwap']['SMA-120 trend']['close_sharpe']) + "→" +
+     str(BV['close_vs_vwap']['SMA-120 trend']['vwap_sharpe']) + ") barely move; the noisy daily order-flow "
+     "book improves most (" + str(BV['close_vs_vwap']['Order-flow daily']['close_sharpe']) + "→" +
+     str(BV['close_vs_vwap']['Order-flow daily']['vwap_sharpe']) + " Sharpe), since its turnover is where a "
+     "single closing tick hurts.")}
+{fig("bt_vwap_oos.png", "Donchian-40 (VWAP-priced): in-sample vs out-of-sample net Sharpe",
+     "Held out of sample on a " + str(int(BVM['oos_frac']*100)) + "/" + str(int((1-BVM['oos_frac'])*100)) +
+     " split, the VWAP-priced Donchian-40 breakout keeps working — out-of-sample net Sharpe " +
+     str(BV['Donchian-40_oos']['sharpe']) + " (≥ in-sample " + str(BV['Donchian-40_is']['sharpe']) +
+     "), so the realistic-fill result is not an in-sample artifact.")}
+
+<div class="part">Part G · Verdict</div>
 <ul class="find">
  <li><b>The most robust, simplest edge is the calendar.</b> Short USD in the first half of the month, long
    in the second — {usd(DY['Quincena rule']['per_year_usd'])}/yr per $1M at Sharpe {DY['Quincena rule']['sharpe']},
@@ -317,14 +364,21 @@ daily signal).</p>
  <li><b>The mechanism is economic, not technical:</b> exporter USD supply (volume) and the payment/tax
    cycle (quincena). That is why it persists across regimes — and why it would weaken if the BCCR re-pegged
    or intervened heavily, the dominant risk.</li>
+ <li><b>Priced realistically, the edge survives.</b> Filling the same signal book at the session VWAP rather
+   than the closing print — with the identical 0.65 CRC slippage — leaves the trend strategies essentially
+   unchanged (Donchian-40 Sharpe {BV['close_vs_vwap']['Donchian-40 trend']['close_sharpe']}→{BV['close_vs_vwap']['Donchian-40 trend']['vwap_sharpe']})
+   and lifts the noisy order-flow book ({BV['close_vs_vwap']['Order-flow daily']['close_sharpe']}→{BV['close_vs_vwap']['Order-flow daily']['vwap_sharpe']}),
+   with an out-of-sample net Sharpe of {BV['Donchian-40_oos']['sharpe']}. The result is not an artifact of
+   marking to the close.</li>
 </ul>
 
 <footer>
   <b>Dollar convention.</b> $1,000,000 USD notional per full position; 1 bp of next-day move = $100; slippage
   0.325 CRC/side (~$680) charged on every position change. P&amp;L is net of that, gross of financing/borrow
-  and market impact, on close-to-close fills, non-compounded (reset to $1M each day). The ML row is
+  and market impact, non-compounded (reset to $1M each day); the calendar/ML books mark to close-to-close
+  fills, while Part F re-prices the signal book at the session VWAP (the realistic desk fill). The ML row is
   conviction-sized so its notional varies up to $1M. All model numbers are walk-forward out-of-sample.
-  Reproducible: <code>parse_monex → analyze → eda → volume_model → dynamics → build_report</code>.
+  Reproducible: <code>parse_monex → analyze → eda → volume_model → dynamics → backtest_vwap → build_report</code>.
 </footer>
 
 </div></body></html>"""
