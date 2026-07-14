@@ -12,7 +12,8 @@ src/parse_monex.py     # parse the HTML matrix -> clean CSV
 src/analyze.py         # descriptive analysis (price formation, seasonality, profile)
 src/eda.py             # exploratory charts (returns/ACF, volume->move, calendar)
 src/strategies.py      # strategy tearsheets
-src/backtest.py        # rigorous, overfitting-aware tests -> backtest_results.json
+src/backtest.py        # rigorous, overfitting-aware tests (close-priced) -> backtest_results.json
+src/backtest_vwap.py   # same strategies + slippage, priced at the session VWAP (realistic) -> backtest_vwap_results.json
 src/dynamics.py        # underlying-mechanism deep-dive + $1M/trade dollar rules
 src/payment_calendar.py # real CR IVA (D-104) / quincena / CCSS payment calendar
 src/quincena.py        # calendar (quincena) strategy (recommended) + trading calendar
@@ -32,6 +33,7 @@ python src/analyze.py        # descriptive stats + charts 01-04
 python src/eda.py            # exploratory charts (eda_*.png)
 python src/strategies.py     # strategy tearsheets (s*_*.png)
 python src/backtest.py       # OOS / walk-forward / costs / permutation / DSR -> bt_*.png + json
+python src/backtest_vwap.py  # realistic VWAP-priced re-run of the same strategies -> bt_vwap_*.png + json
 python src/build_report.py   # -> out/report.html
 python -c "from weasyprint import HTML; HTML('out/report.html').write_pdf('out/report.pdf')"
 ```

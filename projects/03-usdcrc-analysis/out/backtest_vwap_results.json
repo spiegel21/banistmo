@@ -1,0 +1,133 @@
+{
+  "_meta": {
+    "basis": "VWAP-to-VWAP (realistic execution)",
+    "n_days": 2663,
+    "date_min": "2014-12-08",
+    "date_max": "2026-06-19",
+    "cost_crc_roundtrip": 0.65,
+    "cost_crc_per_side": 0.325,
+    "cost_bps_rt_at_475": 13.7,
+    "cost_bps_side_at_475": 6.8,
+    "oos_frac": 0.6
+  },
+  "Order-flow daily": {
+    "sharpe": 0.98,
+    "sharpe_lo": 0.68,
+    "mean_bps": 1.65,
+    "ann_bps": 415.0,
+    "hit": 48.8,
+    "total_bps": 4383.0,
+    "maxdd_bps": -2734.0,
+    "n": 2662,
+    "roundtrips_yr": 95.2,
+    "gross_sharpe": 3.72,
+    "recent_2019": {
+      "sharpe": 1.98,
+      "sharpe_lo": 1.45,
+      "mean_bps": 3.73,
+      "ann_bps": 940.0,
+      "hit": 53.0,
+      "total_bps": 6438.0,
+      "maxdd_bps": -773.0,
+      "n": 1726
+    }
+  },
+  "Donchian-40 trend": {
+    "sharpe": 1.16,
+    "sharpe_lo": 0.93,
+    "mean_bps": 1.93,
+    "ann_bps": 486.0,
+    "hit": 54.8,
+    "total_bps": 5130.0,
+    "maxdd_bps": -1278.0,
+    "n": 2662,
+    "roundtrips_yr": 2.5,
+    "gross_sharpe": 1.23,
+    "recent_2019": {
+      "sharpe": 1.37,
+      "sharpe_lo": 1.12,
+      "mean_bps": 2.56,
+      "ann_bps": 646.0,
+      "hit": 56.5,
+      "total_bps": 4427.0,
+      "maxdd_bps": -1278.0,
+      "n": 1726
+    }
+  },
+  "SMA-120 trend": {
+    "sharpe": 1.1,
+    "sharpe_lo": 0.95,
+    "mean_bps": 1.83,
+    "ann_bps": 461.0,
+    "hit": 54.8,
+    "total_bps": 4866.0,
+    "maxdd_bps": -936.0,
+    "n": 2662,
+    "roundtrips_yr": 7.0,
+    "gross_sharpe": 1.3,
+    "recent_2019": {
+      "sharpe": 1.29,
+      "sharpe_lo": 1.18,
+      "mean_bps": 2.43,
+      "ann_bps": 611.0,
+      "hit": 56.6,
+      "total_bps": 4188.0,
+      "maxdd_bps": -936.0,
+      "n": 1726
+    }
+  },
+  "close_vs_vwap": {
+    "Order-flow daily": {
+      "close_sharpe": 0.22,
+      "vwap_sharpe": 0.98,
+      "close_ann_bps": 99.0,
+      "vwap_ann_bps": 415.0,
+      "sharpe_haircut": -0.76
+    },
+    "Donchian-40 trend": {
+      "close_sharpe": 1.11,
+      "vwap_sharpe": 1.16,
+      "close_ann_bps": 482.0,
+      "vwap_ann_bps": 486.0,
+      "sharpe_haircut": -0.05
+    },
+    "SMA-120 trend": {
+      "close_sharpe": 1.02,
+      "vwap_sharpe": 1.1,
+      "close_ann_bps": 444.0,
+      "vwap_ann_bps": 461.0,
+      "sharpe_haircut": -0.08
+    }
+  },
+  "Donchian-40_full": {
+    "sharpe": 1.16,
+    "sharpe_lo": 0.93,
+    "mean_bps": 1.93,
+    "ann_bps": 486.0,
+    "hit": 54.8,
+    "total_bps": 5130.0,
+    "maxdd_bps": -1278.0,
+    "n": 2662,
+    "roundtrips_yr": 2.5
+  },
+  "Donchian-40_is": {
+    "sharpe": 0.43,
+    "sharpe_lo": 0.3,
+    "mean_bps": 0.56,
+    "ann_bps": 140.0,
+    "hit": 53.1,
+    "total_bps": 890.0,
+    "maxdd_bps": -1278.0,
+    "n": 1597
+  },
+  "Donchian-40_oos": {
+    "sharpe": 1.9,
+    "sharpe_lo": 1.78,
+    "mean_bps": 3.98,
+    "ann_bps": 1003.0,
+    "hit": 57.3,
+    "total_bps": 4240.0,
+    "maxdd_bps": -541.0,
+    "n": 1065
+  }
+}
