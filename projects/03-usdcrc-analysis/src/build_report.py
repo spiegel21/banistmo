@@ -17,6 +17,8 @@ Q = json.loads((OUT / "quincena_results.json").read_text())
 QREF = Q["Refined (short 5-15)"]
 QSLOW = Q["Refined + slow-vol sizing"]
 QBASE = Q["Base quincena (<=15)"]
+QCAL = next(v for k, v in Q.items() if k.startswith("Real calendar"))
+CAL_PRE = Q["_meta"].get("cal_pre", 6)
 M = R["_meta"]
 LG = R["Logit (conviction)"]
 LG9 = R["Logit (conviction)_2019"]
@@ -164,14 +166,23 @@ daily signal).</p>
 <tr><td>Refined + slow-volume sizing</td><td class="num">{usd(QSLOW['per_year_usd'])}</td>
   <td class="num ok">{QSLOW['sharpe']}</td><td class="num">{QSLOW['roundtrips_yr']}</td>
   <td class="num">{QSLOW['win_rate']}</td><td class="num ok">{usd(QSLOW['maxdd_usd'])}</td>
-  <td class="muted">best risk-adjusted</td></tr></table>
+  <td class="muted">best risk-adjusted</td></tr>
+<tr><td><b>Real calendar (≤{CAL_PRE} bd to IVA/quincena deadline)</b></td>
+  <td class="num ok">{usd(QCAL['per_year_usd'])}</td><td class="num ok">{QCAL['sharpe']}</td>
+  <td class="num">{QCAL['roundtrips_yr']}</td><td class="num">{QCAL['win_rate']}</td>
+  <td class="num">{usd(QCAL['maxdd_usd'])}</td><td class="muted">deadline-anchored</td></tr></table>
 <div class="rule"><h4>Exact logic (the trading calendar)</h4>
-  <div class="logic">day_of_month 1–4    →  LONG USD  (start-of-month, USD tends up)<br>
-    day_of_month 5–15   →  SHORT USD (mid-month USD-supply surge → colón strengthens)<br>
-    day_of_month 16–end →  LONG USD  (supply fades, USD drifts up)<br>
+  <div class="logic">≤ {CAL_PRE} business days before the IVA/quincena deadline (through it) →  SHORT USD<br>
+    &nbsp;&nbsp;&nbsp;(firms sell USD to raise colones for the 15th tax + payroll → colón strengthens)<br>
+    otherwise →  LONG USD  (supply fades, USD drifts up)<br>
     optional: trim size to 50% when a slow 20-day volume regime disagrees</div>
-  <p>The refinement over the crude ≤15 split: days 1–4 are actually USD-<i>up</i>, so we go long then
-    instead of short. Same {QREF['roundtrips_yr']} trades/yr, but more money and a smaller drawdown.</p></div>
+  <p>Two equivalent readings of the same edge. The <b>fixed</b> version keys off the raw day number
+    (days 1–4 LONG, 5–15 SHORT, 16–end LONG); the <b>real-calendar</b> version anchors the short window to
+    Costa Rica's actual IVA (D-104) / mid-month quincena deadline — the 15th, rolled to the next business
+    day — so it shifts with weekends and holidays. Anchoring to the true deadline earns
+    {usd(QCAL['per_year_usd'])}/yr at Sharpe {QCAL['sharpe']} (vs {usd(QREF['per_year_usd'])} / {QREF['sharpe']}
+    for the fixed window) at the same {QCAL['roundtrips_yr']} trades/yr, and — see B2b — the next-day move is
+    sharpest measured in <i>days-to-deadline</i>, confirming the cash-flow mechanism.</p></div>
 
 <h2><span class="n">A2.</span> Is it overfit? Window sensitivity &amp; every-year P&amp;L</h2>
 {fig("q_sensitivity.png", "Net Sharpe across every choice of the short-window start &amp; end",
@@ -211,6 +222,19 @@ daily signal).</p>
      "then (red bars) — a recurring USD-supply surge (exporter settlements, tax/paydate conversions). The "
      "first days and the second half of the month lean the other way (USD up). This is the quincena effect, "
      "and it is a cash-flow cycle, not a chart pattern.")}
+
+<h2><span class="n">A2b.</span> Aligning to the real deadline sharpens the signal</h2>
+{fig("q_calendar.png", "Average next-day USD move by business-days-to the IVA/quincena deadline",
+     "Re-indexing the same data from raw day-of-month to <i>trading days to the statutory IVA (15th) / "
+     "mid-month payroll deadline</i> makes the mechanism unmistakable: the colón strengthens hardest 1–5 "
+     "business days BEFORE the deadline (−12 to −16 bps next-day), then reverts to USD-up right after — a "
+     "textbook conversion-then-clearing pattern. The red band is the short-USD window. Because the anchor "
+     "rolls with weekends and holidays, the calendar rule (Sharpe " + str(QCAL['sharpe']) + ", a broad "
+     "plateau of " + str(Q['calendar_pre_sharpe_min']) + "–" + str(Q['calendar_pre_sharpe_max']) +
+     " across lookbacks) edges the fixed-day version while explaining the flow.")}
+{fig("q_calendar_peryear.png", "Net P&L by year — fixed day-of-month window vs real calendar ($1M/trade)",
+     "Deadline-anchoring holds up year by year (worst year " + usd(Q['calendar_worst_year_usd']) + "), not "
+     "just in aggregate.")}
 
 <h2><span class="n">A3.</span> Two more relationships</h2>
 <div class="cols">

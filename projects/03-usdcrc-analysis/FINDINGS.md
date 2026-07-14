@@ -90,6 +90,31 @@ At USD 1M per trade, net of 0.65 CRC round-trip:
   disagrees) lifts Sharpe to 3.27 and halves the drawdown.
 - Practical trading calendar: `out/quincena_trading_calendar.csv`.
 
+### Anchoring to the REAL payment/tax calendar (recommended implementation)
+
+The fixed day-of-month band is only a proxy for the events that actually move the
+colón: companies sell USD to raise colones for the **IVA (D-104) filing, due the 15th
+of the month (rolled to the next business day), and the mid-month quincena payroll**.
+`payment_calendar.py` snaps each statutory date (IVA/retenciones 15th, CCSS 4th business
+day, month-end quincena, quarterly renta) onto MONEX's own trading calendar, so
+weekend/holiday rolling is exact. Re-indexing the same price data from raw day-of-month
+to **business-days-to-the-deadline** makes the mechanism unmistakable:
+
+| Business days before IVA/quincena deadline | Avg next-day USD move |
+|--------------------------------------------|-----------------------|
+| 5 → 1 days before | **−9 to −16 bps** (colón strengthens — USD-supply surge) |
+| on the deadline | −3 bps |
+| after (supply cleared) | **+3 to +10 bps** (USD drifts back up) |
+
+Shorting USD within **6 business days** of the deadline (long otherwise) earns **~$126k/yr
+at Sharpe 2.91, max DD −$45k** — it edges the fixed 5–15 window ($125k / 2.88 / −$50k) at
+the same ~24 trades/yr, with a broad Sharpe plateau (2.5–2.9 across 5–9-day lookbacks) and
+every year positive. Because the anchor moves with the calendar, it both **trades better and
+explains the flow** — the edge is specifically the pre-deadline conversion window, not a
+fixed date. Chart: `out/q_calendar.png`; the daily sheet (`daily_signal.py`) now keys off
+`td_to_iva`. Sources: Hacienda/TRIBU-CR fiscal calendar (IVA D-104 due the 15th) and the
+CCSS planilla 4th-business-day rule.
+
 ## Público vs privado volume — NOT possible with this file
 
 The MONEX export contains only *aggregate* traded volume. Splitting público (BCCR /

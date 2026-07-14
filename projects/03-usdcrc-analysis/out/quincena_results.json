@@ -6,6 +6,7 @@
       5,
       15
     ],
+    "cal_pre": 6,
     "years": 10.6
   },
   "Base quincena (<=15)": {
@@ -32,6 +33,14 @@
     "win_rate": 57.8,
     "maxdd_usd": -33760
   },
+  "Real calendar (<=6d to deadline)": {
+    "total_usd": 1328542,
+    "per_year_usd": 125767,
+    "sharpe": 2.91,
+    "roundtrips_yr": 24.2,
+    "win_rate": 57.8,
+    "maxdd_usd": -45106
+  },
   "window_sharpe_min": 1.19,
   "window_sharpe_max": 2.88,
   "refined_worst_year_usd": 36509,
@@ -41,6 +50,38 @@
     "2nd half|high vol": 1.7,
     "2nd half|low vol": 7.1
   },
+  "calendar_next_move_bps": {
+    "-6": 3.0,
+    "-5": 3.6,
+    "-4": 2.6,
+    "-3": 7.5,
+    "-2": 8.7,
+    "-1": 4.9,
+    "0": -3.4,
+    "1": -9.9,
+    "2": -15.6,
+    "3": -13.8,
+    "4": -12.0,
+    "5": -8.6,
+    "6": -6.2,
+    "7": 0.7,
+    "8": 1.7,
+    "9": 5.8,
+    "10": 10.2
+  },
+  "calendar_worst_year_usd": 26844,
+  "calendar_pre_sharpe": {
+    "3": 1.39,
+    "4": 2.07,
+    "5": 2.56,
+    "6": 2.91,
+    "7": 2.86,
+    "8": 2.76,
+    "9": 2.45,
+    "10": 2.07
+  },
+  "calendar_pre_sharpe_min": 1.39,
+  "calendar_pre_sharpe_max": 2.91,
   "trading_calendar": {
     "1": "LONG USD",
     "2": "LONG USD",

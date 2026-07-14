@@ -1,15 +1,18 @@
-"""One-page daily signal sheet for the recommended refined-quincena strategy.
+"""One-page daily signal sheet for the recommended calendar (quincena) strategy.
 
 Given a date (default: the day after the last row in the data, i.e. the next
-tradeable session), it prints the position the refined-quincena rule takes plus
+tradeable session), it prints the position the real-calendar rule takes plus
 the slow-volume size multiplier, in plain language and in dollars at USD 1M/trade.
 
-The logic mirrors quincena.py EXACTLY (pos_refined + slow-volume sizing) so the
-sheet can never drift from the backtested strategy:
+The logic mirrors quincena.py EXACTLY (pos_calendar + slow-volume sizing) so the
+sheet can never drift from the backtested strategy. The position keys off the
+business-day distance to the Costa Rica IVA (D-104) / mid-month quincena deadline
+(the 15th, rolled to the next business day), NOT the raw day number:
 
-    day 1-4    -> LONG USD   (start-of-month, USD tends up)
-    day 5-15   -> SHORT USD  (mid-month USD-supply surge, colon strengthens)
-    day 16-end -> LONG USD   (supply fades, USD drifts up)
+    <= CAL_PRE business days before the deadline (through it) -> SHORT USD
+        (firms sell USD to raise colones for the tax + payroll; colon strengthens)
+    otherwise                                                 -> LONG USD
+        (supply fades, USD drifts up)
 
     size 1.0 when the slow (20d) seasonally-adjusted volume regime CONFIRMS,
     else 0.5 (trim when a slow volume regime disagrees with the calendar).
@@ -30,7 +33,8 @@ import numpy as np
 import pandas as pd
 
 from analyze import OUT, load
-from quincena import SHORT_END, SHORT_START, NOTIONAL
+from quincena import CAL_PRE, NOTIONAL
+from payment_calendar import td_to_iva_for
 
 DOW_NAME = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
@@ -49,12 +53,17 @@ def build_history() -> pd.DataFrame:
     return df
 
 
-def refined_position(dom: int) -> float:
-    """+1 long USD / -1 short USD from the refined-quincena calendar."""
-    return -1.0 if SHORT_START <= dom <= SHORT_END else 1.0
+def in_short_window(td_to_iva: int) -> bool:
+    """True when `td_to_iva` business days to the deadline falls in the short-USD window."""
+    return 0 <= td_to_iva <= CAL_PRE
 
 
-def size_multiplier(dom: int, slow: float) -> float:
+def calendar_position(td_to_iva: int) -> float:
+    """+1 long USD / -1 short USD from the real-calendar (deadline-anchored) rule."""
+    return -1.0 if in_short_window(td_to_iva) else 1.0
+
+
+def size_multiplier(td_to_iva: int, slow: float) -> float:
     """1.0 when the slow 20d volume regime confirms the calendar, else 0.5.
 
     In the short-USD window we want supply present (high slow volume) to confirm;
@@ -62,8 +71,7 @@ def size_multiplier(dom: int, slow: float) -> float:
     """
     if slow is None or np.isnan(slow):
         return 1.0
-    in_short = SHORT_START <= dom <= SHORT_END
-    confirms = (slow > 1) if in_short else (slow < 1)
+    confirms = (slow > 1) if in_short_window(td_to_iva) else (slow < 1)
     return 1.0 if confirms else 0.5
 
 
@@ -76,19 +84,26 @@ def signal_for(target: pd.Timestamp, hist: pd.DataFrame) -> dict:
     slow = float(last.slow) if pd.notna(last.slow) else float("nan")
 
     dom = int(target.day)
-    pos = refined_position(dom)
-    size = size_multiplier(dom, slow)
+    td = td_to_iva_for(target)
+    pos = calendar_position(td)
+    size = size_multiplier(td, slow)
     signed = pos * size
-    in_short = SHORT_START <= dom <= SHORT_END
+    in_short = in_short_window(td)
+    if in_short:
+        window = f"{td} business day(s) to IVA/quincena deadline (short-USD window)"
+    elif td < 0:
+        window = f"{-td} business day(s) past the deadline (supply cleared)"
+    else:
+        window = f"{td} business days to the deadline (too early — long-USD)"
 
     return {
         "date": target,
         "dom": dom,
+        "td_to_iva": td,
         "dow_name": DOW_NAME[target.dayofweek],
         "direction": "SHORT USD (sell USD / buy colon)" if pos < 0
         else "LONG USD (buy USD / sell colon)",
-        "window": (f"mid-month supply window (days {SHORT_START}-{SHORT_END})" if in_short
-                   else "outside the short window"),
+        "window": window,
         "size": size,
         "signed": signed,
         "notional_usd": int(round(NOTIONAL * abs(signed))),
@@ -107,10 +122,10 @@ def render_text(s: dict) -> str:
     dir_short = "SHORT USD" if s["signed"] < 0 else "LONG USD"
     lines = [
         bar,
-        "  USD/CRC DAILY SIGNAL  -  refined quincena (recommended)",
+        "  USD/CRC DAILY SIGNAL  -  real calendar quincena (recommended)",
         bar,
         f"  Session date     : {s['date'].date()}  ({s['dow_name']})",
-        f"  Day of month     : {s['dom']}  ->  {s['window']}",
+        f"  Days to deadline : {s['td_to_iva']:+d} bd  ->  {s['window']}",
         "",
         f"  POSITION         : {dir_short}",
         f"  Size             : {s['size']:.1f}x  "
@@ -121,8 +136,9 @@ def render_text(s: dict) -> str:
         f"  As of last data  : {s['as_of'].date()}  "
         f"(close {s['last_close']:.2f}, VWAP {s['last_vwap']:.2f})",
         bar,
-        "  Rule: days 1-4 LONG USD | days 5-15 SHORT USD | days 16+ LONG USD;",
-        "  half size when the slow 20d volume regime disagrees with the calendar.",
+        f"  Rule: SHORT USD within {CAL_PRE} business days of the IVA/quincena",
+        "  deadline (15th, rolled fwd), LONG otherwise; half size when the slow",
+        "  20d volume regime disagrees with the calendar.",
         bar,
     ]
     return "\n".join(lines)
@@ -143,7 +159,7 @@ def render_png(s: dict, path: Path) -> None:
                                color="#1f3b73", zorder=0))
     ax.text(0.5, 0.905, "USD/CRC DAILY SIGNAL", ha="center", va="center",
             color="white", fontsize=15, fontweight="bold", transform=ax.transAxes)
-    ax.text(0.5, 0.855, f"refined quincena  |  {s['date'].date()} ({s['dow_name']})",
+    ax.text(0.5, 0.855, f"real calendar quincena  |  {s['date'].date()} ({s['dow_name']})",
             ha="center", va="center", color="#dfe6f2", fontsize=9.5, transform=ax.transAxes)
 
     ax.text(0.5, 0.66, dir_short, ha="center", va="center", color=accent,
@@ -152,7 +168,7 @@ def render_png(s: dict, path: Path) -> None:
             ha="center", va="center", color="#333", fontsize=13, transform=ax.transAxes)
 
     rows = [
-        ("Day of month", f"{s['dom']}  ({s['window']})"),
+        ("Days to deadline", f"{s['td_to_iva']:+d} bd  ({s['window']})"),
         ("Size reason", "volume regime confirms" if s["confirms"]
          else "volume regime disagrees -> half size"),
         ("Slow 20d volume", f"{s['slow_vol']:.2f}x normal  ({s['slow_state']})"),
@@ -166,7 +182,8 @@ def render_png(s: dict, path: Path) -> None:
                 fontsize=9.5, transform=ax.transAxes)
         y -= 0.085
     ax.text(0.5, 0.03,
-            "days 1-4 LONG | 5-15 SHORT | 16+ LONG  -  half size when slow volume disagrees",
+            f"SHORT USD within {CAL_PRE} bd of the IVA/quincena deadline, LONG otherwise  -  "
+            "half size when slow volume disagrees",
             ha="center", va="center", color="#7f8c8d", fontsize=7.5, transform=ax.transAxes)
     fig.tight_layout()
     fig.savefig(path, dpi=120, facecolor="white")

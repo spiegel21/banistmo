@@ -20,6 +20,7 @@ import numpy as np
 import pandas as pd
 
 from analyze import OUT, load
+from payment_calendar import annotate
 
 plt.rcParams.update({"figure.facecolor": "white", "axes.grid": True, "grid.alpha": 0.25,
                      "axes.spines.top": False, "axes.spines.right": False})
@@ -27,11 +28,13 @@ NAVY, GREEN, RED, GREY, PURPLE = "#1f3b73", "#2e8b57", "#c0392b", "#7f8c8d", "#7
 NOTIONAL = 1_000_000
 COST_SIDE_CRC = 0.325
 ANN = np.sqrt(252)
-SHORT_START, SHORT_END = 5, 15      # short-USD window (chosen from the day-of-month profile)
+SHORT_START, SHORT_END = 5, 15      # fixed day-of-month short-USD window (legacy proxy)
+CAL_PRE = 6                         # calendar rule: short USD this many trading days
+                                    # before the IVA/quincena deadline, through the deadline
 
 
 def frame():
-    df = load().copy()
+    df = annotate(load().copy())    # adds td_to_iva and the real-calendar event flags
     df["vol"] = df.volume_usd / 1e6
     df["r_next"] = df.close.pct_change().shift(-1)
     df["dom"] = df.date.dt.day
@@ -50,6 +53,18 @@ def pos_base(df):
 def pos_refined(df, a=SHORT_START, b=SHORT_END):
     """Short USD on the mid-month supply window [a,b], long otherwise."""
     return np.where((df.dom >= a) & (df.dom <= b), -1.0, 1.0)
+
+
+def pos_calendar(df, pre=CAL_PRE):
+    """Real-calendar rule: short USD in the run-up to the IVA/quincena deadline.
+
+    Companies sell USD to raise colones for the 15th-of-month IVA (D-104) +
+    withholding (D-103) filing and the mid-month payroll, so the colon
+    strengthens in the `pre` trading days leading to (and on) that deadline —
+    then reverts once the supply clears. Unlike the fixed 5-15 window this
+    anchor moves with weekends/holidays (see payment_calendar.annotate).
+    """
+    return np.where((df.td_to_iva >= 0) & (df.td_to_iva <= pre), -1.0, 1.0)
 
 
 def pos_refined_slowvol(df):
@@ -191,8 +206,69 @@ def chart_tearsheet(df, res):
     plt.close(fig)
 
 
+def chart_calendar(df, res):
+    """Validate the real calendar: next-day USD move vs trading-days-to-deadline."""
+    g = df.dropna(subset=["r_next"]).copy()
+    g["bucket"] = g.td_to_iva.clip(-6, 10)
+    prof = g.groupby("bucket").r_next.mean() * 1e4
+    res["calendar_next_move_bps"] = {int(k): round(float(v), 1) for k, v in prof.items()}
+    fig, ax = plt.subplots(figsize=(10, 4.6))
+    colors = [GREEN if k > CAL_PRE or k < 0 else RED for k in prof.index]  # red = short-USD window
+    ax.bar(prof.index, prof.values, color=colors)
+    ax.axvline(-0.5, color="k", lw=0.8, ls="--")
+    ax.axvspan(-0.5, CAL_PRE + 0.5, color=RED, alpha=0.07)
+    ax.axhline(0, color="k", lw=0.8)
+    ax.set_xlabel("trading days to IVA / quincena deadline  (0 = deadline · +N = N days before · −N = after)")
+    ax.set_ylabel("avg NEXT-session USD move (bps)")
+    ax.set_title("USD weakens into the tax/payroll deadline, reverts after — the real-calendar signal\n"
+                 "(red = short-USD window; negative bars = colon appreciation)")
+    for k, v in prof.items():
+        ax.text(k, v + (0.4 if v >= 0 else -0.4), f"{v:+.0f}", ha="center",
+                va="bottom" if v >= 0 else "top", fontsize=7)
+    fig.tight_layout()
+    fig.savefig(OUT / "q_calendar.png", dpi=110)
+    plt.close(fig)
+
+
+def chart_calendar_peryear(df, res):
+    """Per-year net P&L: calendar rule vs the fixed 5-15 window."""
+    yr, cal, ref = [], [], []
+    for y, g in df.groupby("year"):
+        if len(g) < 50:
+            continue
+        yr.append(y)
+        cal.append(dollars(pos_calendar(g), g)[0].sum())
+        ref.append(dollars(pos_refined(g), g)[0].sum())
+    res["calendar_worst_year_usd"] = round(float(min(cal)))
+    x = np.arange(len(yr))
+    fig, ax = plt.subplots(figsize=(11, 4))
+    ax.bar(x - 0.2, np.array(ref) / 1e3, 0.4, label="fixed window (day 5–15)", color=GREY)
+    ax.bar(x + 0.2, np.array(cal) / 1e3, 0.4, label=f"real calendar (≤{CAL_PRE}d to deadline)", color=NAVY)
+    ax.set_xticks(x)
+    ax.set_xticklabels([str(y) for y in yr])
+    ax.axhline(0, color="k", lw=0.8)
+    ax.set_ylabel("net P&L per year (USD thousands, 1M/trade)")
+    ax.set_title("Real-calendar rule vs fixed day-of-month window, by year")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(OUT / "q_calendar_peryear.png", dpi=110)
+    plt.close(fig)
+
+
+def calendar_sensitivity(df, res):
+    """Sharpe across the pre-deadline lookback choice (robustness of the calendar rule)."""
+    grid = {p: stat(pos_calendar(df, p), df)["sharpe"] for p in range(3, 11)}
+    res["calendar_pre_sharpe"] = {int(k): v for k, v in grid.items()}
+    res["calendar_pre_sharpe_min"] = round(float(min(grid.values())), 2)
+    res["calendar_pre_sharpe_max"] = round(float(max(grid.values())), 2)
+
+
 def trading_calendar(df):
-    """Practical map: for each day-of-month, the position the refined rule takes."""
+    """Practical map: for each day-of-month, the position the fixed refined rule takes.
+
+    (The recommended calendar rule keys off trading-days-to-deadline, not the raw
+    day number; see payment_calendar and the `calendar_*` results.)
+    """
     return {int(d): ("SHORT USD" if SHORT_START <= d <= SHORT_END else "LONG USD")
             for d in range(1, 32)}
 
@@ -200,15 +276,20 @@ def trading_calendar(df):
 def main():
     df = frame()
     res = {"_meta": {"n_days": int(len(df)), "notional_usd": NOTIONAL,
-                     "short_window": [SHORT_START, SHORT_END], "years": round(len(df) / 252, 1)}}
+                     "short_window": [SHORT_START, SHORT_END], "cal_pre": CAL_PRE,
+                     "years": round(len(df) / 252, 1)}}
     res["Base quincena (<=15)"] = stat(pos_base(df), df)
     res["Refined (short 5-15)"] = stat(pos_refined(df), df)
     res["Refined + slow-vol sizing"] = stat(pos_refined_slowvol(df), df)
+    res[f"Real calendar (<={CAL_PRE}d to deadline)"] = stat(pos_calendar(df), df)
 
     chart_sensitivity(df, res)
     chart_peryear(df, res)
     chart_interaction(df, res)
     chart_tearsheet(df, res)
+    chart_calendar(df, res)
+    chart_calendar_peryear(df, res)
+    calendar_sensitivity(df, res)
     res["trading_calendar"] = trading_calendar(df)
 
     Path(OUT / "quincena_results.json").write_text(json.dumps(res, indent=2))
