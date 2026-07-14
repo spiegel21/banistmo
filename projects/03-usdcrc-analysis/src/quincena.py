@@ -211,7 +211,6 @@ def chart_calendar(df, res):
     g = df.dropna(subset=["r_next"]).copy()
     g["bucket"] = g.td_to_iva.clip(-6, 10)
     prof = g.groupby("bucket").r_next.mean() * 1e4
-    n = g.groupby("bucket").r_next.size()
     res["calendar_next_move_bps"] = {int(k): round(float(v), 1) for k, v in prof.items()}
     fig, ax = plt.subplots(figsize=(10, 4.6))
     colors = [GREEN if k > CAL_PRE or k < 0 else RED for k in prof.index]  # red = short-USD window

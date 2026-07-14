@@ -103,7 +103,9 @@ def annotate(df: pd.DataFrame) -> pd.DataFrame:
     tdate = df["date"].dt.normalize()
     # trading-day ordinal for every date -> lets us measure distances in *sessions*
     order = {d: i for i, d in enumerate(tdate)}
-    idx_of = lambda d: order.get(pd.Timestamp(d), np.nan)
+
+    def idx_of(d):
+        return order.get(pd.Timestamp(d), np.nan)
 
     ym = list(zip(tdate.dt.year, tdate.dt.month))
     iva_idx = np.array([idx_of(cal.loc[k, "iva"]) if k in cal.index else np.nan for k in ym])
