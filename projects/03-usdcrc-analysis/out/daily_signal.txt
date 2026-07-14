@@ -1,0 +1,16 @@
+============================================================
+  USD/CRC DAILY SIGNAL  -  refined quincena (recommended)
+============================================================
+  Session date     : 2026-06-10  (Wednesday)
+  Day of month     : 10  ->  mid-month supply window (days 5-15)
+
+  POSITION         : SHORT USD
+  Size             : 1.0x  (full - volume regime confirms)
+  Notional         : USD 1,000,000  (of USD 1,000,000 full)
+
+  Slow 20d volume  : 1.61x normal  (above normal (supply present))
+  As of last data  : 2026-06-09  (close 455.60, VWAP 456.04)
+============================================================
+  Rule: days 1-4 LONG USD | days 5-15 SHORT USD | days 16+ LONG USD;
+  half size when the slow 20d volume regime disagrees with the calendar.
+============================================================

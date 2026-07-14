@@ -15,6 +15,7 @@ src/strategies.py      # strategy tearsheets
 src/backtest.py        # rigorous, overfitting-aware tests -> backtest_results.json
 src/dynamics.py        # underlying-mechanism deep-dive + $1M/trade dollar rules
 src/quincena.py        # refined quincena strategy (recommended) + trading calendar
+src/daily_signal.py    # one-page daily signal sheet (position + slow-vol size)
 src/build_report.py    # assembles the self-contained HTML report (reads the json)
 out/                   # PNG charts + report.html + report.pdf (generated)
 FINDINGS.md            # written conclusions
@@ -33,6 +34,22 @@ python src/backtest.py       # OOS / walk-forward / costs / permutation / DSR ->
 python src/build_report.py   # -> out/report.html
 python -c "from weasyprint import HTML; HTML('out/report.html').write_pdf('out/report.pdf')"
 ```
+
+## Daily signal sheet
+
+Print the position the recommended refined-quincena rule takes for the next
+session (or any date), with the slow-volume size multiplier, at USD 1M/trade:
+
+```bash
+python src/daily_signal.py            # next session; writes out/daily_signal.txt
+python src/daily_signal.py 2026-06-10 # a specific date
+python src/daily_signal.py --png      # also render out/daily_signal.png
+```
+
+The logic mirrors `quincena.pos_refined_slowvol` exactly: days 1–4 LONG USD,
+days 5–15 SHORT USD, days 16+ LONG USD; size trimmed to 0.5× when the slow 20-day
+seasonally-adjusted volume regime disagrees with the calendar. It reads only data
+strictly before the target date, so it is safe to run live each morning.
 
 See **FINDINGS.md** for conclusions. Headline: the colón is in a VWAP-anchored
 appreciation crawl; daily **volume is a directional order-flow signal** (heavy
