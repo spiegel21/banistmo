@@ -5,8 +5,8 @@ round-trip slippage. The recommended calendar/quincena rule leads every section;
 secondary signals (volume, skew, combined vote, ML, trend books) are kept but
 tucked into tabs that default to the recommended strategy.
 
-Reads out/{quincena,dynamics,vm,backtest_vwap}_results.json. Run last, after
-analyze / eda / volume_model / dynamics / quincena / backtest_vwap.
+Reads out/{quincena,dynamics,vm,exits,backtest_vwap}_results.json. Run last, after
+analyze / eda / volume_model / dynamics / quincena / exits / backtest_vwap.
 """
 from __future__ import annotations
 
@@ -19,6 +19,9 @@ OUT = ROOT / "out"
 R = json.loads((OUT / "vm_results.json").read_text())
 DY = json.loads((OUT / "dynamics_results.json").read_text())
 Q = json.loads((OUT / "quincena_results.json").read_text())
+XT = json.loads((OUT / "exits_results.json").read_text())
+XB, XTR, XCB, XI, XM = (XT["baseline"], XT["trailing"], XT["trailing_floor"],
+                        XT["improve"], XT["_meta"])
 BV = json.loads((OUT / "backtest_vwap_results.json").read_text())
 BVM = BV["_meta"]
 QREF = Q["Refined (short 5-15)"]
@@ -75,7 +78,8 @@ KPIS = [
     (usd(QCAL["per_year_usd"]), "calendar rule / yr", "$1M/trade · VWAP-priced"),
     (f"{QCAL['sharpe']}", "Sharpe (full sample)", f"only {QCAL['roundtrips_yr']} trades/yr"),
     (f"{OC['oos']['sharpe']}", "out-of-sample Sharpe", f"OOS {usd(OC['oos']['per_year_usd'])}/yr · 40% held out"),
-    (f"{QSLOW['sharpe']}", "with slow-vol sizing", f"drawdown only {usd(QSLOW['maxdd_usd'])}"),
+    (f"{XCB['full']['sharpe']}", "Sharpe with exit overlay",
+     f"trailing stop cuts DD to {usd(XCB['full']['maxdd_usd'])} (A5)"),
     (usd(Q["refined_worst_year_usd"]), "worst calendar year", "positive in all 12 years"),
     (f"{DY['vol_on_usd_down']:.0f} vs {DY['vol_on_usd_up']:.0f} M", "volume: colón up vs down",
      "USD sellers trade in size"),
@@ -139,6 +143,29 @@ def oos_table():
             '<th class="num">OOS / yr</th><th class="num">OOS Sharpe</th></tr>'
             + row(f"Real calendar (≤{CAL_PRE} bd)", OC)
             + row("Refined (short 5–15)", ORF) + "</table>")
+
+
+def exits_table():
+    """Baseline calendar rule vs the two optimised exit overlays (full + OOS)."""
+    def row(name, b, best=False, note=""):
+        rc = ' class="rowbest"' if best else ""
+        star = ' <span class="best">recommended</span>' if best else ""
+        f, o = b["full"], b["oos"]
+        return (f'<tr{rc}><td>{name}{star}<div class="muted" style="font-size:11px">{note}</div></td>'
+                f'<td class="num {scls(f["sharpe"])}">{usd(f["per_year_usd"])}</td>'
+                f'<td class="num {scls(f["sharpe"])}">{f["sharpe"]}</td>'
+                f'<td class="num">{usd(f["maxdd_usd"])}</td>'
+                f'<td class="num ok">{usd(o["per_year_usd"])}</td>'
+                f'<td class="num ok">{o["sharpe"]}</td></tr>')
+    return ('<table><tr><th>Calendar rule · $1M/trade · VWAP-priced, net cost</th>'
+            '<th class="num">Full / yr</th><th class="num">Sharpe</th><th class="num">Max DD</th>'
+            '<th class="num">OOS / yr</th><th class="num">OOS Sharpe</th></tr>'
+            + row("No exit — always in the market", XB, note="the rule from A1–A4")
+            + row(f"+ trailing-stop exit ({XM['trail_bps']} bps)", XTR, best=True,
+                  note="tuned on in-sample P&amp;L; biggest raw P&amp;L")
+            + row(f"+ trailing ({XM['combo_trail_bps']}) &amp; hard floor ({XM['combo_floor_bps']}) bps", XCB,
+                  note="tuned on in-sample Sharpe; best risk-adjusted")
+            + "</table>")
 
 
 def exec_table():
@@ -318,7 +345,10 @@ Rica's mid-month IVA / payroll deadline (within {CAL_PRE} business days of it, o
 <b>{usd(QCAL['per_year_usd'])}/yr at Sharpe {QCAL['sharpe']}</b> on just {QCAL['roundtrips_yr']} trades a year,
 with an <b>out-of-sample Sharpe of {OC['oos']['sharpe']}</b> ({usd(OC['oos']['per_year_usd'])}/yr on the 40%
 held out after {OC['split_date']}) and a worst year of {usd(Q['refined_worst_year_usd'])} — positive in all
-12 years. Every number below is VWAP-priced; secondary signals are kept in tabs but default to this rule.</p>
+12 years. A <b>dynamic trailing-stop exit</b> (A5) enhances it further — to {usd(XTR['full']['per_year_usd'])}/yr
+at Sharpe {XTR['full']['sharpe']}, or Sharpe {XCB['full']['sharpe']} with a hard floor that nearly halves the
+drawdown — <b>lifting P&amp;L both in- and out-of-sample</b>. Every number below is VWAP-priced; secondary
+signals are kept in tabs but default to this rule.</p>
 
 <div class="kpis" style="margin-top:16px">{kpi_html()}</div>
 
@@ -384,6 +414,32 @@ more-pegged early years. Trained-window intuition only; nothing is re-fit on the
      ") and out-of-sample → " + OC['oos_end'] + " (Sharpe " + str(OC['oos']['sharpe']) + ", "
      + usd(OC['oos']['per_year_usd']) + "/yr). The out-of-sample slope is if anything steeper — the "
      "post-2021 float is where the cash-flow cycle is most tradeable.")}
+
+<h2><span class="n">A5.</span> Enhancing the rule with a dynamic exit (stop-loss / take-profit)</h2>
+<p class="lead">The calendar rule is <b>always in the market</b> (short into the deadline, long otherwise). Because
+the edge <b>front-loads</b> — the colón strengthens <i>into</i> the deadline and reverts after — a trade often
+peaks mid-hold and then gives the move back. So we overlay a <b>trailing stop</b>: within each trade, once the
+running P&amp;L gives back {XM['trail_bps']} bps from its best level, we bank it and stay flat until the calendar
+opens the next trade. This <b>never changes the entry logic</b> — it can only remove the losing tail of a trade.
+Both parameters are optimised on the <b>in-sample 60% only</b>; the out-of-sample 40% below is untouched.</p>
+{exits_table()}
+{fig("ex_optimization.png", "Exit optimiser — net P&L and Sharpe across the trailing band",
+     "This is the search itself. Every trailing band from ~30 to ~100 bps beats the no-exit rule (dashed) in "
+     "<b>both</b> the in-sample and out-of-sample windows on Sharpe, and lifts in-sample P&L across the whole "
+     "range — a broad plateau, not a single lucky point (the same robustness test we applied to the calendar "
+     "window in A2). The chosen " + str(XM['trail_bps']) + " bps maximises in-sample P&L/yr.")}
+{fig("ex_equity.png", "Calendar rule vs calendar rule + trailing exit — equity &amp; drawdown",
+     "Adding the exit lifts full-sample P&L from " + usd(XB['full']['per_year_usd']) + "/yr to " +
+     usd(XTR['full']['per_year_usd']) + "/yr (Sharpe " + str(XB['full']['sharpe']) + " → " +
+     str(XTR['full']['sharpe']) + ") and — with the hard floor variant — cuts the worst drawdown from " +
+     usd(XB['full']['maxdd_usd']) + " to " + usd(XCB['full']['maxdd_usd']) + ". The green curve sits above the "
+     "grey throughout, most visibly through the deep 2017–18 drawdown.")}
+{fig("ex_episode.png", "How the exit enhances one trade — bank the move at the peak, skip the reversion",
+     "A concrete " + XT['episode']['side'] + "-USD trade: the position banks " +
+     f"{XT['episode']['banked_bps']:+d} bps at the trailing exit near the peak, instead of holding to the "
+     "calendar's episode end and watching the same trade turn into a " + f"{XT['episode']['held_bps']:+d} bps" +
+     " result on the post-deadline reversion — that one exit is worth ~" + str(XT['episode']['saved_bps']) +
+     " bps. The overlay does this systematically across trades; it is the mechanism, on a single trade.")}
 
 <div class="part">Part B · The underlying dynamics — what we are exploiting</div>
 <h2><span class="n">B1.</span> The engine: exporters are the swing USD supply</h2>
@@ -516,6 +572,13 @@ VWAP is a steadier reference than a single closing tick.</p>
    trades/yr, worst year {usd(Q['refined_worst_year_usd'])}, positive in all 12. A slow 20-day volume filter
    lifts the risk-adjusted return to Sharpe {QSLOW['sharpe']} (drawdown just {usd(QSLOW['maxdd_usd'])}).
    Start here.</li>
+ <li><b>A dynamic exit enhances it (A5).</b> Because the calendar edge front-loads and reverts, a
+   {XM['trail_bps']}-bps <b>trailing stop</b> that banks each trade once the move stalls raises P&amp;L to
+   {usd(XTR['full']['per_year_usd'])}/yr (Sharpe {XTR['full']['sharpe']}) — <b>up in both the in-sample and
+   out-of-sample windows</b>. Adding a hard {XM['combo_floor_bps']}-bps floor takes the Sharpe to
+   {XCB['full']['sharpe']} and nearly halves the worst drawdown ({usd(XB['full']['maxdd_usd'])} →
+   {usd(XCB['full']['maxdd_usd'])}). Both were tuned on in-sample data only, and the whole 30–100-bps band
+   works — it is an overlay on the calendar rule, not a replacement.</li>
  <li><b>It holds out of sample.</b> On a chronological 60/40 split (test window after {OC['split_date']},
    nothing re-fit) the rule earns {usd(OC['oos']['per_year_usd'])}/yr at Sharpe {OC['oos']['sharpe']}
    out-of-sample — if anything stronger than the {OC['is']['sharpe']} in-sample, because the post-2021 float
@@ -541,7 +604,7 @@ VWAP is a steadier reference than a single closing tick.</p>
   financing/borrow and market impact, non-compounded (reset to $1M each day). The ML row is conviction-sized
   so its notional varies up to $1M; all model numbers are walk-forward out-of-sample. In-sample /
   out-of-sample = chronological 60/40 split at {OC['split_date']}. Reproducible:
-  <code>parse_monex → analyze → eda → volume_model → dynamics → quincena → backtest_vwap → build_report</code>.
+  <code>parse_monex → analyze → eda → volume_model → dynamics → quincena → exits → backtest_vwap → build_report</code>.
 </footer>
 
 </div>{JS}</body></html>"""

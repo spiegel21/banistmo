@@ -115,6 +115,30 @@ fixed date. Chart: `out/q_calendar.png`; the daily sheet (`daily_signal.py`) now
 `td_to_iva`. Sources: Hacienda/TRIBU-CR fiscal calendar (IVA D-104 due the 15th) and the
 CCSS planilla 4th-business-day rule.
 
+### Enhancing the rule with a dynamic exit (`exits.py`)
+
+The calendar rule is always in the market, but its edge **front-loads** — the colón
+strengthens *into* the deadline and reverts after — so a trade tends to peak mid-hold and
+give the move back. Overlaying a **trailing stop** on each trade (bank it once the running
+P&L gives back a fixed band from its peak, then stay flat until the calendar opens the next
+trade) removes that losing tail **without changing any entry**. Both parameters are tuned on
+the in-sample 60% only. VWAP-priced, USD 1M/trade, net of 0.65 CRC round-trip:
+
+| Calendar rule | Full /yr | Sharpe | Max DD | OOS /yr | OOS Sharpe |
+|---------------|---------:|-------:|-------:|--------:|-----------:|
+| No exit (always in market) | $125k | 3.00 | −$48k | $152k | 2.91 |
+| **+ trailing-stop exit (80 bps)** | **$128k** | 3.22 | −$45k | **$155k** | 3.08 |
+| + trailing (30) & hard floor (60) bps | $126k | **3.91** | **−$26k** | $153k | **4.09** |
+
+- The trailing stop **raises P&L in both windows** (+$3k/yr in-sample and out-of-sample), and
+  the improvement is a **broad plateau** — every band from ~30 to ~100 bps beats the no-exit
+  rule on Sharpe in both windows, so it is not a curve-fit point.
+- Adding a hard floor stop takes the full-sample Sharpe to 3.91 and nearly halves the worst
+  drawdown (−$48k → −$26k) while still edging the baseline on P&L.
+- It is an **overlay, not a replacement**: the recommendation is still the calendar rule; the
+  exit only decides when to bank a trade early. Charts: `out/ex_optimization.png` (the search),
+  `out/ex_equity.png` (before/after), `out/ex_episode.png` (the mechanism on one trade).
+
 ## Público vs privado volume — NOT possible with this file
 
 The MONEX export contains only *aggregate* traded volume. Splitting público (BCCR /
