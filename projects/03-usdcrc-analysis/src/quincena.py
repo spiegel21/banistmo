@@ -16,8 +16,10 @@ import matplotlib
 
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
 import numpy as np
 import pandas as pd
+from scipy import stats as sps
 
 from analyze import OUT, load
 from payment_calendar import annotate
@@ -353,6 +355,122 @@ def chart_execution(df, res):
     plt.close(fig)
 
 
+def chart_position_shading(df, res, zoom_months=18):
+    """Session VWAP with the recommended real-calendar position shaded behind it:
+    green = long USD, red = short USD, unshaded = no position on.
+    """
+    pos = pd.Series(pos_calendar(df), index=df.date)
+    price = pd.Series(df.vwap.values, index=df.date)
+
+    def shade(ax, p, c):
+        block = (p != p.shift(1)).cumsum()
+        for _, g in p.groupby(block):
+            sign = g.iloc[0]
+            if sign == 0:
+                continue  # no trade on -> leave blank
+            ax.axvspan(g.index[0], g.index[-1], color=GREEN if sign > 0 else RED, alpha=0.22, lw=0)
+        ax.plot(c.index, c.values, color=NAVY, lw=1.0)
+        ax.set_ylabel("USD/CRC session VWAP")
+
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(13, 8))
+    shade(ax1, pos, price)
+    ax1.set_title(f"Real-calendar position vs USD/CRC VWAP — short USD ≤{CAL_PRE} bd into the "
+                  "IVA/quincena deadline, long otherwise")
+    handles = [Patch(facecolor=GREEN, alpha=0.4, label="long USD"),
+               Patch(facecolor=RED, alpha=0.4, label="short USD")]
+    ax1.legend(handles=handles, loc="upper left", fontsize=9)
+
+    cutoff = price.index.max() - pd.DateOffset(months=zoom_months)
+    shade(ax2, pos.loc[pos.index >= cutoff], price.loc[price.index >= cutoff])
+    ax2.set_title(f"Last {zoom_months} months, zoomed")
+
+    fig.tight_layout()
+    fig.savefig(OUT / "q_position_shading.png", dpi=110)
+    plt.close(fig)
+
+
+# (label, slug, position fn, colour) — the calendar family compared in the report tabs
+STRATS = [
+    ("Real calendar (recommended)", "calendar", pos_calendar, NAVY),
+    ("Refined (5–15)", "refined", pos_refined, GREEN),
+    ("Refined + slow-vol", "slowvol", pos_refined_slowvol, PURPLE),
+    ("Base quincena (≤15)", "base", pos_base, GREY),
+]
+
+
+def _daily_bps(pos_fn, df):
+    """Daily net P&L in bps of the $1M notional (1 bp = $100), VWAP-priced — the same
+    series stat() summarises."""
+    net, _turn = dollars(pos_fn(df), df)
+    return (net / (NOTIONAL / 1e4)).dropna()
+
+
+def _dist_stats(x):
+    x = np.asarray(x, float)
+    return {"mean": float(x.mean()), "std": float(x.std()),
+            "sharpe": float(x.mean() / x.std() * ANN),
+            "skew": float(sps.skew(x)), "kurt": float(sps.kurtosis(x)),  # excess kurtosis
+            "var95": float(np.percentile(x, 5)), "var99": float(np.percentile(x, 1)),
+            "min": float(x.min()), "max": float(x.max()), "pos": float((x > 0).mean() * 100)}
+
+
+def chart_return_distributions(df, res):
+    """One histogram+KDE per calendar-family variant (for the report tabs) plus an
+    all-in-one overlay. Everything is VWAP-priced and on a shared x-range so the shapes
+    are directly comparable.
+    """
+    series = {slug: _daily_bps(fn, df) for _, slug, fn, _ in STRATS}
+    pooled = np.concatenate([s.values for s in series.values()])
+    lim = float(max(abs(np.percentile(pooled, 0.5)), abs(np.percentile(pooled, 99.5))))
+    grid = np.linspace(-lim, lim, 400)
+    res["return_dist"] = {}
+
+    for label, slug, _fn, color in STRATS:
+        x = series[slug].values
+        st = _dist_stats(x)
+        res["return_dist"][label] = {k: round(v, 3) for k, v in st.items()}
+        n_out = int((np.abs(x) > lim).sum())
+        fig, ax = plt.subplots(figsize=(9, 5))
+        ax.hist(np.clip(x, -lim, lim), bins=60, density=True, color=color, alpha=0.32,
+                edgecolor="white", linewidth=0.3)
+        ax.plot(grid, sps.gaussian_kde(x)(grid), color=color, lw=2)
+        ax.axvline(0, color="k", lw=0.8)
+        ax.axvline(st["mean"], color=color, lw=1.6, label=f"mean {st['mean']:+.1f} bps")
+        ax.axvline(st["var95"], color=RED, ls="--", lw=1.6, label=f"5% VaR {st['var95']:.1f} bps")
+        ax.set_xlim(-lim, lim)
+        ax.set_xlabel("daily net return (bps · $1M/trade, VWAP-priced · 1 bp = $100)")
+        ax.set_ylabel("density")
+        ax.set_title(f"{label} — daily net return distribution")
+        txt = (f"mean {st['mean']:+.2f} bps    std {st['std']:.1f}\n"
+               f"Sharpe {st['sharpe']:.2f}     pos days {st['pos']:.0f}%\n"
+               f"skew {st['skew']:+.2f}      ex-kurt {st['kurt']:+.2f}\n"
+               f"best {st['max']:+.0f}      worst {st['min']:.0f} bps")
+        if n_out:
+            txt += f"\n({n_out} days beyond ±{lim:.0f} clipped in)"
+        ax.text(0.985, 0.97, txt, transform=ax.transAxes, ha="right", va="top",
+                fontsize=9, family="monospace",
+                bbox=dict(boxstyle="round", fc="white", ec=color, alpha=0.92))
+        ax.legend(loc="upper left", fontsize=9)
+        fig.tight_layout()
+        fig.savefig(OUT / f"q_dist_{slug}.png", dpi=110)
+        plt.close(fig)
+
+    fig, ax = plt.subplots(figsize=(9, 5))
+    for label, slug, _fn, color in STRATS:
+        y = sps.gaussian_kde(series[slug].values)(grid)
+        ax.plot(grid, y, color=color, lw=2, label=label)
+        ax.fill_between(grid, y, color=color, alpha=0.06)
+    ax.axvline(0, color="k", lw=0.8)
+    ax.set_xlim(-lim, lim)
+    ax.set_xlabel("daily net return (bps · $1M/trade, VWAP-priced · 1 bp = $100)")
+    ax.set_ylabel("density")
+    ax.set_title("Daily net return distribution — calendar-family variants overlaid")
+    ax.legend(loc="upper left", fontsize=9)
+    fig.tight_layout()
+    fig.savefig(OUT / "q_dist_overlay.png", dpi=110)
+    plt.close(fig)
+
+
 def trading_calendar(df):
     """Practical map: for each day-of-month, the position the fixed refined rule takes.
 
@@ -384,6 +502,8 @@ def main():
     chart_calendar_peryear(df, res)
     chart_oos(df, res)
     chart_execution(df, res)
+    chart_position_shading(df, res)
+    chart_return_distributions(df, res)
     calendar_sensitivity(df, res)
     res["trading_calendar"] = trading_calendar(df)
 

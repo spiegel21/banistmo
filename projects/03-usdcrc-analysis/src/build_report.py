@@ -200,6 +200,29 @@ def vwap_table():
     return "".join(out)
 
 
+def dist_table():
+    """Distribution shape of each calendar-family variant's daily net return (VWAP-priced)."""
+    rd = Q["return_dist"]
+    order = ["Real calendar (recommended)", "Refined (5–15)", "Refined + slow-vol",
+             "Base quincena (≤15)"]
+    out = ['<table><tr><th>Variant · daily net bps, $1M/trade, VWAP-priced</th><th class="num">Mean</th>'
+           '<th class="num">Std</th><th class="num">Sharpe</th><th class="num">Pos days</th>'
+           '<th class="num">Skew</th><th class="num">Ex-kurt</th><th class="num">5% VaR</th>'
+           '<th class="num">Worst day</th></tr>']
+    for k in order:
+        d = rd[k]
+        best = k.startswith("Real calendar")
+        rc = ' class="rowbest"' if best else ""
+        star = ' <span class="best">recommended</span>' if best else ""
+        out.append(f'<tr{rc}><td>{k}{star}</td><td class="num">{d["mean"]:+.2f}</td>'
+                   f'<td class="num">{d["std"]:.1f}</td><td class="num {scls(d["sharpe"])}">{d["sharpe"]:.2f}</td>'
+                   f'<td class="num">{d["pos"]:.0f}%</td><td class="num">{d["skew"]:+.2f}</td>'
+                   f'<td class="num">{d["kurt"]:+.1f}</td><td class="num">{d["var95"]:.1f}</td>'
+                   f'<td class="num">{d["min"]:.0f}</td></tr>')
+    out.append("</table>")
+    return "".join(out)
+
+
 # --------------------------------------------------------------------------- #
 # Part C — per-rule logic, as tabs (recommended rule is the default)
 # --------------------------------------------------------------------------- #
@@ -440,6 +463,43 @@ Both parameters are optimised on the <b>in-sample 60% only</b>; the out-of-sampl
      "calendar's episode end and watching the same trade turn into a " + f"{XT['episode']['held_bps']:+d} bps" +
      " result on the post-deadline reversion — that one exit is worth ~" + str(XT['episode']['saved_bps']) +
      " bps. The overlay does this systematically across trades; it is the mechanism, on a single trade.")}
+
+<h2><span class="n">A6.</span> The position against the price</h2>
+{fig("q_position_shading.png", "USD/CRC session VWAP shaded by the recommended calendar position",
+     f"Green = long USD, red = short USD (short ≤{CAL_PRE} business days into the IVA/quincena deadline). "
+     "The rule is always in a position — there is no flat/no-trade state — so every session carries one shade "
+     "or the other. The short (red) bands cluster mid-month, exactly where the cash-flow supply surge lands.")}
+
+<h2><span class="n">A7.</span> Return distributions — how the variants compare</h2>
+<p class="lead">Daily net P&amp;L per $1M traded (1 bp = $100), <b>VWAP-to-VWAP</b>. The tabs isolate one
+variant; the overlay shows all four on a shared x-range, so the shapes are directly comparable. The story is
+in the <i>shape</i>, not just the mean: slow-vol sizing trades a slightly lower mean for a much tighter body
+(smaller std, positive skew), which is why its Sharpe tops the table even though the recommended calendar rule
+earns more dollars.</p>
+{tabs([
+    ("Overlay (all four)", False, fig("q_dist_overlay.png", "All four calendar-family variants overlaid",
+        "The slow-vol variant is visibly the most peaked (smallest std); the recommended calendar and the "
+        "fixed refined window sit almost on top of each other, both shifted right of the crude base rule.")),
+    ("Real calendar", True, fig("q_dist_calendar.png", "Real calendar (recommended) — daily net return distribution",
+        f"Mean {Q['return_dist']['Real calendar (recommended)']['mean']:+.2f} bps/day at Sharpe "
+        f"{Q['return_dist']['Real calendar (recommended)']['sharpe']:.2f}; a fat left tail "
+        f"(skew {Q['return_dist']['Real calendar (recommended)']['skew']:+.2f}) is the post-deadline reversion "
+        "that the A5 trailing exit is designed to cut.")),
+    ("Refined (5–15)", False, fig("q_dist_refined.png", "Refined quincena — daily net return distribution",
+        f"The fixed day-of-month twin of the calendar rule — nearly identical shape "
+        f"(Sharpe {Q['return_dist']['Refined (5–15)']['sharpe']:.2f}, "
+        f"std {Q['return_dist']['Refined (5–15)']['std']:.1f}), confirming the two readings capture the same edge.")),
+    ("Refined + slow-vol", False, fig("q_dist_slowvol.png", "Refined + slow-vol sizing — daily net return distribution",
+        f"Trimming size when a slow 20-day volume regime disagrees collapses the std to "
+        f"{Q['return_dist']['Refined + slow-vol']['std']:.1f} bps and flips the skew positive "
+        f"({Q['return_dist']['Refined + slow-vol']['skew']:+.2f}) — the highest Sharpe "
+        f"({Q['return_dist']['Refined + slow-vol']['sharpe']:.2f}) of the four.")),
+    ("Base quincena", False, fig("q_dist_base.png", "Base quincena (≤15) — daily net return distribution",
+        f"The crude ancestor: same volatility but a lower mean "
+        f"({Q['return_dist']['Base quincena (≤15)']['mean']:+.2f} bps) and the heaviest left tail, dragging "
+        f"its Sharpe to {Q['return_dist']['Base quincena (≤15)']['sharpe']:.2f}.")),
+])}
+{dist_table()}
 
 <div class="part">Part B · The underlying dynamics — what we are exploiting</div>
 <h2><span class="n">B1.</span> The engine: exporters are the swing USD supply</h2>
