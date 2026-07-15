@@ -231,7 +231,7 @@ daily signal).</p>
      "month positive — January and April strongest.")}
 
 <div class="part">Part B · The underlying dynamics — what we are exploiting</div>
-<h2><span class="n">A1.</span> The engine: exporters are the swing USD supply</h2>
+<h2><span class="n">B1.</span> The engine: exporters are the swing USD supply</h2>
 {fig("dyn_mechanism.png", "Volume when the colón strengthens vs weakens, and next-day move by volume",
      f"On days the colón strengthens (USD falls) the market trades {DY['vol_on_usd_down']:.0f}M — far more "
      f"than the {DY['vol_on_usd_up']:.0f}M on days it weakens. USD sellers (exporters, remittances, FDI) come "
@@ -239,14 +239,14 @@ daily signal).</p>
      f"thin market = USD drifts up next day ({DY['nextmove_after_lowvol']:+.1f} bps after quiet days vs "
      f"{DY['nextmove_after_highvol']:+.1f} after busy ones). That asymmetry IS the volume signal.")}
 
-<h2><span class="n">A2.</span> The intra-month cash-flow cycle (why the calendar works)</h2>
+<h2><span class="n">B2.</span> The intra-month cash-flow cycle (why the calendar works)</h2>
 {fig("dyn_domcycle.png", "Average next-day USD move (bars) and volume (line) by day-of-month",
      "A clear monthly rhythm: volume peaks mid-month (~day 13–15) and the colón strengthens hardest right "
      "then (red bars) — a recurring USD-supply surge (exporter settlements, tax/paydate conversions). The "
      "first days and the second half of the month lean the other way (USD up). This is the quincena effect, "
      "and it is a cash-flow cycle, not a chart pattern.")}
 
-<h2><span class="n">A2b.</span> Aligning to the real deadline sharpens the signal</h2>
+<h2><span class="n">B2b.</span> Aligning to the real deadline sharpens the signal</h2>
 {fig("q_calendar.png", "Average next-day USD move by business-days-to the IVA/quincena deadline",
      "Re-indexing the same data from raw day-of-month to <i>trading days to the statutory IVA (15th) / "
      "mid-month payroll deadline</i> makes the mechanism unmistakable: the colón strengthens hardest 1–5 "
@@ -259,7 +259,7 @@ daily signal).</p>
      "Deadline-anchoring holds up year by year (worst year " + usd(Q['calendar_worst_year_usd']) + "), not "
      "just in aggregate.")}
 
-<h2><span class="n">A3.</span> Two more relationships</h2>
+<h2><span class="n">B3.</span> Two more relationships</h2>
 <div class="cols">
 {fig("dyn_skew.png", "Precio-ponderado skew (VWAP − simple average)",
      f"When large tickets pull the weighted price above the simple average, USD tends to keep rising next "
@@ -315,10 +315,10 @@ daily signal).</p>
      "flat net of cost — the signal is real, the daily churn is the problem.")}
 
 <div class="part">Part E · The combined model &amp; the raw relationships</div>
-<h2><span class="n">D1.</span> Low volume → USD up (seasonally adjusted)</h2>
+<h2><span class="n">E1.</span> Low volume → USD up (seasonally adjusted)</h2>
 {fig("vm_vol_nextret.png", "Next-day USD move by volume quintile",
      "Monotonic: quietest days → USD up, busiest → USD down. Seasonal adjustment sharpens the extremes.")}
-<h2><span class="n">D2.</span> Attribution &amp; drivers</h2>
+<h2><span class="n">E2.</span> Attribution &amp; drivers</h2>
 <div class="cols">
 {fig("vm_attribution.png", "Net Sharpe by feature family",
      "Volume-only and calendar-only each beat the drift and are additive.")}
@@ -355,9 +355,15 @@ than a single closing tick. Over {BVM['n_days']:,} sessions ({BVM['date_min']} �
 
 <div class="part">Part G · Verdict</div>
 <ul class="find">
- <li><b>The most robust, simplest edge is the calendar.</b> Short USD in the first half of the month, long
-   in the second — {usd(DY['Quincena rule']['per_year_usd'])}/yr per $1M at Sharpe {DY['Quincena rule']['sharpe']},
-   {DY['Quincena rule']['roundtrips_yr']} trades/yr, and positive in all 12 years. Start here.</li>
+ <li><b>The most robust, simplest edge is the refined calendar.</b> Short USD only on the mid-month
+   supply window — days 5–15, or equivalently within {CAL_PRE} business days of the IVA/quincena deadline —
+   and long the rest of the month: <b>{usd(QREF['per_year_usd'])}/yr per $1M at Sharpe {QREF['sharpe']}</b>
+   ({QREF['roundtrips_yr']} trades/yr, worst year {usd(Q['refined_worst_year_usd'])}, positive in all 12
+   years). The deadline-anchored version — which rolls with weekends and holidays — edges it at
+   {usd(QCAL['per_year_usd'])}/yr / Sharpe {QCAL['sharpe']}, and a slow 20-day volume filter lifts the
+   risk-adjusted return to Sharpe {QSLOW['sharpe']} (drawdown just {usd(QSLOW['maxdd_usd'])}). This refines
+   the crude "short the whole first half" rule ({usd(QBASE['per_year_usd'])}/yr, Sharpe {QBASE['sharpe']}) by
+   dropping the USD-up days 1–4. Start here.</li>
  <li><b>Your volume thesis is correct but must be traded gently.</b> Low volume → USD up is real and
    monotonic, but a daily flip pays it all to slippage. Use it conviction-sized or as a filter on the
    calendar trade — that is exactly what lifts the combined/ML book to Sharpe ~2.</li>
