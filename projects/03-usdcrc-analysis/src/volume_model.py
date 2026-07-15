@@ -45,8 +45,8 @@ DOW = ["Mon", "Tue", "Wed", "Thu", "Fri"]
 def build():
     df = load().copy()
     df["vol"] = df.volume_usd / 1e6
-    df["rcc"] = df.close.pct_change() * 1e4
-    df["r_next"] = df.rcc.shift(-1)                     # tradeable next-day USD return (bps)
+    df["rvv"] = df.vwap.pct_change() * 1e4              # VWAP-to-VWAP (realistic desk fill)
+    df["r_next"] = df.rvv.shift(-1)                     # tradeable next-day USD return (bps)
     df["dow"] = df.date.dt.dayofweek
     df["mon"] = df.date.dt.month
     df["dom"] = df.date.dt.day
@@ -117,7 +117,7 @@ def walk_forward(df, model_fn, min_train=504, refit=63):
 def net_pnl(pos, df, cost_side=COST_SIDE):
     pos = pd.Series(pos).reset_index(drop=True)
     r = df.r_next.reset_index(drop=True)
-    px = df.close.reset_index(drop=True)
+    px = df.vwap.reset_index(drop=True)                 # slippage booked against the VWAP fill
     turn = pos.diff().abs()
     turn.iloc[0] = abs(pos.iloc[0])
     net = pos * r - cost_side / px * 1e4 * turn

@@ -35,7 +35,9 @@ def frame():
     df = load().copy()
     df["vol"] = df.volume_usd / 1e6
     df["r_now"] = (df.vwap - df.prev_vwap) / df.prev_vwap * 1e4   # same-day USD move
-    df["r_next"] = df.close.pct_change().shift(-1) * 1e4          # tradeable next-day move
+    # tradeable next-day move priced VWAP-to-VWAP (realistic desk fill), net cost
+    # is also booked against the VWAP in dollars()
+    df["r_next"] = df.vwap.pct_change().shift(-1) * 1e4
     df["dom"] = df.date.dt.day
     df["dow"] = df.date.dt.dayofweek
     df["year"] = df.date.dt.year

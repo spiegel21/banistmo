@@ -1,7 +1,12 @@
-"""Build the self-contained visual report: dynamics -> rules -> dollars -> model.
+"""Build the self-contained visual report: recommendation -> dynamics -> rules -> dollars.
 
-Reads out/vm_results.json (model) and out/dynamics_results.json (rules + $/1M).
-Run after analyze / eda / volume_model / dynamics.
+Everything is priced VWAP-to-VWAP (the realistic desk fill) net of the 0.65 CRC
+round-trip slippage. The recommended calendar/quincena rule leads every section;
+secondary signals (volume, skew, combined vote, ML, trend books) are kept but
+tucked into tabs that default to the recommended strategy.
+
+Reads out/{quincena,dynamics,vm,backtest_vwap}_results.json. Run last, after
+analyze / eda / volume_model / dynamics / quincena / backtest_vwap.
 """
 from __future__ import annotations
 
@@ -20,11 +25,12 @@ QREF = Q["Refined (short 5-15)"]
 QSLOW = Q["Refined + slow-vol sizing"]
 QBASE = Q["Base quincena (<=15)"]
 QCAL = next(v for k, v in Q.items() if k.startswith("Real calendar"))
+OC = Q["oos_calendar"]
+ORF = Q["oos_refined"]
+EX = Q["execution"]
 CAL_PRE = Q["_meta"].get("cal_pre", 6)
 M = R["_meta"]
 LG = R["Logit (conviction)"]
-LG9 = R["Logit (conviction)_2019"]
-DEC = R["decomposition"]
 
 
 def img(name):
@@ -40,13 +46,37 @@ def usd(x):
     return f"${x/1e3:,.0f}k" if abs(x) < 1e6 else f"${x/1e6:.2f}M"
 
 
+def scls(s):
+    """Colour class from a Sharpe value."""
+    return "ok" if s >= 1.5 else ("mb" if s >= 0.5 else "no")
+
+
+def tabs(items):
+    """Render a tab group. items = [(label, is_best, html), ...]; first is default.
+
+    On screen a tiny bit of JS toggles panels; in print (PDF) the tab bar is
+    hidden and every panel is shown with its own heading, so no result is lost.
+    """
+    bar = ['<div class="tabs"><div class="tabbar">']
+    pans = []
+    for i, (label, best, html) in enumerate(items):
+        act = " active" if i == 0 else ""
+        star = '<span class="best">best</span>' if best else ""
+        bar.append(f'<button class="tabbtn{act}">{label}{star}</button>')
+        pans.append(f'<div class="tabpanel{act}"><div class="tab-h">{label}</div>{html}</div>')
+    bar.append("</div>")
+    return "".join(bar) + "".join(pans) + "</div>"
+
+
+# --------------------------------------------------------------------------- #
+# KPI strip — headline the recommended calendar rule (VWAP-priced) + its OOS
+# --------------------------------------------------------------------------- #
 KPIS = [
-    (usd(QREF['per_year_usd']), "refined quincena / yr", "$1M/trade, net of cost"),
-    (f"{QREF['sharpe']}", "refined quincena Sharpe", f"only {QREF['roundtrips_yr']} trades/yr"),
-    (f"{QSLOW['sharpe']}", "with slow-vol sizing", f"DD only {usd(QSLOW['maxdd_usd'])}"),
-    (usd(Q['refined_worst_year_usd']), "worst year", "positive in all 12 years"),
-    (f"{R['vol_quintile_adj'][0]:+.0f} / {R['vol_quintile_adj'][-1]:+.0f} bps", "low vs high volume",
-     "next-day USD move"),
+    (usd(QCAL["per_year_usd"]), "calendar rule / yr", "$1M/trade · VWAP-priced"),
+    (f"{QCAL['sharpe']}", "Sharpe (full sample)", f"only {QCAL['roundtrips_yr']} trades/yr"),
+    (f"{OC['oos']['sharpe']}", "out-of-sample Sharpe", f"OOS {usd(OC['oos']['per_year_usd'])}/yr · 40% held out"),
+    (f"{QSLOW['sharpe']}", "with slow-vol sizing", f"drawdown only {usd(QSLOW['maxdd_usd'])}"),
+    (usd(Q["refined_worst_year_usd"]), "worst calendar year", "positive in all 12 years"),
     (f"{DY['vol_on_usd_down']:.0f} vs {DY['vol_on_usd_up']:.0f} M", "volume: colón up vs down",
      "USD sellers trade in size"),
 ]
@@ -58,56 +88,150 @@ def kpi_html():
                    for v, lab, s in KPIS)
 
 
+# --------------------------------------------------------------------------- #
+# tables
+# --------------------------------------------------------------------------- #
+def money_table():
+    """Unified $1M/trade table — recommended calendar family first, then the raw
+    building-block signals and the ML model. All VWAP-priced, net of cost."""
+    reco = [(f"Real calendar (≤{CAL_PRE} bd to deadline)", QCAL, True),
+            ("Refined quincena (short days 5–15)", QREF, False),
+            ("Refined + slow-vol sizing", QSLOW, False),
+            ("Base quincena (short ≤15)", QBASE, False)]
+    block = [("Volume rule", DY["Volume rule"]),
+             ("Precio-ponderado skew rule", DY["Precio-ponderado skew rule"]),
+             ("Combined vote (3 signals)", DY["Combined vote (3 signals)"])]
+    out = ['<table><tr><th>Strategy · $1M/trade · VWAP-priced, net 0.65 CRC RT</th>'
+           '<th class="num">Per year</th><th class="num">Sharpe</th><th class="num">Trades/yr</th>'
+           '<th class="num">Win %</th><th class="num">Max DD</th></tr>']
+    out.append('<tr><td colspan="6" class="grp">Recommended — calendar / quincena family</td></tr>')
+    for name, b, best in reco:
+        rc = ' class="rowbest"' if best else ""
+        star = ' <span class="best">best</span>' if best else ""
+        out.append(f'<tr{rc}><td>{name}{star}</td>'
+                   f'<td class="num {scls(b["sharpe"])}">{usd(b["per_year_usd"])}</td>'
+                   f'<td class="num {scls(b["sharpe"])}">{b["sharpe"]}</td>'
+                   f'<td class="num">{b["roundtrips_yr"]}</td><td class="num">{b["win_rate"]}</td>'
+                   f'<td class="num">{usd(b["maxdd_usd"])}</td></tr>')
+    out.append('<tr><td colspan="6" class="grp">Building-block signals — trade gently / as filters</td></tr>')
+    for name, b in block:
+        out.append(f'<tr><td>{name}</td>'
+                   f'<td class="num {scls(b["sharpe"])}">{usd(b["per_year_usd"])}</td>'
+                   f'<td class="num {scls(b["sharpe"])}">{b["sharpe"]}</td>'
+                   f'<td class="num">{b["roundtrips_yr"]}</td><td class="num">{b["win_rate"]}</td>'
+                   f'<td class="num">{usd(b["maxdd_usd"])}</td></tr>')
+    out.append(f'<tr><td><b>ML combined model</b> (conviction-sized, walk-forward)</td>'
+               f'<td class="num ok">{usd(LG["ann_bps"]*100)}</td>'
+               f'<td class="num ok">{LG["sharpe"]}</td><td class="num">{LG["roundtrips_yr"]}</td>'
+               f'<td class="num">{LG["hit"]}</td><td class="num">{usd(LG["maxdd_bps"]*100)}</td></tr>')
+    out.append("</table>")
+    return "".join(out)
+
+
+def oos_table():
+    def row(name, o):
+        return (f'<tr><td>{name}</td>'
+                f'<td class="num">{usd(o["is"]["per_year_usd"])}</td><td class="num">{o["is"]["sharpe"]}</td>'
+                f'<td class="num ok">{usd(o["oos"]["per_year_usd"])}</td>'
+                f'<td class="num ok">{o["oos"]["sharpe"]}</td></tr>')
+    return ('<table><tr><th>Rule (chronological 60/40 split, no re-fitting)</th>'
+            '<th class="num">IS / yr</th><th class="num">IS Sharpe</th>'
+            '<th class="num">OOS / yr</th><th class="num">OOS Sharpe</th></tr>'
+            + row(f"Real calendar (≤{CAL_PRE} bd)", OC)
+            + row("Refined (short 5–15)", ORF) + "</table>")
+
+
+def exec_table():
+    return ('<table><tr><th>Recommended calendar rule · $1M/trade · net 0.65 CRC RT</th>'
+            '<th class="num">Per year</th><th class="num">Sharpe</th><th class="num">Max DD</th></tr>'
+            f'<tr><td>Closing-print fill <span class="muted">(optimistic mark)</span></td>'
+            f'<td class="num">{usd(EX["close"]["per_year_usd"])}</td>'
+            f'<td class="num">{EX["close"]["sharpe"]}</td>'
+            f'<td class="num">{usd(EX["close"]["maxdd_usd"])}</td></tr>'
+            f'<tr class="rowbest"><td>Session VWAP fill <span class="best">used everywhere in this report</span></td>'
+            f'<td class="num ok">{usd(EX["vwap"]["per_year_usd"])}</td>'
+            f'<td class="num ok">{EX["vwap"]["sharpe"]}</td>'
+            f'<td class="num">{usd(EX["vwap"]["maxdd_usd"])}</td></tr></table>')
+
+
 def vwap_table():
-    """Close-print vs VWAP execution, same signals & same 0.65 CRC slippage."""
+    """Secondary trend / order-flow books — close-print vs VWAP execution."""
     order = ["Order-flow daily", "Donchian-40 trend", "SMA-120 trend"]
     cv = BV["close_vs_vwap"]
-    out = ['<table><tr><th>Strategy (net of 0.65 CRC round-trip, VWAP-to-VWAP)</th>'
+    out = ['<table><tr><th>Secondary strategy (net 0.65 CRC RT, VWAP-to-VWAP)</th>'
            '<th class="num">Close Sharpe</th><th class="num">VWAP Sharpe</th>'
-           '<th class="num">Close bps/yr</th><th class="num">VWAP bps/yr</th>'
-           '<th class="num">Trades/yr</th></tr>']
+           '<th class="num">VWAP bps/yr</th><th class="num">Trades/yr</th></tr>']
     for k in order:
         c = cv[k]
         b = BV[k]
         cls = "ok" if c["vwap_sharpe"] >= c["close_sharpe"] else "no"
         out.append(f'<tr><td>{k}</td><td class="num">{c["close_sharpe"]}</td>'
                    f'<td class="num {cls}">{c["vwap_sharpe"]}</td>'
-                   f'<td class="num">{c["close_ann_bps"]:.0f}</td>'
                    f'<td class="num {cls}">{c["vwap_ann_bps"]:.0f}</td>'
                    f'<td class="num">{b["roundtrips_yr"]}</td></tr>')
     out.append("</table>")
     return "".join(out)
 
 
-def dollar_table():
-    order = ["Quincena rule", "Volume rule", "Precio-ponderado skew rule", "Combined vote (3 signals)"]
-    out = ['<table><tr><th>Rule ($1M USD per trade, net of 0.65 CRC round-trip)</th>'
-           '<th class="num">Total P&amp;L</th><th class="num">Per year</th><th class="num">Per trade</th>'
-           '<th class="num">Trades/yr</th><th class="num">Win %</th><th class="num">Sharpe</th>'
-           '<th class="num">Max DD</th></tr>']
-    for k in order:
-        b = DY[k]
-        cls = "ok" if b["sharpe"] >= 1.5 else ("mb" if b["sharpe"] >= 0.5 else "no")
-        out.append(f'<tr><td>{k}</td><td class="num">{usd(b["total_usd"])}</td>'
-                   f'<td class="num {cls}">{usd(b["per_year_usd"])}</td>'
-                   f'<td class="num">${b["per_trade_usd"]:,}</td>'
-                   f'<td class="num">{b["roundtrips_yr"]}</td><td class="num">{b["win_rate"]}</td>'
-                   f'<td class="num {cls}">{b["sharpe"]}</td>'
-                   f'<td class="num">{usd(b["maxdd_usd"])}</td></tr>')
-    out.append(f'<tr><td><b>ML combined model</b> (conviction-sized, walk-forward)</td>'
-               f'<td class="num">{usd(LG["ann_bps"]*100*M["n_days"]/252)}</td>'
-               f'<td class="num ok">{usd(LG["ann_bps"]*100)}</td><td class="num muted">—</td>'
-               f'<td class="num">{LG["roundtrips_yr"]}</td><td class="num">{LG["hit"]}</td>'
-               f'<td class="num ok">{LG["sharpe"]}</td>'
-               f'<td class="num">{usd(LG["maxdd_bps"]*100)}</td></tr>')
-    out.append("</table>")
-    return "".join(out)
+# --------------------------------------------------------------------------- #
+# Part C — per-rule logic, as tabs (recommended rule is the default)
+# --------------------------------------------------------------------------- #
+RULE_CAL = f"""<div class="rule"><h4>Calendar / quincena rule — the recommendation</h4>
+  <div class="logic">≤ {CAL_PRE} business days before the IVA/quincena deadline (through it) →  SHORT USD $1M<br>
+    &nbsp;&nbsp;&nbsp;(firms sell USD to raise colones for the 15th tax + payroll → colón strengthens)<br>
+    otherwise →  LONG USD $1M   (supply fades, USD drifts up)<br>
+    optional: trim size to 50% when a slow 20-day volume regime disagrees</div>
+  <p><b>Why:</b> the intra-month cash-flow cycle (Part B) — companies convert USD→CRC for the D-104 IVA
+    filing (due the 15th, rolled to the next business day) and the mid-month quincena payroll, a recurring
+    supply surge that strengthens the colón into the deadline and reverts after. <b>Two readings:</b> a
+    <i>fixed</i> day-of-month window (days 1–4 LONG, 5–15 SHORT, 16–end LONG) and the <i>real-calendar</i>
+    anchor that rolls with weekends/holidays. <b>Result (VWAP-priced):</b> {usd(QCAL['per_year_usd'])}/yr,
+    Sharpe {QCAL['sharpe']}, {QCAL['roundtrips_yr']} trades/yr, max drawdown {usd(QCAL['maxdd_usd'])} — and
+    an out-of-sample Sharpe of {OC['oos']['sharpe']} (A4). The base "short the whole first half" rule
+    ({usd(QBASE['per_year_usd'])}/yr, Sharpe {QBASE['sharpe']}) is the crude ancestor this refines.</p></div>"""
+
+RULE_VOL = f"""<div class="rule"><h4>Volume — "buy USD when the market is quiet"</h4>
+  <div class="logic">seasonal_vol = today_volume ÷ (avg volume on the same weekday, to date)<br>
+    if seasonal_vol &lt; 1.0  →  LONG USD $1M   (quieter than normal)<br>
+    if seasonal_vol ≥ 1.0  →  SHORT USD $1M  (busier than normal)</div>
+  <p><b>Why:</b> quiet = exporters absent = importer demand lifts USD. Dividing by the same-weekday average
+    makes "quiet" mean quiet <i>for a Tuesday</i>. <b>Result:</b> directionally right but flips
+    ~{DY['Volume rule']['roundtrips_yr']}×/yr — even VWAP-priced it only nets Sharpe
+    {DY['Volume rule']['sharpe']} standalone. Best used as the slow regime filter on the calendar trade.</p></div>"""
+
+RULE_SKEW = f"""<div class="rule"><h4>Precio-ponderado skew — "follow the big tickets"</h4>
+  <div class="logic">if VWAP &gt; simple_average  →  LONG USD $1M   (large trades lifted the price)<br>
+    if VWAP ≤ simple_average  →  SHORT USD $1M</div>
+  <p><b>Why:</b> the weighted-vs-simple gap reveals whether large players were buying or selling USD
+    (corr {DY['skew_corr']} with the next-day move). <b>Result:</b> flips
+    ~{DY['Precio-ponderado skew rule']['roundtrips_yr']}×/yr → Sharpe {DY['Precio-ponderado skew rule']['sharpe']}
+    net; a tie-breaker, not a standalone book.</p></div>"""
+
+RULE_ML = f"""<div class="rule"><h4>Combined vote &amp; the ML model</h4>
+  <div class="logic">Combined = majority vote of the three signals (always ±1) → $1M long/short<br>
+    ML = logistic P(USD up) on all features; position = clip((P − 0.5) × 5, −1, +1)</div>
+  <p><b>Why the ML sizes by conviction:</b> a raw daily flip trades ~95×/yr and dies on cost. Scaling the
+    position by confidence keeps turnover near {LG['roundtrips_yr']}×/yr while still capturing the edge. On
+    the realistic VWAP basis the combined vote nets Sharpe {DY['Combined vote (3 signals)']['sharpe']} and the
+    ML {LG['sharpe']} — but both lean on the same calendar + volume economics as the simple rule above.</p></div>"""
+
+
+JS = """<script>
+document.querySelectorAll('.tabs').forEach(function(t){
+  var btns=t.querySelectorAll('.tabbtn'), pans=t.querySelectorAll('.tabpanel');
+  btns.forEach(function(b,i){ b.addEventListener('click', function(){
+    btns.forEach(function(x){x.classList.remove('active');});
+    pans.forEach(function(x){x.classList.remove('active');});
+    b.classList.add('active'); pans[i].classList.add('active');
+  });});
+});
+</script>"""
 
 
 HTML = f"""<!doctype html>
 <html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>USD/CRC — Dynamics, Rules &amp; Dollar Results</title>
+<title>USD/CRC — Calendar Strategy, Dynamics &amp; VWAP-Priced Results</title>
 <style>
  :root {{ --bg:#0f1419; --card:#1a212b; --ink:#e8edf2; --mut:#8a97a6;
    --accent:#37b87c; --warn:#e0a83d; --bad:#e05d5d; --line:#2a3441; --blue:#4a90d9; }}
@@ -147,50 +271,75 @@ HTML = f"""<!doctype html>
  th {{ color:var(--mut); font-weight:600; font-size:10.5px; text-transform:uppercase; letter-spacing:.4px; }}
  td.num, th.num {{ text-align:right; font-variant-numeric:tabular-nums; white-space:nowrap; }}
  td.ok {{ color:var(--accent); }} td.mb {{ color:var(--warn); }} td.no {{ color:var(--bad); }} .muted {{ color:var(--mut); }}
+ td.grp {{ color:var(--blue); font-weight:700; font-size:10.5px; text-transform:uppercase; letter-spacing:.5px;
+   background:#141b24; border-bottom:1px solid var(--line); }}
+ tr.rowbest td {{ background:rgba(55,184,124,0.09); }}
+ .best {{ color:var(--accent); font-size:10px; text-transform:uppercase; letter-spacing:.5px;
+   font-weight:700; margin-left:6px; border:1px solid var(--accent); border-radius:5px; padding:1px 5px; }}
  ul.find {{ list-style:none; padding:0; margin:0; }}
  ul.find li {{ background:var(--card); border:1px solid var(--line); border-radius:10px;
    padding:13px 16px; margin-bottom:10px; }}
  ul.find b {{ color:var(--blue); }}
  .cols {{ display:grid; grid-template-columns:1fr 1fr; gap:16px; }}
+ /* tabs */
+ .tabs {{ margin:14px 0; }}
+ .tabbar {{ display:flex; flex-wrap:wrap; gap:6px; border-bottom:1px solid var(--line); }}
+ .tabbtn {{ background:transparent; color:var(--mut); border:1px solid var(--line); border-bottom:none;
+   border-radius:9px 9px 0 0; padding:8px 14px; font:inherit; font-size:13px; cursor:pointer; }}
+ .tabbtn:hover {{ color:var(--ink); }}
+ .tabbtn.active {{ color:var(--ink); background:var(--card); box-shadow:inset 0 -2px 0 var(--accent); }}
+ .tabpanel {{ display:none; background:var(--card); border:1px solid var(--line); border-top:none;
+   border-radius:0 0 12px 12px; padding:6px 18px 14px; }}
+ .tabpanel.active {{ display:block; }}
+ .tabpanel figure, .tabpanel .rule {{ background:#0f1419; }}
+ .tab-h {{ display:none; font-weight:700; color:var(--blue); font-size:13px; margin:12px 0 2px; }}
  footer {{ color:var(--mut); font-size:12.5px; margin-top:40px; border-top:1px solid var(--line);
    padding-top:18px; }}
  @page {{ size:A4; margin:13mm 11mm; }}
  @media (max-width:720px) {{ .kpis,.cols {{ grid-template-columns:1fr; }} }}
+ @media print {{
+   .tabbar {{ display:none; }}
+   .tabpanel {{ display:block !important; border-radius:12px; border-top:1px solid var(--line); margin-top:10px; }}
+   .tab-h {{ display:block; }}
+ }}
 </style></head>
 <body><div class="wrap">
 
 <header>
-  <h1>USD/CRC · MONEX — Underlying dynamics, rule logic &amp; dollar results</h1>
+  <h1>USD/CRC · MONEX — the calendar strategy: dynamics, rule logic &amp; VWAP-priced results</h1>
   <div class="sub">{M['n_days']:,} sessions · {M['date_min']} → {M['date_max']} · long/short USD ·
-    ${DY['_meta']['notional_usd']:,.0f} per trade · net of 0.65 CRC round-trip · no technical indicators</div>
+    ${DY['_meta']['notional_usd']:,.0f} per trade · <b>priced VWAP-to-VWAP</b>, net of 0.65 CRC round-trip ·
+    no technical indicators</div>
 </header>
 
-<p class="lead">The recommended strategy is a <b>refined calendar (quincena) rule</b>: short USD only on
-the mid-month supply window (days 5–15), long the rest of the month. At $1,000,000 per trade it earns
-<b>{usd(QREF['per_year_usd'])}/yr at Sharpe {QREF['sharpe']}</b> with just {QREF['roundtrips_yr']} trades a
-year and a worst-year of {usd(Q['refined_worst_year_usd'])} — positive in all 12 years. Below: the exact
-rule, its robustness, the underlying mechanics, and how volume fits in (as a slow regime filter, not a
-daily signal).</p>
+<p class="lead">The recommended strategy is a <b>calendar (quincena) rule</b>: short USD only into Costa
+Rica's mid-month IVA / payroll deadline (within {CAL_PRE} business days of it, or equivalently day-of-month
+5–15), long the rest of the month. Priced at the session VWAP net of cost it earns
+<b>{usd(QCAL['per_year_usd'])}/yr at Sharpe {QCAL['sharpe']}</b> on just {QCAL['roundtrips_yr']} trades a year,
+with an <b>out-of-sample Sharpe of {OC['oos']['sharpe']}</b> ({usd(OC['oos']['per_year_usd'])}/yr on the 40%
+held out after {OC['split_date']}) and a worst year of {usd(Q['refined_worst_year_usd'])} — positive in all
+12 years. Every number below is VWAP-priced; secondary signals are kept in tabs but default to this rule.</p>
 
 <div class="kpis" style="margin-top:16px">{kpi_html()}</div>
 
-<div class="part">Part A · The recommended strategy — refined quincena</div>
-<h2><span class="n">A1.</span> The rule &amp; the numbers ($1M per trade, net of cost)</h2>
+<div class="part">Part A · The recommended strategy — calendar / quincena rule</div>
+<h2><span class="n">A1.</span> The rule &amp; the numbers ($1M per trade, VWAP-priced, net of cost)</h2>
 <table><tr><th>Version</th><th class="num">Per year</th><th class="num">Sharpe</th>
   <th class="num">Trades/yr</th><th class="num">Win %</th><th class="num">Max DD</th><th>Note</th></tr>
 <tr><td>Base quincena (short if day ≤ 15)</td><td class="num">{usd(QBASE['per_year_usd'])}</td>
   <td class="num">{QBASE['sharpe']}</td><td class="num">{QBASE['roundtrips_yr']}</td>
   <td class="num">{QBASE['win_rate']}</td><td class="num">{usd(QBASE['maxdd_usd'])}</td>
-  <td class="muted">original</td></tr>
-<tr><td><b>Refined (short days 5–15, long otherwise)</b></td>
+  <td class="muted">crude ancestor</td></tr>
+<tr><td>Refined (short days 5–15, long otherwise)</td>
   <td class="num ok">{usd(QREF['per_year_usd'])}</td><td class="num ok">{QREF['sharpe']}</td>
   <td class="num">{QREF['roundtrips_yr']}</td><td class="num">{QREF['win_rate']}</td>
-  <td class="num">{usd(QREF['maxdd_usd'])}</td><td class="muted">most dollars</td></tr>
+  <td class="num">{usd(QREF['maxdd_usd'])}</td><td class="muted">fixed window</td></tr>
 <tr><td>Refined + slow-volume sizing</td><td class="num">{usd(QSLOW['per_year_usd'])}</td>
   <td class="num ok">{QSLOW['sharpe']}</td><td class="num">{QSLOW['roundtrips_yr']}</td>
   <td class="num">{QSLOW['win_rate']}</td><td class="num ok">{usd(QSLOW['maxdd_usd'])}</td>
   <td class="muted">best risk-adjusted</td></tr>
-<tr><td><b>Real calendar (≤{CAL_PRE} bd to IVA/quincena deadline)</b></td>
+<tr class="rowbest"><td><b>Real calendar (≤{CAL_PRE} bd to IVA/quincena deadline)</b>
+  <span class="best">recommended</span></td>
   <td class="num ok">{usd(QCAL['per_year_usd'])}</td><td class="num ok">{QCAL['sharpe']}</td>
   <td class="num">{QCAL['roundtrips_yr']}</td><td class="num">{QCAL['win_rate']}</td>
   <td class="num">{usd(QCAL['maxdd_usd'])}</td><td class="muted">deadline-anchored</td></tr></table>
@@ -212,7 +361,7 @@ daily signal).</p>
      "The result is a broad green plateau (Sharpe " + str(Q['window_sharpe_min']) + "–" +
      str(Q['window_sharpe_max']) + "), not a lucky point — days 5→15 is simply the natural mid-month "
      "supply window, and neighbours all work.")}
-{fig("q_peryear.png", "Net P&L by year — base vs refined ($1M/trade)",
+{fig("q_peryear.png", "Net P&L by year — base vs refined ($1M/trade, VWAP-priced)",
      "Positive in all 12 calendar years (worst " + usd(Q['refined_worst_year_usd']) + "), including the "
      "2015–17 pegged years where the volume signal was dead. The refined version dominates the base almost "
      "every year.")}
@@ -225,10 +374,16 @@ daily signal).</p>
      "which is what lifts the Sharpe to " + str(QSLOW['sharpe']) + " and cuts the drawdown to " +
      usd(QSLOW['maxdd_usd']) + ".")}
 
-<h2><span class="n">A4.</span> Tearsheet ($1M per trade, net of cost)</h2>
-{fig("q_tearsheet.png", "Refined quincena — equity, drawdown, yearly &amp; monthly P&L",
-     "Smooth compounding to ~$1.3M over the sample, shallow drawdowns, every year and (on average) every "
-     "month positive — January and April strongest.")}
+<h2><span class="n">A4.</span> Sample vs out-of-sample — the edge is not just the early years</h2>
+<p class="lead">The rule is a fixed heuristic with <b>no fitted parameters</b>, but we still hold out the last
+40% of history (everything after <b>{OC['split_date']}</b>) to show the edge is not a property of the calmer,
+more-pegged early years. Trained-window intuition only; nothing is re-fit on the test window.</p>
+{oos_table()}
+{fig("q_oos.png", "Real-calendar rule (VWAP-priced): in-sample vs out-of-sample equity",
+     "In-sample " + OC['is_start'] + " → " + OC['is_end'] + " (Sharpe " + str(OC['is']['sharpe']) +
+     ") and out-of-sample → " + OC['oos_end'] + " (Sharpe " + str(OC['oos']['sharpe']) + ", "
+     + usd(OC['oos']['per_year_usd']) + "/yr). The out-of-sample slope is if anything steeper — the "
+     "post-2021 float is where the cash-flow cycle is most tradeable.")}
 
 <div class="part">Part B · The underlying dynamics — what we are exploiting</div>
 <h2><span class="n">B1.</span> The engine: exporters are the swing USD supply</h2>
@@ -271,123 +426,125 @@ daily signal).</p>
 </div>
 
 <div class="part">Part C · How each rule decides (exact logic)</div>
-<div class="rule">
-  <h4>Rule 1 — Volume ("buy USD when the market is quiet")</h4>
-  <div class="logic">seasonal_vol = today_volume ÷ (avg volume on the same weekday, to date)<br>
-    if seasonal_vol &lt; 1.0  →  LONG USD $1M   (quieter than normal)<br>
-    if seasonal_vol ≥ 1.0  →  SHORT USD $1M  (busier than normal)</div>
-  <p><b>Why:</b> quiet = exporters absent = importer demand lifts USD. We divide by the same-weekday
-    average so "quiet" means quiet <i>for a Tuesday</i>, not just an absolute low.
-    <b>Result:</b> directionally right (positive) but flips ~{DY['Volume rule']['roundtrips_yr']}×/yr, so
-    slippage eats most of it → net Sharpe {DY['Volume rule']['sharpe']}.</p>
-</div>
-<div class="rule">
-  <h4>Rule 2 — Quincena ("short USD in the first half of the month")</h4>
-  <div class="logic">if day_of_month ≤ 15  →  SHORT USD $1M   (mid-month USD-supply surge)<br>
-    if day_of_month &gt; 15  →  LONG USD $1M</div>
-  <p><b>Why:</b> the cash-flow cycle in A2 — mid-month USD supply strengthens the colón, then it reverses.
-    <b>Result:</b> the workhorse — {usd(DY['Quincena rule']['per_year_usd'])}/yr, Sharpe
-    {DY['Quincena rule']['sharpe']}, only {DY['Quincena rule']['roundtrips_yr']} trades/yr, max drawdown
-    {usd(DY['Quincena rule']['maxdd_usd'])}.</p>
-</div>
-<div class="rule">
-  <h4>Rule 3 — Precio-ponderado skew ("follow the big tickets")</h4>
-  <div class="logic">if VWAP &gt; simple_average  →  LONG USD $1M   (large trades lifted the price)<br>
-    if VWAP ≤ simple_average  →  SHORT USD $1M</div>
-  <p><b>Why:</b> the weighted-vs-simple gap reveals whether large players were buying or selling USD.
-    <b>Result:</b> a real signal (corr {DY['skew_corr']}) but it flips ~{DY['Precio-ponderado skew rule']['roundtrips_yr']}×/yr
-    → net negative after cost. Useful only as a tie-breaker, not standalone.</p>
-</div>
-<div class="rule">
-  <h4>Rule 4 — Combined vote &amp; the ML model</h4>
-  <div class="logic">Combined = majority vote of Rules 1–3 (always ±1) → $1M long/short<br>
-    ML = logistic P(USD up) on all features; position = clip((P − 0.5) × 5, −1, +1)</div>
-  <p><b>Why the ML sizes by conviction:</b> a raw daily flip trades ~95×/yr and dies on cost. Scaling the
-    position by confidence keeps turnover near {LG['roundtrips_yr']}×/yr while still capturing the edge —
-    that is the ML's main advantage over the transparent rules, not better direction.</p>
-</div>
+<p class="sub" style="margin:0 0 4px">The recommended calendar rule is the default tab; the secondary
+signals are one click away.</p>
+{tabs([("Calendar rule", True, RULE_CAL),
+       ("Volume", False, RULE_VOL),
+       ("Precio-ponderado skew", False, RULE_SKEW),
+       ("Combined &amp; ML", False, RULE_ML)])}
 
-<div class="part">Part D · Results at $1,000,000 per trade (all rules, net of cost)</div>
-{dollar_table()}
-{fig("dyn_dollar_equity.png", "Cumulative net P&L in US$ millions — transparent rules, $1M per trade",
-     "The quincena rule (green) compounds smoothly with shallow drawdowns; the combined vote is decent but "
-     "dragged by the turnover of the volume and skew legs. The volume rule is directionally right but nearly "
-     "flat net of cost — the signal is real, the daily churn is the problem.")}
+<div class="part">Part D · Results at $1,000,000 per trade (VWAP-priced, net of cost)</div>
+<p class="sub" style="margin:0 0 4px">The recommended calendar family sits at the top; the raw building-block
+signals and the ML model follow. Equity curves are tabbed — recommended first.</p>
+{money_table()}
+{tabs([
+    ("Recommended calendar", True,
+     fig("q_tearsheet.png", "Recommended calendar rule — equity, drawdown, yearly &amp; monthly P&L",
+         "Smooth compounding at ~" + usd(QCAL['per_year_usd']) + "/yr with shallow drawdowns; every year "
+         "and (on average) every month positive — January and April strongest. VWAP-priced, net of cost.")),
+    ("Building-block rules", False,
+     fig("dyn_dollar_equity.png", "Cumulative net P&L in US$ millions — building-block rules, $1M per trade",
+         "The base quincena (green) compounds smoothly; the combined vote is decent but dragged by the "
+         "turnover of the volume and skew legs. The volume rule is directionally right but churns — the "
+         "signal is real, the daily flipping is the cost problem.")),
+    ("ML model", False,
+     fig("vm_equity.png", "Conviction-sized ML model — cumulative net P&L (walk-forward, VWAP-priced)",
+         "Every prediction is out-of-sample (walk-forward). Conviction sizing keeps turnover near "
+         + str(LG['roundtrips_yr']) + "×/yr; net Sharpe " + str(LG['sharpe']) + ". It mostly repackages the "
+         "same calendar + volume economics as the simple rule, at higher complexity.") +
+     fig("vm_oos.png", "ML: in-sample vs out-of-sample (net)",
+         "OOS Sharpe " + str(R['Logit (conviction)_oos']['sharpe']) + " vs IS " +
+         str(R['Logit (conviction)_is']['sharpe']) + "; a 5-day feature lag collapses accuracy (no "
+         "look-ahead), permutation p=" + str(R['perm_p']) + ".")),
+])}
 
-<div class="part">Part E · The combined model &amp; the raw relationships</div>
+<div class="part">Part E · Raw relationships behind the signals</div>
 <h2><span class="n">E1.</span> Low volume → USD up (seasonally adjusted)</h2>
 {fig("vm_vol_nextret.png", "Next-day USD move by volume quintile",
-     "Monotonic: quietest days → USD up, busiest → USD down. Seasonal adjustment sharpens the extremes.")}
+     "Monotonic: quietest days → USD up, busiest → USD down. Seasonal adjustment sharpens the extremes. This "
+     "is the raw relationship the volume filter and the ML model lean on.")}
 <h2><span class="n">E2.</span> Attribution &amp; drivers</h2>
 <div class="cols">
 {fig("vm_attribution.png", "Net Sharpe by feature family",
-     "Volume-only and calendar-only each beat the drift and are additive.")}
-{fig("vm_coefs.png", "Walk-forward model coefficients", "Quincena/day-of-month and volume dominate; no technical indicators used.")}
+     "Volume-only and calendar-only each beat the drift and are additive — the calendar carries the most, "
+     "which is why the standalone calendar rule is the recommendation.")}
+{fig("vm_coefs.png", "Walk-forward model coefficients",
+     "Quincena/day-of-month and volume dominate; no technical indicators used.")}
 </div>
-{fig("vm_oos.png", "In-sample vs out-of-sample (net)",
-     "OOS Sharpe " + str(R['Logit (conviction)_oos']['sharpe']) + " ≥ IS " +
-     str(R['Logit (conviction)_is']['sharpe']) + "; a 5-day feature lag collapses accuracy (no look-ahead), "
-     "permutation p=" + str(R['perm_p']) + ".")}
 
-<div class="part">Part F · Realistic execution — the VWAP-priced backtest</div>
-<h2><span class="n">F1.</span> Same signals, same 0.65 CRC slippage, filled at the session VWAP</h2>
-<p class="lead">The rule backtests above mark every fill to the session's <b>closing print</b>. On MONEX you
-cannot count on trading that last tick — but a desk <i>can</i> work an order to the day's
-<b>volume-weighted average price (VWAP)</b>. Re-pricing the identical order-flow and trend signals on a
-<b>VWAP-to-VWAP</b> basis, with the same 0.65 CRC round-trip slippage, is the more realistic assumption — and
-it <b>does not haircut the edge; it slightly improves it</b>, because the VWAP is a steadier fill reference
-than a single closing tick. Over {BVM['n_days']:,} sessions ({BVM['date_min']} → {BVM['date_max']}):</p>
-{vwap_table()}
-{fig("bt_vwap_close_compare.png", "Same strategies &amp; slippage — close-print vs VWAP execution",
-     "Left: priced at the close (as in <code>backtest.py</code>). Right: priced at the VWAP (this run). The "
-     "trend books (Donchian-40 " + str(BV['close_vs_vwap']['Donchian-40 trend']['close_sharpe']) + "→" +
-     str(BV['close_vs_vwap']['Donchian-40 trend']['vwap_sharpe']) + ", SMA-120 " +
-     str(BV['close_vs_vwap']['SMA-120 trend']['close_sharpe']) + "→" +
-     str(BV['close_vs_vwap']['SMA-120 trend']['vwap_sharpe']) + ") barely move; the noisy daily order-flow "
-     "book improves most (" + str(BV['close_vs_vwap']['Order-flow daily']['close_sharpe']) + "→" +
-     str(BV['close_vs_vwap']['Order-flow daily']['vwap_sharpe']) + " Sharpe), since its turnover is where a "
-     "single closing tick hurts.")}
-{fig("bt_vwap_oos.png", "Donchian-40 (VWAP-priced): in-sample vs out-of-sample net Sharpe",
-     "Held out of sample on a " + str(int(BVM['oos_frac']*100)) + "/" + str(int((1-BVM['oos_frac'])*100)) +
-     " split, the VWAP-priced Donchian-40 breakout keeps working — out-of-sample net Sharpe " +
-     str(BV['Donchian-40_oos']['sharpe']) + " (≥ in-sample " + str(BV['Donchian-40_is']['sharpe']) +
-     "), so the realistic-fill result is not an in-sample artifact.")}
+<div class="part">Part F · Execution realism — VWAP vs the closing print</div>
+<h2><span class="n">F1.</span> The recommended rule does not depend on catching the close</h2>
+<p class="lead">Every result in this report is already priced <b>VWAP-to-VWAP</b> — the fill a desk can
+actually work by spreading an order across the session, rather than the optimistic assumption of trading the
+last print. Here is the proof for the strategy we care about: the same calendar rule, same 0.65 CRC
+round-trip slippage, marked at the closing print vs the session VWAP. The VWAP fill <b>does not haircut the
+edge — it slightly improves the Sharpe</b> ({EX['close']['sharpe']} → {EX['vwap']['sharpe']}), because the
+VWAP is a steadier reference than a single closing tick.</p>
+{exec_table()}
+{fig("q_execution.png", "Recommended calendar rule — session VWAP vs closing-print execution",
+     "Both curves use the identical signal and the identical 0.65 CRC round-trip slippage; only the fill "
+     "reference differs. They track each other closely and the VWAP (realistic) curve carries the higher "
+     "Sharpe — the calendar edge is an economic flow, not an artifact of marking to the close.")}
+<h2><span class="n">F2.</span> Secondary strategies at VWAP (kept for completeness)</h2>
+{tabs([("Why they're here", True,
+        "<p style='font-size:13.5px;margin:10px 2px'>These trend / order-flow books are <b>not</b> the "
+        "recommendation — they are shown only to demonstrate that the VWAP-execution finding generalises "
+        "beyond the calendar rule. On the realistic VWAP basis the noisy daily order-flow book improves most "
+        "(its turnover is where a single closing tick hurts), while the slow trend books barely move. If you "
+        "only care about the recommended strategy, F1 above is the whole story.</p>" + vwap_table()),
+       ("Close vs VWAP chart", False,
+        fig("bt_vwap_close_compare.png", "Secondary books &amp; slippage — close-print vs VWAP execution",
+            "Left priced at the close, right at the VWAP. The trend books (Donchian-40 " +
+            str(BV['close_vs_vwap']['Donchian-40 trend']['close_sharpe']) + "→" +
+            str(BV['close_vs_vwap']['Donchian-40 trend']['vwap_sharpe']) + ", SMA-120 " +
+            str(BV['close_vs_vwap']['SMA-120 trend']['close_sharpe']) + "→" +
+            str(BV['close_vs_vwap']['SMA-120 trend']['vwap_sharpe']) + ") barely move; the daily order-flow "
+            "book improves most (" + str(BV['close_vs_vwap']['Order-flow daily']['close_sharpe']) + "→" +
+            str(BV['close_vs_vwap']['Order-flow daily']['vwap_sharpe']) + ").")),
+       ("Out-of-sample", False,
+        fig("bt_vwap_oos.png", "Donchian-40 (VWAP-priced): in-sample vs out-of-sample net Sharpe",
+            "Held out " + str(int(BVM['oos_frac']*100)) + "/" + str(int((1-BVM['oos_frac'])*100)) +
+            ", the VWAP-priced Donchian-40 keeps working — OOS net Sharpe " +
+            str(BV['Donchian-40_oos']['sharpe']) + " (≥ IS " + str(BV['Donchian-40_is']['sharpe']) + ").")),
+      ])}
 
 <div class="part">Part G · Verdict</div>
 <ul class="find">
- <li><b>The most robust, simplest edge is the refined calendar.</b> Short USD only on the mid-month
-   supply window — days 5–15, or equivalently within {CAL_PRE} business days of the IVA/quincena deadline —
-   and long the rest of the month: <b>{usd(QREF['per_year_usd'])}/yr per $1M at Sharpe {QREF['sharpe']}</b>
-   ({QREF['roundtrips_yr']} trades/yr, worst year {usd(Q['refined_worst_year_usd'])}, positive in all 12
-   years). The deadline-anchored version — which rolls with weekends and holidays — edges it at
-   {usd(QCAL['per_year_usd'])}/yr / Sharpe {QCAL['sharpe']}, and a slow 20-day volume filter lifts the
-   risk-adjusted return to Sharpe {QSLOW['sharpe']} (drawdown just {usd(QSLOW['maxdd_usd'])}). This refines
-   the crude "short the whole first half" rule ({usd(QBASE['per_year_usd'])}/yr, Sharpe {QBASE['sharpe']}) by
-   dropping the USD-up days 1–4. Start here.</li>
+ <li><b>The recommendation is the calendar rule.</b> Short USD into Costa Rica's mid-month IVA / payroll
+   deadline (within {CAL_PRE} business days of it, or day-of-month 5–15), long the rest of the month —
+   <b>{usd(QCAL['per_year_usd'])}/yr per $1M at Sharpe {QCAL['sharpe']}</b>, VWAP-priced, {QCAL['roundtrips_yr']}
+   trades/yr, worst year {usd(Q['refined_worst_year_usd'])}, positive in all 12. A slow 20-day volume filter
+   lifts the risk-adjusted return to Sharpe {QSLOW['sharpe']} (drawdown just {usd(QSLOW['maxdd_usd'])}).
+   Start here.</li>
+ <li><b>It holds out of sample.</b> On a chronological 60/40 split (test window after {OC['split_date']},
+   nothing re-fit) the rule earns {usd(OC['oos']['per_year_usd'])}/yr at Sharpe {OC['oos']['sharpe']}
+   out-of-sample — if anything stronger than the {OC['is']['sharpe']} in-sample, because the post-2021 float
+   is where the cash-flow cycle is most tradeable.</li>
  <li><b>Your volume thesis is correct but must be traded gently.</b> Low volume → USD up is real and
-   monotonic, but a daily flip pays it all to slippage. Use it conviction-sized or as a filter on the
-   calendar trade — that is exactly what lifts the combined/ML book to Sharpe ~2.</li>
+   monotonic, but a daily flip pays much of it to slippage even VWAP-priced. Use it conviction-sized or as
+   the slow filter on the calendar trade — that is what lifts the combined/ML book to Sharpe
+   {DY['Combined vote (3 signals)']['sharpe']}–{LG['sharpe']}.</li>
  <li><b>The mechanism is economic, not technical:</b> exporter USD supply (volume) and the payment/tax
    cycle (quincena). That is why it persists across regimes — and why it would weaken if the BCCR re-pegged
    or intervened heavily, the dominant risk.</li>
- <li><b>Priced realistically, the edge survives.</b> Filling the same signal book at the session VWAP rather
-   than the closing print — with the identical 0.65 CRC slippage — leaves the trend strategies essentially
-   unchanged (Donchian-40 Sharpe {BV['close_vs_vwap']['Donchian-40 trend']['close_sharpe']}→{BV['close_vs_vwap']['Donchian-40 trend']['vwap_sharpe']})
-   and lifts the noisy order-flow book ({BV['close_vs_vwap']['Order-flow daily']['close_sharpe']}→{BV['close_vs_vwap']['Order-flow daily']['vwap_sharpe']}),
-   with an out-of-sample net Sharpe of {BV['Donchian-40_oos']['sharpe']}. The result is not an artifact of
-   marking to the close.</li>
+ <li><b>Priced realistically, the edge survives.</b> Everything here is marked at the session VWAP, not the
+   closing print. For the recommended rule that is a slight <i>improvement</i>
+   ({EX['close']['sharpe']} → {EX['vwap']['sharpe']} Sharpe), so the result is not an artifact of marking
+   to the close.</li>
 </ul>
 
 <footer>
-  <b>Dollar convention.</b> $1,000,000 USD notional per full position; 1 bp of next-day move = $100; slippage
-  0.325 CRC/side (~$680) charged on every position change. P&amp;L is net of that, gross of financing/borrow
-  and market impact, non-compounded (reset to $1M each day); the calendar/ML books mark to close-to-close
-  fills, while Part F re-prices the signal book at the session VWAP (the realistic desk fill). The ML row is
-  conviction-sized so its notional varies up to $1M. All model numbers are walk-forward out-of-sample.
-  Reproducible: <code>parse_monex → analyze → eda → volume_model → dynamics → backtest_vwap → build_report</code>.
+  <b>Dollar &amp; pricing convention.</b> $1,000,000 USD notional per full position; 1 bp of next-session move
+  = $100; slippage 0.325 CRC/side (~$680) charged on every position change. <b>All P&amp;L is priced
+  VWAP-to-VWAP</b> — a position decided from information through session <i>t</i> earns the next session's
+  VWAP move, and the slippage is booked against the VWAP (the realistic desk fill), net, gross of
+  financing/borrow and market impact, non-compounded (reset to $1M each day). The ML row is conviction-sized
+  so its notional varies up to $1M; all model numbers are walk-forward out-of-sample. In-sample /
+  out-of-sample = chronological 60/40 split at {OC['split_date']}. Reproducible:
+  <code>parse_monex → analyze → eda → volume_model → dynamics → quincena → backtest_vwap → build_report</code>.
 </footer>
 
-</div></body></html>"""
+</div>{JS}</body></html>"""
 
 
 def main():

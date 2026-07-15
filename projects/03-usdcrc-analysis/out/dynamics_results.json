@@ -8,97 +8,97 @@
   },
   "vol_on_usd_up": 18.4,
   "vol_on_usd_down": 28.9,
-  "nextmove_after_lowvol": 7.5,
-  "nextmove_after_highvol": -11.3,
-  "skew_corr": 0.198,
+  "nextmove_after_lowvol": 9.3,
+  "nextmove_after_highvol": -13.7,
+  "skew_corr": 0.322,
   "stability": {
     "2015": {
-      "vol_corr": 0.11,
+      "vol_corr": 0.06,
       "quincena_spread": 5.6
     },
     "2016": {
-      "vol_corr": 0.02,
-      "quincena_spread": 3.9
+      "vol_corr": 0.01,
+      "quincena_spread": 4.0
     },
     "2017": {
-      "vol_corr": -0.07,
-      "quincena_spread": 1.5
+      "vol_corr": -0.08,
+      "quincena_spread": 0.7
     },
     "2018": {
-      "vol_corr": -0.14,
-      "quincena_spread": 12.1
+      "vol_corr": -0.22,
+      "quincena_spread": 11.8
     },
     "2019": {
-      "vol_corr": -0.32,
-      "quincena_spread": 11.2
+      "vol_corr": -0.42,
+      "quincena_spread": 10.3
     },
     "2020": {
-      "vol_corr": -0.25,
-      "quincena_spread": 15.2
-    },
-    "2021": {
-      "vol_corr": -0.21,
-      "quincena_spread": 3.4
-    },
-    "2022": {
-      "vol_corr": -0.36,
-      "quincena_spread": 15.0
-    },
-    "2023": {
-      "vol_corr": -0.16,
+      "vol_corr": -0.4,
       "quincena_spread": 13.8
     },
+    "2021": {
+      "vol_corr": -0.25,
+      "quincena_spread": 3.6
+    },
+    "2022": {
+      "vol_corr": -0.41,
+      "quincena_spread": 14.5
+    },
+    "2023": {
+      "vol_corr": -0.25,
+      "quincena_spread": 13.1
+    },
     "2024": {
-      "vol_corr": -0.2,
-      "quincena_spread": 14.6
+      "vol_corr": -0.31,
+      "quincena_spread": 14.3
     },
     "2025": {
-      "vol_corr": -0.14,
-      "quincena_spread": 6.0
+      "vol_corr": -0.24,
+      "quincena_spread": 6.3
     },
     "2026": {
-      "vol_corr": -0.22,
-      "quincena_spread": 14.9
+      "vol_corr": -0.34,
+      "quincena_spread": 13.6
     }
   },
   "Volume rule": {
-    "total_usd": 177049,
-    "per_year_usd": 16761,
-    "per_trade_usd": 216,
+    "total_usd": 494979,
+    "per_year_usd": 46857,
+    "per_trade_usd": 603,
     "trades_total": 820,
     "roundtrips_yr": 77.7,
-    "win_rate": 49.0,
-    "sharpe": 0.37,
-    "maxdd_usd": -273908
+    "win_rate": 50.5,
+    "sharpe": 1.1,
+    "maxdd_usd": -241581
   },
   "Quincena rule": {
-    "total_usd": 971924,
-    "per_year_usd": 92008,
-    "per_trade_usd": 3804,
+    "total_usd": 918905,
+    "per_year_usd": 86989,
+    "per_trade_usd": 3596,
     "trades_total": 256,
     "roundtrips_yr": 24.2,
-    "win_rate": 55.0,
-    "sharpe": 2.09,
-    "maxdd_usd": -62890
+    "win_rate": 56.2,
+    "sharpe": 2.05,
+    "maxdd_usd": -62220
   },
   "Precio-ponderado skew rule": {
-    "total_usd": -78416,
-    "per_year_usd": -7423,
-    "per_trade_usd": -73,
+    "total_usd": 435180,
+    "per_year_usd": 41197,
+    "per_trade_usd": 403,
     "trades_total": 1080,
     "roundtrips_yr": 102.2,
-    "win_rate": 46.0,
-    "sharpe": -0.17,
-    "maxdd_usd": -472595
+    "win_rate": 49.5,
+    "sharpe": 0.98,
+    "maxdd_usd": -396557
   },
   "Combined vote (3 signals)": {
-    "total_usd": 542598,
-    "per_year_usd": 51365,
-    "per_trade_usd": 603,
+    "total_usd": 940981,
+    "per_year_usd": 89079,
+    "per_trade_usd": 1045,
     "trades_total": 900,
     "roundtrips_yr": 85.2,
-    "win_rate": 50.8,
-    "sharpe": 1.15,
-    "maxdd_usd": -327012
+    "win_rate": 53.6,
+    "sharpe": 2.12,
+    "maxdd_usd": -278033
   }
 }

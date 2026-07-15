@@ -31,12 +31,17 @@ ANN = np.sqrt(252)
 SHORT_START, SHORT_END = 5, 15      # fixed day-of-month short-USD window (legacy proxy)
 CAL_PRE = 6                         # calendar rule: short USD this many trading days
                                     # before the IVA/quincena deadline, through the deadline
+OOS_FRAC = 0.60                     # chronological split: first 60% in-sample, last 40% out-of-sample
+                                    # (matches backtest.py / backtest_vwap.py)
 
 
 def frame():
     df = annotate(load().copy())    # adds td_to_iva and the real-calendar event flags
     df["vol"] = df.volume_usd / 1e6
-    df["r_next"] = df.close.pct_change().shift(-1)
+    # Tradeable next-session return priced VWAP-to-VWAP (the realistic desk fill),
+    # not close-to-close: a position decided from info through session t earns the
+    # NEXT session's VWAP move. Slippage (below) is also charged against the VWAP.
+    df["r_next"] = df.vwap.pct_change().shift(-1)
     df["dom"] = df.date.dt.day
     df["dow"] = df.date.dt.dayofweek
     df["year"] = df.date.dt.year
@@ -263,6 +268,91 @@ def calendar_sensitivity(df, res):
     res["calendar_pre_sharpe_max"] = round(float(max(grid.values())), 2)
 
 
+def oos_stats(pos_fn, df):
+    """In-sample vs out-of-sample stats for a position rule (chronological 60/40 split).
+
+    Even though the winning rule is a fixed heuristic with no fitted parameters, we
+    still hold out the last 40% of history so the reader can see the edge was not a
+    property of the (calmer, more-pegged) early years alone.
+    """
+    k = int(len(df) * OOS_FRAC)
+    dis, dos = df.iloc[:k], df.iloc[k:]
+    return {"is": stat(pos_fn(dis), dis), "oos": stat(pos_fn(dos), dos),
+            "split_date": str(df.date.iloc[k].date()),
+            "is_start": str(df.date.iloc[0].date()), "is_end": str(df.date.iloc[k - 1].date()),
+            "oos_end": str(df.date.iloc[-1].date())}
+
+
+def chart_oos(df, res):
+    """Cumulative VWAP-net P&L for the recommended calendar rule, IS/OOS split shaded."""
+    k = int(len(df) * OOS_FRAC)
+    net, _ = dollars(pos_calendar(df), df)
+    s = pd.Series(net.values, index=df.date.iloc[net.index])
+    cum = s.cumsum()
+    o = res["oos_calendar"]
+    fig, ax = plt.subplots(figsize=(11, 4.2))
+    ax.plot(cum.index, cum.values / 1e6, color=NAVY, lw=1.6)
+    ax.axvspan(cum.index[0], df.date.iloc[k], color=GREY, alpha=0.12)
+    ax.axvline(df.date.iloc[k], color=RED, ls="--", lw=1)
+    ax.axhline(0, color="k", lw=0.6)
+    ax.set_ylabel("cumulative net P&L (US$ millions, 1M/trade)")
+    ax.set_title(f"Real-calendar rule (VWAP-priced): in-sample Sharpe {o['is']['sharpe']} "
+                 f"→ out-of-sample {o['oos']['sharpe']}  (split {o['split_date']}, no re-fitting)")
+    ax.text(0.02, 0.96, f"in-sample 60%  ({o['is_start']} → {o['is_end']})\n"
+            f"${o['is']['per_year_usd']/1e3:.0f}k/yr · Sharpe {o['is']['sharpe']}",
+            transform=ax.transAxes, color="#4a5a6a", fontsize=8.5, va="top")
+    ax.text(0.98, 0.12, f"out-of-sample 40%  (→ {o['oos_end']})\n"
+            f"${o['oos']['per_year_usd']/1e3:.0f}k/yr · Sharpe {o['oos']['sharpe']}",
+            transform=ax.transAxes, color=RED, fontsize=8.5, ha="right", va="bottom")
+    fig.tight_layout()
+    fig.savefig(OUT / "q_oos.png", dpi=110)
+    plt.close(fig)
+
+
+def _basis_stat(pos, df, r_next, px):
+    """Net-P&L series + summary for a rule priced against an arbitrary return/fill basis."""
+    pos = pd.Series(np.asarray(pos, float)).reset_index(drop=True)
+    turn = pos.diff().abs()
+    turn.iloc[0] = abs(pos.iloc[0])
+    r = pd.Series(np.asarray(r_next, float)).reset_index(drop=True)
+    S = pd.Series(np.asarray(px, float)).reset_index(drop=True)
+    net = (pos * NOTIONAL * r - turn * NOTIONAL * COST_SIDE_CRC / S).dropna()
+    cum = net.cumsum()
+    yrs = len(net) / 252
+    bps = net / (NOTIONAL / 1e4)
+    return net, {"per_year_usd": round(float(net.sum() / yrs)),
+                 "sharpe": round(float(bps.mean() / bps.std() * ANN), 2),
+                 "maxdd_usd": round(float((cum - cum.cummax()).min()))}
+
+
+def chart_execution(df, res):
+    """The recommended calendar rule, executed at the session VWAP vs the closing print.
+
+    This is the honest execution-realism check for the strategy we actually trade:
+    the VWAP is a fill a desk can work; the closing print is the optimistic mark. Same
+    0.65 CRC round-trip slippage on both. (Part F used to make this point with unrelated
+    trend books — here it is the calendar rule itself.)
+    """
+    d = df.reset_index(drop=True)
+    pos = pos_calendar(d)
+    net_v, sv = _basis_stat(pos, d, d.r_next, d.vwap)                    # r_next is VWAP-to-VWAP
+    net_c, sc = _basis_stat(pos, d, d.close.pct_change().shift(-1), d.close)
+    res["execution"] = {"vwap": sv, "close": sc}
+    fig, ax = plt.subplots(figsize=(11, 4.4))
+    ax.plot(d.date.iloc[net_c.index], net_c.cumsum() / 1e6, color=GREY, lw=1.5,
+            label=f"closing print (Sharpe {sc['sharpe']} · ${sc['per_year_usd']/1e3:.0f}k/yr)")
+    ax.plot(d.date.iloc[net_v.index], net_v.cumsum() / 1e6, color=NAVY, lw=1.8,
+            label=f"session VWAP — realistic (Sharpe {sv['sharpe']} · ${sv['per_year_usd']/1e3:.0f}k/yr)")
+    ax.axhline(0, color="k", lw=0.6)
+    ax.set_ylabel("cumulative net P&L (US$ millions, 1M/trade)")
+    ax.set_title("Recommended calendar rule — executed at the session VWAP vs the closing print\n"
+                 "(same 0.65 CRC round-trip slippage; the VWAP is the fill a desk can actually work)")
+    ax.legend(loc="upper left", fontsize=9)
+    fig.tight_layout()
+    fig.savefig(OUT / "q_execution.png", dpi=110)
+    plt.close(fig)
+
+
 def trading_calendar(df):
     """Practical map: for each day-of-month, the position the fixed refined rule takes.
 
@@ -283,12 +373,17 @@ def main():
     res["Refined + slow-vol sizing"] = stat(pos_refined_slowvol(df), df)
     res[f"Real calendar (<={CAL_PRE}d to deadline)"] = stat(pos_calendar(df), df)
 
+    res["oos_refined"] = oos_stats(pos_refined, df)
+    res["oos_calendar"] = oos_stats(pos_calendar, df)
+
     chart_sensitivity(df, res)
     chart_peryear(df, res)
     chart_interaction(df, res)
     chart_tearsheet(df, res)
     chart_calendar(df, res)
     chart_calendar_peryear(df, res)
+    chart_oos(df, res)
+    chart_execution(df, res)
     calendar_sensitivity(df, res)
     res["trading_calendar"] = trading_calendar(df)
 
