@@ -17,6 +17,7 @@ src/backtest_vwap.py   # same strategies + slippage, priced at the session VWAP 
 src/dynamics.py        # underlying-mechanism deep-dive + $1M/trade dollar rules
 src/payment_calendar.py # real CR IVA (D-104) / quincena / CCSS payment calendar
 src/quincena.py        # calendar (quincena) strategy (recommended) + trading calendar
+src/exits.py           # stop-loss / take-profit exit OVERLAY on the calendar rule (optimised) -> exits_results.json
 src/daily_signal.py    # one-page daily signal sheet (position + slow-vol size)
 src/build_report.py    # assembles the self-contained HTML report (reads the json)
 out/                   # PNG charts + report.html + report.pdf (generated)
@@ -34,6 +35,10 @@ python src/eda.py            # exploratory charts (eda_*.png)
 python src/strategies.py     # strategy tearsheets (s*_*.png)
 python src/backtest.py       # OOS / walk-forward / costs / permutation / DSR -> bt_*.png + json
 python src/backtest_vwap.py  # realistic VWAP-priced re-run of the same strategies -> bt_vwap_*.png + json
+python src/volume_model.py   # conviction-sized ML model (walk-forward) -> vm_*.png + vm_results.json
+python src/dynamics.py       # mechanism deep-dive + $1M/trade building-block rules -> dyn_*.png + json
+python src/quincena.py       # calendar (quincena) strategy -> q_*.png + quincena_results.json
+python src/exits.py          # optimise a trailing-stop / floor exit overlay on it -> ex_*.png + exits_results.json
 python src/build_report.py   # -> out/report.html
 python -c "from weasyprint import HTML; HTML('out/report.html').write_pdf('out/report.pdf')"
 ```

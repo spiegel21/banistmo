@@ -1,0 +1,268 @@
+{
+  "_meta": {
+    "n_days": 2663,
+    "notional_usd": 1000000,
+    "cost_crc_roundtrip": 0.65,
+    "oos_frac": 0.6,
+    "split_date": "2021-11-18",
+    "cal_pre": 6,
+    "trail_bps": 80,
+    "combo_trail_bps": 30,
+    "combo_floor_bps": 60,
+    "trail_grid": [
+      20,
+      160
+    ]
+  },
+  "baseline": {
+    "full": {
+      "total_usd": 1316807,
+      "per_year_usd": 124656,
+      "sharpe": 3.0,
+      "roundtrips_yr": 24.2,
+      "win_rate": 59.8,
+      "maxdd_usd": -47692
+    },
+    "is": {
+      "total_usd": 672186,
+      "per_year_usd": 106068,
+      "sharpe": 3.28,
+      "roundtrips_yr": 24.2,
+      "win_rate": 60.2,
+      "maxdd_usd": -44687
+    },
+    "oos": {
+      "total_usd": 644112,
+      "per_year_usd": 152410,
+      "sharpe": 2.91,
+      "roundtrips_yr": 24.3,
+      "win_rate": 59.3,
+      "maxdd_usd": -47692
+    }
+  },
+  "trailing": {
+    "full": {
+      "total_usd": 1353524,
+      "per_year_usd": 128132,
+      "sharpe": 3.22,
+      "roundtrips_yr": 24.2,
+      "win_rate": 57.6,
+      "maxdd_usd": -45085
+    },
+    "is": {
+      "total_usd": 698593,
+      "per_year_usd": 110235,
+      "sharpe": 3.58,
+      "roundtrips_yr": 24.2,
+      "win_rate": 58.5,
+      "maxdd_usd": -23048
+    },
+    "oos": {
+      "total_usd": 654422,
+      "per_year_usd": 154849,
+      "sharpe": 3.08,
+      "roundtrips_yr": 24.3,
+      "win_rate": 56.2,
+      "maxdd_usd": -45085
+    },
+    "trail_bps": 80
+  },
+  "trailing_floor": {
+    "full": {
+      "total_usd": 1333014,
+      "per_year_usd": 126191,
+      "sharpe": 3.91,
+      "roundtrips_yr": 24.2,
+      "win_rate": 49.9,
+      "maxdd_usd": -26192
+    },
+    "is": {
+      "total_usd": 687723,
+      "per_year_usd": 108520,
+      "sharpe": 3.81,
+      "roundtrips_yr": 24.2,
+      "win_rate": 53.6,
+      "maxdd_usd": -17539
+    },
+    "oos": {
+      "total_usd": 644782,
+      "per_year_usd": 152568,
+      "sharpe": 4.09,
+      "roundtrips_yr": 24.3,
+      "win_rate": 44.4,
+      "maxdd_usd": -26192
+    },
+    "trail_bps": 30,
+    "floor_bps": 60
+  },
+  "grid": [
+    {
+      "trail": 20,
+      "full_per_yr": 121948,
+      "is_per_yr": 101496,
+      "oos_per_yr": 152495,
+      "full_sharpe": 3.28,
+      "is_sharpe": 3.59,
+      "oos_sharpe": 3.21,
+      "full_maxdd": -43450
+    },
+    {
+      "trail": 30,
+      "full_per_yr": 127651,
+      "is_per_yr": 109595,
+      "oos_per_yr": 154607,
+      "full_sharpe": 3.35,
+      "is_sharpe": 3.73,
+      "oos_sharpe": 3.2,
+      "full_maxdd": -44182
+    },
+    {
+      "trail": 40,
+      "full_per_yr": 126754,
+      "is_per_yr": 108087,
+      "oos_per_yr": 154625,
+      "full_sharpe": 3.28,
+      "is_sharpe": 3.62,
+      "oos_sharpe": 3.16,
+      "full_maxdd": -43209
+    },
+    {
+      "trail": 50,
+      "full_per_yr": 126747,
+      "is_per_yr": 106538,
+      "oos_per_yr": 156931,
+      "full_sharpe": 3.26,
+      "is_sharpe": 3.56,
+      "oos_sharpe": 3.18,
+      "full_maxdd": -43209
+    },
+    {
+      "trail": 60,
+      "full_per_yr": 125978,
+      "is_per_yr": 106201,
+      "oos_per_yr": 155514,
+      "full_sharpe": 3.22,
+      "is_sharpe": 3.54,
+      "oos_sharpe": 3.13,
+      "full_maxdd": -45085
+    },
+    {
+      "trail": 70,
+      "full_per_yr": 129152,
+      "is_per_yr": 109672,
+      "oos_per_yr": 158242,
+      "full_sharpe": 3.27,
+      "is_sharpe": 3.59,
+      "oos_sharpe": 3.16,
+      "full_maxdd": -45085
+    },
+    {
+      "trail": 80,
+      "full_per_yr": 128132,
+      "is_per_yr": 110235,
+      "oos_per_yr": 154849,
+      "full_sharpe": 3.22,
+      "is_sharpe": 3.58,
+      "oos_sharpe": 3.08,
+      "full_maxdd": -45085
+    },
+    {
+      "trail": 90,
+      "full_per_yr": 126342,
+      "is_per_yr": 109798,
+      "oos_per_yr": 151030,
+      "full_sharpe": 3.17,
+      "is_sharpe": 3.56,
+      "oos_sharpe": 2.99,
+      "full_maxdd": -45085
+    },
+    {
+      "trail": 100,
+      "full_per_yr": 125525,
+      "is_per_yr": 109512,
+      "oos_per_yr": 149418,
+      "full_sharpe": 3.13,
+      "is_sharpe": 3.55,
+      "oos_sharpe": 2.94,
+      "full_maxdd": -55172
+    },
+    {
+      "trail": 110,
+      "full_per_yr": 124908,
+      "is_per_yr": 109327,
+      "oos_per_yr": 148150,
+      "full_sharpe": 3.1,
+      "is_sharpe": 3.51,
+      "oos_sharpe": 2.91,
+      "full_maxdd": -60049
+    },
+    {
+      "trail": 120,
+      "full_per_yr": 124385,
+      "is_per_yr": 109302,
+      "oos_per_yr": 146883,
+      "full_sharpe": 3.07,
+      "is_sharpe": 3.49,
+      "oos_sharpe": 2.87,
+      "full_maxdd": -60049
+    },
+    {
+      "trail": 130,
+      "full_per_yr": 123744,
+      "is_per_yr": 107562,
+      "oos_per_yr": 147890,
+      "full_sharpe": 3.04,
+      "is_sharpe": 3.4,
+      "oos_sharpe": 2.88,
+      "full_maxdd": -60049
+    },
+    {
+      "trail": 140,
+      "full_per_yr": 124226,
+      "is_per_yr": 107955,
+      "oos_per_yr": 148503,
+      "full_sharpe": 3.05,
+      "is_sharpe": 3.41,
+      "oos_sharpe": 2.89,
+      "full_maxdd": -60049
+    },
+    {
+      "trail": 150,
+      "full_per_yr": 124306,
+      "is_per_yr": 107955,
+      "oos_per_yr": 148703,
+      "full_sharpe": 3.05,
+      "is_sharpe": 3.41,
+      "oos_sharpe": 2.89,
+      "full_maxdd": -60049
+    },
+    {
+      "trail": 160,
+      "full_per_yr": 123680,
+      "is_per_yr": 106613,
+      "oos_per_yr": 149152,
+      "full_sharpe": 3.02,
+      "is_sharpe": 3.35,
+      "oos_sharpe": 2.88,
+      "full_maxdd": -55919
+    }
+  ],
+  "improve": {
+    "full_per_yr_delta": 3476,
+    "full_sharpe_delta": 0.22,
+    "full_maxdd_delta": 2607,
+    "oos_per_yr_delta": 2439,
+    "oos_sharpe_delta": 0.17,
+    "combo_sharpe_delta": 0.91,
+    "combo_maxdd_delta": 21500
+  },
+  "episode": {
+    "side": "long",
+    "banked_bps": 204,
+    "held_bps": -92,
+    "saved_bps": 296,
+    "entry_date": "2017-05-16",
+    "exit_date": "2017-05-25",
+    "end_date": "2017-06-06"
+  }
+}
