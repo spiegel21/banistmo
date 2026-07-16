@@ -41,6 +41,14 @@
     "win_rate": 59.8,
     "maxdd_usd": -47692
   },
+  "Calendar + slow-vol (recommended)": {
+    "total_usd": 1092458,
+    "per_year_usd": 103418,
+    "sharpe": 3.46,
+    "roundtrips_yr": 19.9,
+    "win_rate": 59.5,
+    "maxdd_usd": -36761
+  },
   "oos_refined": {
     "is": {
       "total_usd": 683549,
@@ -85,6 +93,140 @@
     "is_end": "2021-11-17",
     "oos_end": "2026-06-19"
   },
+  "oos_recommended": {
+    "is": {
+      "total_usd": 524819,
+      "per_year_usd": 82814,
+      "sharpe": 3.36,
+      "roundtrips_yr": 20.8,
+      "win_rate": 59.5,
+      "maxdd_usd": -23662
+    },
+    "oos": {
+      "total_usd": 568839,
+      "per_year_usd": 134599,
+      "sharpe": 3.71,
+      "roundtrips_yr": 18.4,
+      "win_rate": 59.3,
+      "maxdd_usd": -36761
+    },
+    "split_date": "2021-11-18",
+    "is_start": "2014-12-08",
+    "is_end": "2021-11-17",
+    "oos_end": "2026-06-19"
+  },
+  "family_oos": {
+    "Base quincena (\u226415)": {
+      "is": {
+        "total_usd": 428637,
+        "per_year_usd": 67637,
+        "sharpe": 2.05,
+        "roundtrips_yr": 24.2,
+        "win_rate": 55.9,
+        "maxdd_usd": -55144
+      },
+      "oos": {
+        "total_usd": 489759,
+        "per_year_usd": 115887,
+        "sharpe": 2.17,
+        "roundtrips_yr": 24.3,
+        "win_rate": 56.6,
+        "maxdd_usd": -62220
+      },
+      "split_date": "2021-11-18",
+      "is_start": "2014-12-08",
+      "is_end": "2021-11-17",
+      "oos_end": "2026-06-19"
+    },
+    "Real calendar": {
+      "is": {
+        "total_usd": 672186,
+        "per_year_usd": 106068,
+        "sharpe": 3.28,
+        "roundtrips_yr": 24.2,
+        "win_rate": 60.2,
+        "maxdd_usd": -44687
+      },
+      "oos": {
+        "total_usd": 644112,
+        "per_year_usd": 152410,
+        "sharpe": 2.91,
+        "roundtrips_yr": 24.3,
+        "win_rate": 59.3,
+        "maxdd_usd": -47692
+      },
+      "split_date": "2021-11-18",
+      "is_start": "2014-12-08",
+      "is_end": "2021-11-17",
+      "oos_end": "2026-06-19"
+    },
+    "Refined (fixed 5\u201315)": {
+      "is": {
+        "total_usd": 683549,
+        "per_year_usd": 107861,
+        "sharpe": 3.33,
+        "roundtrips_yr": 24.2,
+        "win_rate": 59.7,
+        "maxdd_usd": -46427
+      },
+      "oos": {
+        "total_usd": 621151,
+        "per_year_usd": 146977,
+        "sharpe": 2.79,
+        "roundtrips_yr": 24.3,
+        "win_rate": 59.2,
+        "maxdd_usd": -49584
+      },
+      "split_date": "2021-11-18",
+      "is_start": "2014-12-08",
+      "is_end": "2021-11-17",
+      "oos_end": "2026-06-19"
+    },
+    "Refined + slow-vol": {
+      "is": {
+        "total_usd": 533918,
+        "per_year_usd": 84250,
+        "sharpe": 3.44,
+        "roundtrips_yr": 20.8,
+        "win_rate": 59.2,
+        "maxdd_usd": -25292
+      },
+      "oos": {
+        "total_usd": 553845,
+        "per_year_usd": 131051,
+        "sharpe": 3.5,
+        "roundtrips_yr": 18.4,
+        "win_rate": 59.2,
+        "maxdd_usd": -37451
+      },
+      "split_date": "2021-11-18",
+      "is_start": "2014-12-08",
+      "is_end": "2021-11-17",
+      "oos_end": "2026-06-19"
+    },
+    "Calendar + slow-vol": {
+      "is": {
+        "total_usd": 524819,
+        "per_year_usd": 82814,
+        "sharpe": 3.36,
+        "roundtrips_yr": 20.8,
+        "win_rate": 59.5,
+        "maxdd_usd": -23662
+      },
+      "oos": {
+        "total_usd": 568839,
+        "per_year_usd": 134599,
+        "sharpe": 3.71,
+        "roundtrips_yr": 18.4,
+        "win_rate": 59.3,
+        "maxdd_usd": -36761
+      },
+      "split_date": "2021-11-18",
+      "is_start": "2014-12-08",
+      "is_end": "2021-11-17",
+      "oos_end": "2026-06-19"
+    }
+  },
   "window_sharpe_min": 1.1,
   "window_sharpe_max": 2.97,
   "refined_worst_year_usd": 34424,
@@ -116,75 +258,84 @@
   "calendar_worst_year_usd": 24447,
   "execution": {
     "vwap": {
-      "per_year_usd": 124656,
-      "sharpe": 3.0,
-      "maxdd_usd": -47692
+      "per_year_usd": 103418,
+      "sharpe": 3.46,
+      "maxdd_usd": -36761
     },
     "close": {
-      "per_year_usd": 125769,
-      "sharpe": 2.91,
-      "maxdd_usd": -45106
+      "per_year_usd": 103631,
+      "sharpe": 3.34,
+      "maxdd_usd": -33729
     }
+  },
+  "return_dist_window": {
+    "split_date": "2021-11-18",
+    "oos_end": "2026-06-19",
+    "basis": "out-of-sample per-trade net P&L (USD)"
   },
   "return_dist": {
-    "Real calendar (recommended)": {
-      "n": 256,
-      "mean": 5143.78,
-      "median": 3757.05,
-      "std": 10572.37,
-      "win": 71.48,
-      "skew": 0.66,
-      "kurt": 3.4,
-      "var95": -8665.53,
-      "var99": -19583.56,
-      "min": -36497.46,
-      "max": 50548.14,
-      "is_sharpe": 3.28
-    },
-    "Refined (5\u201315)": {
-      "n": 256,
-      "mean": 5098.47,
-      "median": 3802.63,
-      "std": 10017.53,
-      "win": 71.88,
-      "skew": 0.49,
-      "kurt": 3.05,
-      "var95": -9003.57,
-      "var99": -18040.12,
-      "min": -37975.91,
-      "max": 48944.44,
-      "is_sharpe": 3.33
-    },
-    "Refined + slow-vol": {
-      "n": 256,
-      "mean": 4235.69,
-      "median": 2721.7,
-      "std": 8194.24,
-      "win": 69.92,
-      "skew": 1.46,
-      "kurt": 4.99,
-      "var95": -5370.0,
-      "var99": -11675.52,
-      "min": -19232.52,
-      "max": 49217.76,
-      "is_sharpe": 3.44
-    },
     "Base quincena (\u226415)": {
-      "n": 256,
-      "mean": 3589.47,
-      "median": 2845.68,
-      "std": 9845.93,
-      "win": 67.58,
-      "skew": -0.01,
-      "kurt": 4.5,
-      "var95": -11117.1,
-      "var99": -18472.13,
+      "n": 103,
+      "mean": 4754.94,
+      "median": 4672.48,
+      "std": 12146.06,
+      "win": 68.93,
+      "skew": -0.46,
+      "kurt": 3.71,
+      "var95": -11354.88,
+      "var99": -25984.96,
       "min": -49583.93,
       "max": 40102.56,
-      "is_sharpe": 2.05
+      "is_sharpe": 2.05,
+      "oos_sharpe": 2.17
+    },
+    "Real calendar": {
+      "n": 103,
+      "mean": 6253.52,
+      "median": 5889.6,
+      "std": 12804.3,
+      "win": 75.73,
+      "skew": -0.06,
+      "kurt": 1.68,
+      "var95": -14096.59,
+      "var99": -28949.45,
+      "min": -36497.46,
+      "max": 46598.19,
+      "is_sharpe": 3.28,
+      "oos_sharpe": 2.91
+    },
+    "Refined + slow-vol": {
+      "n": 103,
+      "mean": 5377.14,
+      "median": 4176.61,
+      "std": 9160.0,
+      "win": 72.82,
+      "skew": 0.53,
+      "kurt": 1.36,
+      "var95": -7665.18,
+      "var99": -13908.49,
+      "min": -19232.52,
+      "max": 36736.58,
+      "is_sharpe": 3.44,
+      "oos_sharpe": 3.5
+    },
+    "Calendar + slow-vol": {
+      "n": 103,
+      "mean": 5522.71,
+      "median": 4635.6,
+      "std": 9754.46,
+      "win": 73.79,
+      "skew": 0.74,
+      "kurt": 1.78,
+      "var95": -9148.44,
+      "var99": -14794.69,
+      "min": -18494.87,
+      "max": 39446.89,
+      "is_sharpe": 3.36,
+      "oos_sharpe": 3.71
     }
   },
-  "return_dist_best": "Refined + slow-vol",
+  "return_dist_best": "Calendar + slow-vol",
   "calendar_pre_sharpe": {
     "3": 1.51,
     "4": 2.15,

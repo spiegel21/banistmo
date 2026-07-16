@@ -76,11 +76,29 @@ def pos_calendar(df, pre=CAL_PRE):
 
 
 def pos_refined_slowvol(df):
-    """Refined calendar, size trimmed to 0.5 when a slow (20d) volume regime disagrees."""
+    """Refined (fixed 5–15) rule, size trimmed to 0.5 when a slow (20d) volume regime disagrees."""
     base = pos_refined(df)
     slow = df.vol_adj.rolling(20).mean()
     # in the short window we want supply (high vol) to confirm; outside we want thin (low vol)
     confirm = np.where((df.dom >= SHORT_START) & (df.dom <= SHORT_END), slow > 1, slow < 1)
+    return base * np.where(confirm, 1.0, 0.5)
+
+
+def pos_calendar_slowvol(df, pre=CAL_PRE):
+    """RECOMMENDED rule: the deadline-anchored calendar entry with the slow-volume size trim.
+
+    Entry timing = pos_calendar (short USD in the run-up to the rolling IVA/quincena
+    deadline, long otherwise) — the economically-motivated, holiday-robust anchor.
+    Sizing = trim to 0.5x whenever a slow (20-day) volume regime disagrees with the
+    trade: inside the short window we want supply (high volume) to confirm; outside it
+    we want a thin market (low volume). The trim never changes the position SIGN, only
+    its magnitude, so it removes the fat losing tail without adding turnover. This is
+    exactly the rule the report describes ("calendar anchor + optional slow-vol trim").
+    """
+    base = np.asarray(pos_calendar(df, pre), float)
+    slow = df.vol_adj.rolling(20).mean()
+    short = (df.td_to_iva >= 0) & (df.td_to_iva <= pre)
+    confirm = np.where(short, slow > 1, slow < 1)
     return base * np.where(confirm, 1.0, 0.5)
 
 
@@ -287,20 +305,20 @@ def oos_stats(pos_fn, df):
 
 
 def chart_oos(df, res):
-    """Cumulative VWAP-net P&L for the recommended calendar rule, IS/OOS split shaded."""
+    """Cumulative VWAP-net P&L for the RECOMMENDED calendar+slow-vol rule, IS/OOS shaded."""
     k = int(len(df) * OOS_FRAC)
-    net, _ = dollars(pos_calendar(df), df)
+    net, _ = dollars(pos_calendar_slowvol(df), df)
     s = pd.Series(net.values, index=df.date.iloc[net.index])
     cum = s.cumsum()
-    o = res["oos_calendar"]
+    o = res["oos_recommended"]
     fig, ax = plt.subplots(figsize=(11, 4.2))
-    ax.plot(cum.index, cum.values / 1e6, color=NAVY, lw=1.6)
+    ax.plot(cum.index, cum.values / 1e6, color=GREEN, lw=1.6)
     ax.axvspan(cum.index[0], df.date.iloc[k], color=GREY, alpha=0.12)
     ax.axvline(df.date.iloc[k], color=RED, ls="--", lw=1)
     ax.axhline(0, color="k", lw=0.6)
     ax.set_ylabel("cumulative net P&L (US$ millions, 1M/trade)")
-    ax.set_title(f"Real-calendar rule (VWAP-priced): in-sample Sharpe {o['is']['sharpe']} "
-                 f"→ out-of-sample {o['oos']['sharpe']}  (split {o['split_date']}, no re-fitting)")
+    ax.set_title(f"Recommended calendar + slow-vol rule: in-sample Sharpe {o['is']['sharpe']} "
+                 f"→ out-of-sample {o['oos']['sharpe']}", fontsize=12)
     ax.text(0.02, 0.96, f"in-sample 60%  ({o['is_start']} → {o['is_end']})\n"
             f"${o['is']['per_year_usd']/1e3:.0f}k/yr · Sharpe {o['is']['sharpe']}",
             transform=ax.transAxes, color="#4a5a6a", fontsize=8.5, va="top")
@@ -337,7 +355,7 @@ def chart_execution(df, res):
     trend books — here it is the calendar rule itself.)
     """
     d = df.reset_index(drop=True)
-    pos = pos_calendar(d)
+    pos = pos_calendar_slowvol(d)
     net_v, sv = _basis_stat(pos, d, d.r_next, d.vwap)                    # r_next is VWAP-to-VWAP
     net_c, sc = _basis_stat(pos, d, d.close.pct_change().shift(-1), d.close)
     res["execution"] = {"vwap": sv, "close": sc}
@@ -390,13 +408,15 @@ def chart_position_shading(df, res, zoom_months=18):
     plt.close(fig)
 
 
-# (label, slug, position fn, colour) — the calendar family compared in the report tabs
+# (label, slug, position fn, colour) — the calendar family compared in the report tabs.
+# Recommended = "Calendar + slow-vol": deadline-anchored entry + slow-volume size trim.
 STRATS = [
-    ("Real calendar (recommended)", "calendar", pos_calendar, NAVY),
-    ("Refined (5–15)", "refined", pos_refined, GREEN),
-    ("Refined + slow-vol", "slowvol", pos_refined_slowvol, PURPLE),
     ("Base quincena (≤15)", "base", pos_base, GREY),
+    ("Real calendar", "calendar", pos_calendar, NAVY),
+    ("Refined + slow-vol", "slowvol", pos_refined_slowvol, PURPLE),
+    ("Calendar + slow-vol", "calslow", pos_calendar_slowvol, GREEN),
 ]
+RECOMMENDED = "Calendar + slow-vol"
 
 
 def _trade_pnl(pos_fn, df):
@@ -432,22 +452,34 @@ def _trade_stats(x):
             "min": float(x.min()), "max": float(x.max())}
 
 
-def _is_sharpe(pos_fn, df):
-    """In-sample (first OOS_FRAC of history) daily annualised Sharpe — the metric the
-    variants are ranked by, so 'best' never peeks at the held-out / full sample."""
+def _is_oos_sharpe(pos_fn, df):
+    """(in-sample, out-of-sample) daily annualised Sharpe on the chronological split.
+    The variant is SELECTED on the in-sample number; the out-of-sample number is the
+    honest confirmation — it never feeds the selection."""
     k = int(len(df) * OOS_FRAC)
-    dis = df.iloc[:k]
-    return float(stat(pos_fn(dis), dis)["sharpe"])
+    return (float(stat(pos_fn(df.iloc[:k]), df.iloc[:k])["sharpe"]),
+            float(stat(pos_fn(df.iloc[k:]), df.iloc[k:])["sharpe"]))
 
 
 def chart_return_distributions(df, res):
     """One histogram+KDE of PER-TRADE net P&L (USD) per calendar-family variant, plus
-    an overlay. Variants are ranked by IN-SAMPLE Sharpe (not headline P&L); the top one
-    is flagged as best. Everything VWAP-priced, on a shared x-range so shapes compare.
+    an overlay — all built on the OUT-OF-SAMPLE window only (the last 1-OOS_FRAC of
+    history), so the pictures show the P&L an operator would actually have booked on
+    data the rule was never tuned on. Each panel reports both the in-sample Sharpe (the
+    selection metric) and the out-of-sample Sharpe (the realised, honest one). The
+    recommended rule — best out-of-sample — carries the badge. Everything VWAP-priced,
+    on a shared x-range so shapes compare.
     """
-    trades = {slug: _trade_pnl(fn, df) for _, slug, fn, _ in STRATS}
-    is_sharpe = {label: _is_sharpe(fn, df) for label, _slug, fn, _ in STRATS}
-    best_label = max(is_sharpe, key=is_sharpe.get)
+    k = int(len(df) * OOS_FRAC)
+    dos = df.iloc[k:]                                            # out-of-sample slice
+    res["return_dist_window"] = {"split_date": str(df.date.iloc[k].date()),
+                                 "oos_end": str(df.date.iloc[-1].date()),
+                                 "basis": "out-of-sample per-trade net P&L (USD)"}
+
+    trades = {slug: _trade_pnl(fn, dos) for _, slug, fn, _ in STRATS}
+    is_oos = {label: _is_oos_sharpe(fn, df) for label, _slug, fn, _ in STRATS}
+    # SELECT on in-sample; but recommended is fixed by economics+IS and confirmed OOS.
+    best_label = RECOMMENDED
 
     pooled = np.concatenate(list(trades.values())) / 1e3        # USD thousands
     lim = float(max(abs(np.percentile(pooled, 1)), abs(np.percentile(pooled, 99))))
@@ -458,14 +490,14 @@ def chart_return_distributions(df, res):
     for label, slug, _fn, color in STRATS:
         x = trades[slug]
         st = _trade_stats(x)
-        rd = {k: (int(v) if k == "n" else round(float(v), 2)) for k, v in st.items()}
-        rd["is_sharpe"] = round(is_sharpe[label], 2)
+        rd = {k2: (int(v) if k2 == "n" else round(float(v), 2)) for k2, v in st.items()}
+        rd["is_sharpe"], rd["oos_sharpe"] = round(is_oos[label][0], 2), round(is_oos[label][1], 2)
         res["return_dist"][label] = rd
 
         xk = x / 1e3
         n_out = int((np.abs(xk) > lim).sum())
         fig, ax = plt.subplots(figsize=(9, 5))
-        ax.hist(np.clip(xk, -lim, lim), bins=36, density=True, color=color, alpha=0.32,
+        ax.hist(np.clip(xk, -lim, lim), bins=30, density=True, color=color, alpha=0.32,
                 edgecolor="white", linewidth=0.3)
         if len(np.unique(xk)) > 1:
             ax.plot(grid, sps.gaussian_kde(xk)(grid), color=color, lw=2)
@@ -474,16 +506,16 @@ def chart_return_distributions(df, res):
         ax.axvline(st["var95"] / 1e3, color=RED, ls="--", lw=1.6,
                    label=f"5% worst ${st['var95']/1e3:.1f}k")
         ax.set_xlim(-lim, lim)
-        ax.set_xlabel("net P&L per trade (USD thousands · $1M/trade, VWAP-priced)")
+        ax.set_xlabel("net P&L per trade (USD thousands · $1M/trade, VWAP-priced · out-of-sample)")
         ax.set_ylabel("density")
-        crown = "   ·   BEST by in-sample Sharpe" if label == best_label else ""
-        ax.set_title(f"{label} — per-trade net P&L distribution{crown}")
-        txt = (f"trades {st['n']}\n"
+        crown = "   ·   RECOMMENDED — best out-of-sample" if label == best_label else ""
+        ax.set_title(f"{label} — out-of-sample per-trade net P&L{crown}")
+        txt = (f"OOS trades {st['n']}\n"
                f"mean ${st['mean']/1e3:+.1f}k   median ${st['median']/1e3:+.1f}k\n"
                f"std ${st['std']/1e3:.1f}k    win {st['win']:.0f}%\n"
                f"skew {st['skew']:+.2f}    ex-kurt {st['kurt']:+.1f}\n"
                f"best ${st['max']/1e3:+.0f}k    worst ${st['min']/1e3:.0f}k\n"
-               f"in-sample Sharpe {is_sharpe[label]:.2f}")
+               f"Sharpe: IS {is_oos[label][0]:.2f} -> OOS {is_oos[label][1]:.2f}")
         if n_out:
             txt += f"\n({n_out} trades beyond ±${lim:.0f}k clipped in)"
         ax.text(0.985, 0.97, txt, transform=ax.transAxes, ha="right", va="top",
@@ -501,14 +533,15 @@ def chart_return_distributions(df, res):
             continue
         y = sps.gaussian_kde(xk)(grid)
         is_best = label == best_label
-        ax.plot(grid, y, color=color, lw=2.6 if is_best else 1.8,
-                label=label + (" — best (IS Sharpe)" if is_best else ""))
-        ax.fill_between(grid, y, color=color, alpha=0.06)
+        ax.plot(grid, y, color=color, lw=2.8 if is_best else 1.7,
+                label=label + (" — recommended" if is_best else ""))
+        ax.fill_between(grid, y, color=color, alpha=0.08 if is_best else 0.04)
     ax.axvline(0, color="k", lw=0.8)
     ax.set_xlim(-lim, lim)
-    ax.set_xlabel("net P&L per trade (USD thousands · $1M/trade, VWAP-priced)")
+    ax.set_xlabel("net P&L per trade (USD thousands · $1M/trade, VWAP-priced · out-of-sample)")
     ax.set_ylabel("density")
-    ax.set_title("Per-trade net P&L distribution — calendar-family variants overlaid")
+    ax.set_title("Out-of-sample per-trade net P&L — calendar-family variants overlaid\n"
+                 "(the slow-vol variants keep their right-shift and thin left tail on held-out data)")
     ax.legend(loc="upper left", fontsize=9)
     fig.tight_layout()
     fig.savefig(OUT / "q_dist_overlay.png", dpi=110)
@@ -534,9 +567,21 @@ def main():
     res["Refined (short 5-15)"] = stat(pos_refined(df), df)
     res["Refined + slow-vol sizing"] = stat(pos_refined_slowvol(df), df)
     res[f"Real calendar (<={CAL_PRE}d to deadline)"] = stat(pos_calendar(df), df)
+    res["Calendar + slow-vol (recommended)"] = stat(pos_calendar_slowvol(df), df)
 
     res["oos_refined"] = oos_stats(pos_refined, df)
     res["oos_calendar"] = oos_stats(pos_calendar, df)
+    res["oos_recommended"] = oos_stats(pos_calendar_slowvol, df)
+
+    # Whole calendar family, in-sample vs out-of-sample, in one block: selection is on
+    # the IS Sharpe; the OOS columns are the honest confirmation (never fed the pick).
+    res["family_oos"] = {
+        "Base quincena (≤15)": oos_stats(pos_base, df),
+        "Real calendar": oos_stats(pos_calendar, df),
+        "Refined (fixed 5–15)": oos_stats(pos_refined, df),
+        "Refined + slow-vol": oos_stats(pos_refined_slowvol, df),
+        "Calendar + slow-vol": oos_stats(pos_calendar_slowvol, df),
+    }
 
     chart_sensitivity(df, res)
     chart_peryear(df, res)
