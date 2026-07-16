@@ -35,6 +35,44 @@ CAL_PRE = Q["_meta"].get("cal_pre", 6)
 M = R["_meta"]
 LG = R["Logit (conviction)"]
 
+# Return-distribution tabs (A7): (tab label, JSON key, PNG, figure title).
+RD_BEST = Q.get("return_dist_best", "Refined + slow-vol")
+DIST_TABS = [
+    ("Real calendar", "Real calendar (recommended)", "q_dist_calendar.png", "Real calendar (recommended)"),
+    ("Refined (5–15)", "Refined (5–15)", "q_dist_refined.png", "Refined quincena (5–15)"),
+    ("Refined + slow-vol", "Refined + slow-vol", "q_dist_slowvol.png", "Refined + slow-vol sizing"),
+    ("Base quincena", "Base quincena (≤15)", "q_dist_base.png", "Base quincena (≤15)"),
+]
+DIST_NOTE = {
+    "Real calendar (recommended)": "The recommended rule. ",
+    "Refined (5–15)": "The fixed day-of-month twin of the calendar rule — nearly the same trade population. ",
+    "Refined + slow-vol": "Trimming size when a slow 20-day volume regime disagrees cuts the biggest losing "
+                          "trades, tightening the per-trade spread and lifting the in-sample Sharpe. ",
+    "Base quincena (≤15)": "The crude ancestor: the widest spread of trade outcomes and the heaviest losers. ",
+}
+
+
+def dist_cap(key):
+    """Per-trade caption pulled straight from the JSON so it always matches the chart."""
+    d = Q["return_dist"][key]
+    return (f"{d['n']} trades · mean ${d['mean']/1e3:+.1f}k/trade, median ${d['median']/1e3:+.1f}k, "
+            f"win {d['win']:.0f}% · std ${d['std']/1e3:.1f}k · skew {d['skew']:+.2f} · "
+            f"in-sample Sharpe {d['is_sharpe']:.2f}.")
+
+
+def dist_tabs_html():
+    """A7 tab group: overlay first, then one per variant; best-by-IS-Sharpe is flagged."""
+    items = [("Overlay (all four)", False,
+              fig("q_dist_overlay.png", "All four calendar-family variants, per-trade P&L overlaid",
+                  "The slow-vol variant is the most peaked (tightest per-trade spread); the calendar rule and "
+                  "the fixed refined window sit almost on top of each other, both shifted right of the crude "
+                  "base rule."))]
+    for tab, key, png, title in DIST_TABS:
+        cap = DIST_NOTE[key] + dist_cap(key)
+        items.append((tab, key == RD_BEST,
+                      fig(png, f"{title} — per-trade net P&amp;L distribution", cap)))
+    return tabs(items)
+
 
 def img(name):
     return "data:image/png;base64," + base64.b64encode((OUT / name).read_bytes()).decode()
@@ -201,24 +239,28 @@ def vwap_table():
 
 
 def dist_table():
-    """Distribution shape of each calendar-family variant's daily net return (VWAP-priced)."""
+    """Per-trade net-P&L shape of each calendar-family variant (VWAP-priced), ranked by
+    in-sample Sharpe — the row with the top IS Sharpe is flagged best."""
     rd = Q["return_dist"]
+    best = Q.get("return_dist_best")
     order = ["Real calendar (recommended)", "Refined (5–15)", "Refined + slow-vol",
              "Base quincena (≤15)"]
-    out = ['<table><tr><th>Variant · daily net bps, $1M/trade, VWAP-priced</th><th class="num">Mean</th>'
-           '<th class="num">Std</th><th class="num">Sharpe</th><th class="num">Pos days</th>'
-           '<th class="num">Skew</th><th class="num">Ex-kurt</th><th class="num">5% VaR</th>'
-           '<th class="num">Worst day</th></tr>']
+    out = ['<table><tr><th>Variant · net P&amp;L per trade, $1M/trade, VWAP-priced</th>'
+           '<th class="num">Trades</th><th class="num">Mean/trade</th><th class="num">Median</th>'
+           '<th class="num">Std</th><th class="num">Win %</th><th class="num">Skew</th>'
+           '<th class="num">Worst trade</th><th class="num">IS Sharpe</th></tr>']
     for k in order:
         d = rd[k]
-        best = k.startswith("Real calendar")
-        rc = ' class="rowbest"' if best else ""
-        star = ' <span class="best">recommended</span>' if best else ""
-        out.append(f'<tr{rc}><td>{k}{star}</td><td class="num">{d["mean"]:+.2f}</td>'
-                   f'<td class="num">{d["std"]:.1f}</td><td class="num {scls(d["sharpe"])}">{d["sharpe"]:.2f}</td>'
-                   f'<td class="num">{d["pos"]:.0f}%</td><td class="num">{d["skew"]:+.2f}</td>'
-                   f'<td class="num">{d["kurt"]:+.1f}</td><td class="num">{d["var95"]:.1f}</td>'
-                   f'<td class="num">{d["min"]:.0f}</td></tr>')
+        is_best = k == best
+        rc = ' class="rowbest"' if is_best else ""
+        star = ' <span class="best">best IS Sharpe</span>' if is_best else ""
+        out.append(f'<tr{rc}><td>{k}{star}</td><td class="num">{d["n"]}</td>'
+                   f'<td class="num">${d["mean"]/1e3:+.1f}k</td>'
+                   f'<td class="num">${d["median"]/1e3:+.1f}k</td>'
+                   f'<td class="num">${d["std"]/1e3:.1f}k</td>'
+                   f'<td class="num">{d["win"]:.0f}%</td><td class="num">{d["skew"]:+.2f}</td>'
+                   f'<td class="num">${d["min"]/1e3:.0f}k</td>'
+                   f'<td class="num {scls(d["is_sharpe"])}">{d["is_sharpe"]:.2f}</td></tr>')
     out.append("</table>")
     return "".join(out)
 
@@ -471,34 +513,13 @@ Both parameters are optimised on the <b>in-sample 60% only</b>; the out-of-sampl
      "or the other. The short (red) bands cluster mid-month, exactly where the cash-flow supply surge lands.")}
 
 <h2><span class="n">A7.</span> Return distributions — how the variants compare</h2>
-<p class="lead">Daily net P&amp;L per $1M traded (1 bp = $100), <b>VWAP-to-VWAP</b>. The tabs isolate one
-variant; the overlay shows all four on a shared x-range, so the shapes are directly comparable. The story is
-in the <i>shape</i>, not just the mean: slow-vol sizing trades a slightly lower mean for a much tighter body
-(smaller std, positive skew), which is why its Sharpe tops the table even though the recommended calendar rule
-earns more dollars.</p>
-{tabs([
-    ("Overlay (all four)", False, fig("q_dist_overlay.png", "All four calendar-family variants overlaid",
-        "The slow-vol variant is visibly the most peaked (smallest std); the recommended calendar and the "
-        "fixed refined window sit almost on top of each other, both shifted right of the crude base rule.")),
-    ("Real calendar", True, fig("q_dist_calendar.png", "Real calendar (recommended) — daily net return distribution",
-        f"Mean {Q['return_dist']['Real calendar (recommended)']['mean']:+.2f} bps/day at Sharpe "
-        f"{Q['return_dist']['Real calendar (recommended)']['sharpe']:.2f}; a fat left tail "
-        f"(skew {Q['return_dist']['Real calendar (recommended)']['skew']:+.2f}) is the post-deadline reversion "
-        "that the A5 trailing exit is designed to cut.")),
-    ("Refined (5–15)", False, fig("q_dist_refined.png", "Refined quincena — daily net return distribution",
-        f"The fixed day-of-month twin of the calendar rule — nearly identical shape "
-        f"(Sharpe {Q['return_dist']['Refined (5–15)']['sharpe']:.2f}, "
-        f"std {Q['return_dist']['Refined (5–15)']['std']:.1f}), confirming the two readings capture the same edge.")),
-    ("Refined + slow-vol", False, fig("q_dist_slowvol.png", "Refined + slow-vol sizing — daily net return distribution",
-        f"Trimming size when a slow 20-day volume regime disagrees collapses the std to "
-        f"{Q['return_dist']['Refined + slow-vol']['std']:.1f} bps and flips the skew positive "
-        f"({Q['return_dist']['Refined + slow-vol']['skew']:+.2f}) — the highest Sharpe "
-        f"({Q['return_dist']['Refined + slow-vol']['sharpe']:.2f}) of the four.")),
-    ("Base quincena", False, fig("q_dist_base.png", "Base quincena (≤15) — daily net return distribution",
-        f"The crude ancestor: same volatility but a lower mean "
-        f"({Q['return_dist']['Base quincena (≤15)']['mean']:+.2f} bps) and the heaviest left tail, dragging "
-        f"its Sharpe to {Q['return_dist']['Base quincena (≤15)']['sharpe']:.2f}.")),
-])}
+<p class="lead">Net P&amp;L <b>per trade</b> (per directional roundtrip), in USD at $1M/trade,
+<b>VWAP-to-VWAP</b> — the P&amp;L a desk actually books at each exit, not a day-by-day mark. Tabs isolate one
+variant; the overlay puts all four on a shared x-range so the shapes compare directly. Variants are ranked by
+<b>in-sample Sharpe</b> (first 60% of history), <i>not</i> headline P&amp;L: on that measure
+<b>{RD_BEST}</b> wins and carries the best badge — it trims the fat losing trades, so its per-trade spread is
+tightest even where the calendar rule books more total dollars.</p>
+{dist_tabs_html()}
 {dist_table()}
 
 <div class="part">Part B · The underlying dynamics — what we are exploiting</div>

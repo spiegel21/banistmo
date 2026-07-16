@@ -25,7 +25,8 @@ from analyze import OUT, load
 from payment_calendar import annotate
 
 plt.rcParams.update({"figure.facecolor": "white", "axes.grid": True, "grid.alpha": 0.25,
-                     "axes.spines.top": False, "axes.spines.right": False})
+                     "axes.spines.top": False, "axes.spines.right": False,
+                     "text.parse_math": False})  # '$' are currency, not math delimiters
 NAVY, GREEN, RED, GREY, PURPLE = "#1f3b73", "#2e8b57", "#c0392b", "#7f8c8d", "#7d3c98"
 NOTIONAL = 1_000_000
 COST_SIDE_CRC = 0.325
@@ -398,55 +399,93 @@ STRATS = [
 ]
 
 
-def _daily_bps(pos_fn, df):
-    """Daily net P&L in bps of the $1M notional (1 bp = $100), VWAP-priced — the same
-    series stat() summarises."""
-    net, _turn = dollars(pos_fn(df), df)
-    return (net / (NOTIONAL / 1e4)).dropna()
+def _trade_pnl(pos_fn, df):
+    """Per-trade (per directional roundtrip) net P&L in USD, VWAP-priced.
+
+    A *trade* is one continuous stretch where the position keeps the same SIGN
+    (long-USD or short-USD). These rules are always in the market, so the sign
+    blocks tile the whole sample; each trade's P&L is the sum of the daily net
+    P&L (including the entry-flip slippage) over its holding window, so the
+    per-trade P&Ls sum back exactly to the strategy's total. Size changes within
+    a single held direction (the slow-vol 0.5x trim) stay inside the same trade.
+    """
+    raw = np.asarray(pos_fn(df), float)
+    net, _turn = dollars(pos_fn(df), df)           # USD/day; last (NaN r_next) row dropped
+    idx = net.index.to_numpy()
+    sign = np.sign(raw[idx])
+    change = np.empty(len(sign), bool)
+    change[0] = True
+    change[1:] = sign[1:] != sign[:-1]
+    block = np.cumsum(change)
+    by_trade = pd.Series(net.to_numpy()).groupby(block).sum()
+    sgn = pd.Series(sign).groupby(block).first()
+    return by_trade[sgn.values != 0].to_numpy()    # drop any flat (no-position) blocks
 
 
-def _dist_stats(x):
+def _trade_stats(x):
+    """Shape of a per-trade P&L population, all in USD."""
     x = np.asarray(x, float)
-    return {"mean": float(x.mean()), "std": float(x.std()),
-            "sharpe": float(x.mean() / x.std() * ANN),
+    return {"n": int(len(x)), "mean": float(x.mean()), "median": float(np.median(x)),
+            "std": float(x.std()), "win": float((x > 0).mean() * 100),
             "skew": float(sps.skew(x)), "kurt": float(sps.kurtosis(x)),  # excess kurtosis
             "var95": float(np.percentile(x, 5)), "var99": float(np.percentile(x, 1)),
-            "min": float(x.min()), "max": float(x.max()), "pos": float((x > 0).mean() * 100)}
+            "min": float(x.min()), "max": float(x.max())}
+
+
+def _is_sharpe(pos_fn, df):
+    """In-sample (first OOS_FRAC of history) daily annualised Sharpe — the metric the
+    variants are ranked by, so 'best' never peeks at the held-out / full sample."""
+    k = int(len(df) * OOS_FRAC)
+    dis = df.iloc[:k]
+    return float(stat(pos_fn(dis), dis)["sharpe"])
 
 
 def chart_return_distributions(df, res):
-    """One histogram+KDE per calendar-family variant (for the report tabs) plus an
-    all-in-one overlay. Everything is VWAP-priced and on a shared x-range so the shapes
-    are directly comparable.
+    """One histogram+KDE of PER-TRADE net P&L (USD) per calendar-family variant, plus
+    an overlay. Variants are ranked by IN-SAMPLE Sharpe (not headline P&L); the top one
+    is flagged as best. Everything VWAP-priced, on a shared x-range so shapes compare.
     """
-    series = {slug: _daily_bps(fn, df) for _, slug, fn, _ in STRATS}
-    pooled = np.concatenate([s.values for s in series.values()])
-    lim = float(max(abs(np.percentile(pooled, 0.5)), abs(np.percentile(pooled, 99.5))))
-    grid = np.linspace(-lim, lim, 400)
-    res["return_dist"] = {}
+    trades = {slug: _trade_pnl(fn, df) for _, slug, fn, _ in STRATS}
+    is_sharpe = {label: _is_sharpe(fn, df) for label, _slug, fn, _ in STRATS}
+    best_label = max(is_sharpe, key=is_sharpe.get)
 
+    pooled = np.concatenate(list(trades.values())) / 1e3        # USD thousands
+    lim = float(max(abs(np.percentile(pooled, 1)), abs(np.percentile(pooled, 99))))
+    grid = np.linspace(-lim, lim, 400)
+
+    res["return_dist"] = {}
+    res["return_dist_best"] = best_label
     for label, slug, _fn, color in STRATS:
-        x = series[slug].values
-        st = _dist_stats(x)
-        res["return_dist"][label] = {k: round(v, 3) for k, v in st.items()}
-        n_out = int((np.abs(x) > lim).sum())
+        x = trades[slug]
+        st = _trade_stats(x)
+        rd = {k: (int(v) if k == "n" else round(float(v), 2)) for k, v in st.items()}
+        rd["is_sharpe"] = round(is_sharpe[label], 2)
+        res["return_dist"][label] = rd
+
+        xk = x / 1e3
+        n_out = int((np.abs(xk) > lim).sum())
         fig, ax = plt.subplots(figsize=(9, 5))
-        ax.hist(np.clip(x, -lim, lim), bins=60, density=True, color=color, alpha=0.32,
+        ax.hist(np.clip(xk, -lim, lim), bins=36, density=True, color=color, alpha=0.32,
                 edgecolor="white", linewidth=0.3)
-        ax.plot(grid, sps.gaussian_kde(x)(grid), color=color, lw=2)
+        if len(np.unique(xk)) > 1:
+            ax.plot(grid, sps.gaussian_kde(xk)(grid), color=color, lw=2)
         ax.axvline(0, color="k", lw=0.8)
-        ax.axvline(st["mean"], color=color, lw=1.6, label=f"mean {st['mean']:+.1f} bps")
-        ax.axvline(st["var95"], color=RED, ls="--", lw=1.6, label=f"5% VaR {st['var95']:.1f} bps")
+        ax.axvline(st["mean"] / 1e3, color=color, lw=1.6, label=f"mean ${st['mean']/1e3:+.1f}k/trade")
+        ax.axvline(st["var95"] / 1e3, color=RED, ls="--", lw=1.6,
+                   label=f"5% worst ${st['var95']/1e3:.1f}k")
         ax.set_xlim(-lim, lim)
-        ax.set_xlabel("daily net return (bps · $1M/trade, VWAP-priced · 1 bp = $100)")
+        ax.set_xlabel("net P&L per trade (USD thousands · $1M/trade, VWAP-priced)")
         ax.set_ylabel("density")
-        ax.set_title(f"{label} — daily net return distribution")
-        txt = (f"mean {st['mean']:+.2f} bps    std {st['std']:.1f}\n"
-               f"Sharpe {st['sharpe']:.2f}     pos days {st['pos']:.0f}%\n"
-               f"skew {st['skew']:+.2f}      ex-kurt {st['kurt']:+.2f}\n"
-               f"best {st['max']:+.0f}      worst {st['min']:.0f} bps")
+        crown = "   ·   BEST by in-sample Sharpe" if label == best_label else ""
+        ax.set_title(f"{label} — per-trade net P&L distribution{crown}")
+        txt = (f"trades {st['n']}\n"
+               f"mean ${st['mean']/1e3:+.1f}k   median ${st['median']/1e3:+.1f}k\n"
+               f"std ${st['std']/1e3:.1f}k    win {st['win']:.0f}%\n"
+               f"skew {st['skew']:+.2f}    ex-kurt {st['kurt']:+.1f}\n"
+               f"best ${st['max']/1e3:+.0f}k    worst ${st['min']/1e3:.0f}k\n"
+               f"in-sample Sharpe {is_sharpe[label]:.2f}")
         if n_out:
-            txt += f"\n({n_out} days beyond ±{lim:.0f} clipped in)"
+            txt += f"\n({n_out} trades beyond ±${lim:.0f}k clipped in)"
         ax.text(0.985, 0.97, txt, transform=ax.transAxes, ha="right", va="top",
                 fontsize=9, family="monospace",
                 bbox=dict(boxstyle="round", fc="white", ec=color, alpha=0.92))
@@ -457,14 +496,19 @@ def chart_return_distributions(df, res):
 
     fig, ax = plt.subplots(figsize=(9, 5))
     for label, slug, _fn, color in STRATS:
-        y = sps.gaussian_kde(series[slug].values)(grid)
-        ax.plot(grid, y, color=color, lw=2, label=label)
+        xk = trades[slug] / 1e3
+        if len(np.unique(xk)) < 2:
+            continue
+        y = sps.gaussian_kde(xk)(grid)
+        is_best = label == best_label
+        ax.plot(grid, y, color=color, lw=2.6 if is_best else 1.8,
+                label=label + (" — best (IS Sharpe)" if is_best else ""))
         ax.fill_between(grid, y, color=color, alpha=0.06)
     ax.axvline(0, color="k", lw=0.8)
     ax.set_xlim(-lim, lim)
-    ax.set_xlabel("daily net return (bps · $1M/trade, VWAP-priced · 1 bp = $100)")
+    ax.set_xlabel("net P&L per trade (USD thousands · $1M/trade, VWAP-priced)")
     ax.set_ylabel("density")
-    ax.set_title("Daily net return distribution — calendar-family variants overlaid")
+    ax.set_title("Per-trade net P&L distribution — calendar-family variants overlaid")
     ax.legend(loc="upper left", fontsize=9)
     fig.tight_layout()
     fig.savefig(OUT / "q_dist_overlay.png", dpi=110)
