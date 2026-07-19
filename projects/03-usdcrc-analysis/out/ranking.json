@@ -1,0 +1,587 @@
+{
+  "_meta": {
+    "n_days": 2663,
+    "date_min": "2014-12-08",
+    "date_max": "2026-06-19",
+    "sessions_per_year_actual": 231.0,
+    "sessions_per_year_legacy": 252,
+    "per_year_usd_legacy_inflation": 0.091,
+    "sharpe_legacy_inflation": 0.0445,
+    "notional_usd": 1000000,
+    "cost_crc_per_side": 0.325,
+    "basis": "VWAP-to-VWAP next session, net of slippage",
+    "oos_frac": 0.6,
+    "split_date": "2021-11-18",
+    "is_window": [
+      "2014-12-08",
+      "2021-11-17"
+    ],
+    "oos_window": [
+      "2021-11-18",
+      "2026-06-19"
+    ],
+    "ranked_by": "in-sample net Sharpe"
+  },
+  "ranking": [
+    {
+      "rank_is": 1,
+      "label": "Calendar + trail 30 + floor 40 (exit_lab)",
+      "family": "exit",
+      "is": {
+        "sharpe": 3.7,
+        "per_year_usd": 100673,
+        "total_usd": 696052,
+        "maxdd_usd": -15986,
+        "roundtrips_yr": 22.2,
+        "hit_rate": 53.4,
+        "time_in_mkt": 85.9,
+        "n_days": 1597
+      },
+      "oos": {
+        "sharpe": 3.92,
+        "per_year_usd": 133767,
+        "total_usd": 616768,
+        "maxdd_usd": -26192,
+        "roundtrips_yr": 22.2,
+        "hit_rate": 41.7,
+        "time_in_mkt": 65.4,
+        "n_days": 1065
+      },
+      "full": {
+        "sharpe": 3.78,
+        "per_year_usd": 113957,
+        "total_usd": 1313329,
+        "maxdd_usd": -26192,
+        "roundtrips_yr": 22.2,
+        "hit_rate": 48.7,
+        "time_in_mkt": 77.7,
+        "n_days": 2662
+      }
+    },
+    {
+      "rank_is": 2,
+      "label": "Calendar + trail 30 + floor 60bps",
+      "family": "exit",
+      "is": {
+        "sharpe": 3.65,
+        "per_year_usd": 99468,
+        "total_usd": 687723,
+        "maxdd_usd": -17539,
+        "roundtrips_yr": 22.2,
+        "hit_rate": 53.6,
+        "time_in_mkt": 86.8,
+        "n_days": 1597
+      },
+      "oos": {
+        "sharpe": 3.92,
+        "per_year_usd": 139843,
+        "total_usd": 644782,
+        "maxdd_usd": -26192,
+        "roundtrips_yr": 22.2,
+        "hit_rate": 44.4,
+        "time_in_mkt": 70.5,
+        "n_days": 1065
+      },
+      "full": {
+        "sharpe": 3.74,
+        "per_year_usd": 115665,
+        "total_usd": 1333014,
+        "maxdd_usd": -26192,
+        "roundtrips_yr": 22.2,
+        "hit_rate": 49.9,
+        "time_in_mkt": 80.2,
+        "n_days": 2662
+      }
+    },
+    {
+      "rank_is": 3,
+      "label": "Calendar + trail 80bps",
+      "family": "exit",
+      "is": {
+        "sharpe": 3.43,
+        "per_year_usd": 101041,
+        "total_usd": 698593,
+        "maxdd_usd": -23048,
+        "roundtrips_yr": 22.2,
+        "hit_rate": 58.5,
+        "time_in_mkt": 96.6,
+        "n_days": 1597
+      },
+      "oos": {
+        "sharpe": 2.95,
+        "per_year_usd": 141933,
+        "total_usd": 654422,
+        "maxdd_usd": -45085,
+        "roundtrips_yr": 22.2,
+        "hit_rate": 56.2,
+        "time_in_mkt": 93.4,
+        "n_days": 1065
+      },
+      "full": {
+        "sharpe": 3.08,
+        "per_year_usd": 117445,
+        "total_usd": 1353524,
+        "maxdd_usd": -45085,
+        "roundtrips_yr": 22.2,
+        "hit_rate": 57.6,
+        "time_in_mkt": 95.3,
+        "n_days": 2662
+      }
+    },
+    {
+      "rank_is": 4,
+      "label": "Refined + slow-vol",
+      "family": "calendar",
+      "is": {
+        "sharpe": 3.3,
+        "per_year_usd": 77223,
+        "total_usd": 533918,
+        "maxdd_usd": -25292,
+        "roundtrips_yr": 19.0,
+        "hit_rate": 59.2,
+        "time_in_mkt": 100.0,
+        "n_days": 1597
+      },
+      "oos": {
+        "sharpe": 3.31,
+        "per_year_usd": 119266,
+        "total_usd": 549910,
+        "maxdd_usd": -37451,
+        "roundtrips_yr": 17.1,
+        "hit_rate": 59.2,
+        "time_in_mkt": 100.0,
+        "n_days": 1065
+      },
+      "full": {
+        "sharpe": 3.23,
+        "per_year_usd": 94088,
+        "total_usd": 1084337,
+        "maxdd_usd": -37451,
+        "roundtrips_yr": 18.2,
+        "hit_rate": 59.2,
+        "time_in_mkt": 100.0,
+        "n_days": 2662
+      }
+    },
+    {
+      "rank_is": 5,
+      "label": "Calendar + slow-vol",
+      "family": "calendar",
+      "is": {
+        "sharpe": 3.22,
+        "per_year_usd": 75907,
+        "total_usd": 524819,
+        "maxdd_usd": -23662,
+        "roundtrips_yr": 19.1,
+        "hit_rate": 59.5,
+        "time_in_mkt": 100.0,
+        "n_days": 1597
+      },
+      "oos": {
+        "sharpe": 3.53,
+        "per_year_usd": 123001,
+        "total_usd": 567131,
+        "maxdd_usd": -36761,
+        "roundtrips_yr": 17.1,
+        "hit_rate": 59.3,
+        "time_in_mkt": 100.0,
+        "n_days": 1065
+      },
+      "full": {
+        "sharpe": 3.31,
+        "per_year_usd": 94792,
+        "total_usd": 1092458,
+        "maxdd_usd": -36761,
+        "roundtrips_yr": 18.2,
+        "hit_rate": 59.5,
+        "time_in_mkt": 100.0,
+        "n_days": 2662
+      }
+    },
+    {
+      "rank_is": 6,
+      "label": "Refined (5-15)",
+      "family": "calendar",
+      "is": {
+        "sharpe": 3.19,
+        "per_year_usd": 98865,
+        "total_usd": 683549,
+        "maxdd_usd": -46427,
+        "roundtrips_yr": 22.2,
+        "hit_rate": 59.7,
+        "time_in_mkt": 100.0,
+        "n_days": 1597
+      },
+      "oos": {
+        "sharpe": 2.67,
+        "per_year_usd": 134717,
+        "total_usd": 621151,
+        "maxdd_usd": -49584,
+        "roundtrips_yr": 22.2,
+        "hit_rate": 59.2,
+        "time_in_mkt": 100.0,
+        "n_days": 1065
+      },
+      "full": {
+        "sharpe": 2.84,
+        "per_year_usd": 113253,
+        "total_usd": 1305209,
+        "maxdd_usd": -49584,
+        "roundtrips_yr": 22.2,
+        "hit_rate": 59.5,
+        "time_in_mkt": 100.0,
+        "n_days": 2662
+      }
+    },
+    {
+      "rank_is": 7,
+      "label": "Real calendar (<=6d)",
+      "family": "calendar",
+      "is": {
+        "sharpe": 3.14,
+        "per_year_usd": 97221,
+        "total_usd": 672186,
+        "maxdd_usd": -44687,
+        "roundtrips_yr": 22.2,
+        "hit_rate": 60.2,
+        "time_in_mkt": 100.0,
+        "n_days": 1597
+      },
+      "oos": {
+        "sharpe": 2.79,
+        "per_year_usd": 139697,
+        "total_usd": 644112,
+        "maxdd_usd": -47692,
+        "roundtrips_yr": 22.2,
+        "hit_rate": 59.3,
+        "time_in_mkt": 100.0,
+        "n_days": 1065
+      },
+      "full": {
+        "sharpe": 2.88,
+        "per_year_usd": 114259,
+        "total_usd": 1316807,
+        "maxdd_usd": -47692,
+        "roundtrips_yr": 22.2,
+        "hit_rate": 59.8,
+        "time_in_mkt": 100.0,
+        "n_days": 2662
+      }
+    },
+    {
+      "rank_is": 8,
+      "label": "Base quincena (<=15)",
+      "family": "calendar",
+      "is": {
+        "sharpe": 1.96,
+        "per_year_usd": 61996,
+        "total_usd": 428637,
+        "maxdd_usd": -55144,
+        "roundtrips_yr": 22.2,
+        "hit_rate": 55.9,
+        "time_in_mkt": 100.0,
+        "n_days": 1597
+      },
+      "oos": {
+        "sharpe": 2.08,
+        "per_year_usd": 106221,
+        "total_usd": 489759,
+        "maxdd_usd": -62220,
+        "roundtrips_yr": 22.2,
+        "hit_rate": 56.6,
+        "time_in_mkt": 100.0,
+        "n_days": 1065
+      },
+      "full": {
+        "sharpe": 1.97,
+        "per_year_usd": 79733,
+        "total_usd": 918905,
+        "maxdd_usd": -62220,
+        "roundtrips_yr": 22.2,
+        "hit_rate": 56.2,
+        "time_in_mkt": 100.0,
+        "n_days": 2662
+      }
+    },
+    {
+      "rank_is": 9,
+      "label": "Always long USD",
+      "family": "benchmark",
+      "is": {
+        "sharpe": 0.83,
+        "per_year_usd": 26052,
+        "total_usd": 180123,
+        "maxdd_usd": -110626,
+        "roundtrips_yr": 0.1,
+        "hit_rate": 52.1,
+        "time_in_mkt": 100.0,
+        "n_days": 1597
+      },
+      "oos": {
+        "sharpe": -1.44,
+        "per_year_usd": -72902,
+        "total_usd": -336134,
+        "maxdd_usd": -425755,
+        "roundtrips_yr": 0.1,
+        "hit_rate": 44.6,
+        "time_in_mkt": 100.0,
+        "n_days": 1065
+      },
+      "full": {
+        "sharpe": -0.33,
+        "per_year_usd": -13493,
+        "total_usd": -155503,
+        "maxdd_usd": -425755,
+        "roundtrips_yr": 0.0,
+        "hit_rate": 49.1,
+        "time_in_mkt": 100.0,
+        "n_days": 2662
+      }
+    },
+    {
+      "rank_is": 10,
+      "label": "SMA-120 trend",
+      "family": "trend",
+      "is": {
+        "sharpe": 0.74,
+        "per_year_usd": 22737,
+        "total_usd": 157201,
+        "maxdd_usd": -65638,
+        "roundtrips_yr": 7.0,
+        "hit_rate": 49.2,
+        "time_in_mkt": 92.5,
+        "n_days": 1597
+      },
+      "oos": {
+        "sharpe": 1.41,
+        "per_year_usd": 71323,
+        "total_usd": 328855,
+        "maxdd_usd": -93623,
+        "roundtrips_yr": 5.5,
+        "hit_rate": 56.3,
+        "time_in_mkt": 100.0,
+        "n_days": 1065
+      },
+      "full": {
+        "sharpe": 1.06,
+        "per_year_usd": 42219,
+        "total_usd": 486565,
+        "maxdd_usd": -93623,
+        "roundtrips_yr": 6.4,
+        "hit_rate": 52.1,
+        "time_in_mkt": 95.5,
+        "n_days": 2662
+      }
+    },
+    {
+      "rank_is": 11,
+      "label": "Combined vote",
+      "family": "flow",
+      "is": {
+        "sharpe": 0.49,
+        "per_year_usd": 16015,
+        "total_usd": 110727,
+        "maxdd_usd": -278033,
+        "roundtrips_yr": 83.2,
+        "hit_rate": 49.2,
+        "time_in_mkt": 100.0,
+        "n_days": 1597
+      },
+      "oos": {
+        "sharpe": 3.66,
+        "per_year_usd": 180179,
+        "total_usd": 830762,
+        "maxdd_usd": -39778,
+        "roundtrips_yr": 70.4,
+        "hit_rate": 60.5,
+        "time_in_mkt": 100.0,
+        "n_days": 1065
+      },
+      "full": {
+        "sharpe": 2.03,
+        "per_year_usd": 81649,
+        "total_usd": 940981,
+        "maxdd_usd": -278033,
+        "roundtrips_yr": 78.1,
+        "hit_rate": 53.6,
+        "time_in_mkt": 100.0,
+        "n_days": 2662
+      }
+    },
+    {
+      "rank_is": 12,
+      "label": "Donchian-40 trend",
+      "family": "trend",
+      "is": {
+        "sharpe": 0.42,
+        "per_year_usd": 12870,
+        "total_usd": 88986,
+        "maxdd_usd": -127827,
+        "roundtrips_yr": 2.8,
+        "hit_rate": 51.0,
+        "time_in_mkt": 96.7,
+        "n_days": 1597
+      },
+      "oos": {
+        "sharpe": 1.81,
+        "per_year_usd": 91853,
+        "total_usd": 423511,
+        "maxdd_usd": -54121,
+        "roundtrips_yr": 1.6,
+        "hit_rate": 57.0,
+        "time_in_mkt": 100.0,
+        "n_days": 1065
+      },
+      "full": {
+        "sharpe": 1.11,
+        "per_year_usd": 44513,
+        "total_usd": 513006,
+        "maxdd_usd": -127827,
+        "roundtrips_yr": 2.3,
+        "hit_rate": 53.4,
+        "time_in_mkt": 98.0,
+        "n_days": 2662
+      }
+    },
+    {
+      "rank_is": 13,
+      "label": "Volume rule",
+      "family": "flow",
+      "is": {
+        "sharpe": 0.06,
+        "per_year_usd": 2076,
+        "total_usd": 14351,
+        "maxdd_usd": -241581,
+        "roundtrips_yr": 82.4,
+        "hit_rate": 46.0,
+        "time_in_mkt": 100.0,
+        "n_days": 1597
+      },
+      "oos": {
+        "sharpe": 2.06,
+        "per_year_usd": 104351,
+        "total_usd": 481137,
+        "maxdd_usd": -67630,
+        "roundtrips_yr": 54.3,
+        "hit_rate": 57.3,
+        "time_in_mkt": 100.0,
+        "n_days": 1065
+      },
+      "full": {
+        "sharpe": 1.06,
+        "per_year_usd": 42949,
+        "total_usd": 494979,
+        "maxdd_usd": -241581,
+        "roundtrips_yr": 71.2,
+        "hit_rate": 50.5,
+        "time_in_mkt": 100.0,
+        "n_days": 2662
+      }
+    },
+    {
+      "rank_is": 14,
+      "label": "Order-flow daily",
+      "family": "flow",
+      "is": {
+        "sharpe": -0.15,
+        "per_year_usd": -4798,
+        "total_usd": -33176,
+        "maxdd_usd": -273433,
+        "roundtrips_yr": 86.7,
+        "hit_rate": 45.1,
+        "time_in_mkt": 98.8,
+        "n_days": 1597
+      },
+      "oos": {
+        "sharpe": 2.01,
+        "per_year_usd": 102152,
+        "total_usd": 470999,
+        "maxdd_usd": -59677,
+        "roundtrips_yr": 88.4,
+        "hit_rate": 53.1,
+        "time_in_mkt": 100.0,
+        "n_days": 1065
+      },
+      "full": {
+        "sharpe": 0.94,
+        "per_year_usd": 38034,
+        "total_usd": 438331,
+        "maxdd_usd": -273433,
+        "roundtrips_yr": 87.3,
+        "hit_rate": 48.3,
+        "time_in_mkt": 99.3,
+        "n_days": 2662
+      }
+    },
+    {
+      "rank_is": 15,
+      "label": "VWAP-skew rule",
+      "family": "flow",
+      "is": {
+        "sharpe": -0.26,
+        "per_year_usd": -8295,
+        "total_usd": -57353,
+        "maxdd_usd": -396557,
+        "roundtrips_yr": 96.5,
+        "hit_rate": 45.3,
+        "time_in_mkt": 100.0,
+        "n_days": 1597
+      },
+      "oos": {
+        "sharpe": 2.14,
+        "per_year_usd": 106712,
+        "total_usd": 492024,
+        "maxdd_usd": -51161,
+        "roundtrips_yr": 89.5,
+        "hit_rate": 55.7,
+        "time_in_mkt": 100.0,
+        "n_days": 1065
+      },
+      "full": {
+        "sharpe": 0.93,
+        "per_year_usd": 37760,
+        "total_usd": 435180,
+        "maxdd_usd": -396557,
+        "roundtrips_yr": 93.7,
+        "hit_rate": 49.5,
+        "time_in_mkt": 100.0,
+        "n_days": 2662
+      }
+    },
+    {
+      "rank_is": 16,
+      "label": "Always short USD",
+      "family": "benchmark",
+      "is": {
+        "sharpe": -0.84,
+        "per_year_usd": -26228,
+        "total_usd": -181337,
+        "maxdd_usd": -194806,
+        "roundtrips_yr": 0.1,
+        "hit_rate": 47.2,
+        "time_in_mkt": 100.0,
+        "n_days": 1597
+      },
+      "oos": {
+        "sharpe": 1.43,
+        "per_year_usd": 72681,
+        "total_usd": 335117,
+        "maxdd_usd": -101363,
+        "roundtrips_yr": 0.1,
+        "hit_rate": 54.9,
+        "time_in_mkt": 100.0,
+        "n_days": 1065
+      },
+      "full": {
+        "sharpe": 0.33,
+        "per_year_usd": 13388,
+        "total_usd": 154288,
+        "maxdd_usd": -274008,
+        "roundtrips_yr": 0.0,
+        "hit_rate": 50.3,
+        "time_in_mkt": 100.0,
+        "n_days": 2662
+      }
+    }
+  ]
+}

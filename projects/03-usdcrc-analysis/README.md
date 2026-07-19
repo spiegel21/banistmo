@@ -18,6 +18,11 @@ src/dynamics.py        # underlying-mechanism deep-dive + $1M/trade dollar rules
 src/payment_calendar.py # real CR IVA (D-104) / quincena / CCSS payment calendar
 src/quincena.py        # calendar (quincena) strategy (recommended) + trading calendar
 src/exits.py           # stop-loss / take-profit exit OVERLAY on the calendar rule (optimised) -> exits_results.json
+src/exit_lab.py        # FULL exit engine: trailing / hard stop / take-profit / time stop, in
+                       #   fixed bps or vol multiples; in-sample tuned with a 1-SE + drawdown
+                       #   selection rule -> exit_lab.json + xl_*.png
+src/rank_strategies.py # EVERY strategy re-priced on ONE basis, ranked by in-sample Sharpe;
+                       #   supersedes the per-module tables -> ranking.json + ranking.png
 src/daily_signal.py    # one-page daily signal sheet (position + slow-vol size)
 src/build_report.py    # assembles the self-contained HTML report (reads the json)
 out/                   # PNG charts + report.html + report.pdf (generated)
@@ -39,6 +44,8 @@ python src/volume_model.py   # conviction-sized ML model (walk-forward) -> vm_*.
 python src/dynamics.py       # mechanism deep-dive + $1M/trade building-block rules -> dyn_*.png + json
 python src/quincena.py       # calendar (quincena) strategy -> q_*.png + quincena_results.json
 python src/exits.py          # optimise a trailing-stop / floor exit overlay on it -> ex_*.png + exits_results.json
+python src/exit_lab.py       # full exit engine (stop/take-profit/time, fixed & vol-scaled) -> xl_*.png + exit_lab.json
+python src/rank_strategies.py # rank EVERY strategy on one basis, in-sample -> ranking.png + ranking.json
 python src/build_report.py   # -> out/report.html
 python -c "from weasyprint import HTML; HTML('out/report.html').write_pdf('out/report.pdf')"
 ```
@@ -81,12 +88,27 @@ price series), so weekend/holiday rolling is correct by construction. Measured i
 days **before** the deadline (−12 to −16 bps next-day) and reverts after — see
 `out/q_calendar.png`.
 
-See **FINDINGS.md** for conclusions. Headline: the colón is in a VWAP-anchored
-appreciation crawl; daily **volume is a directional order-flow signal** (heavy
-days = USD supply = colón strength) that **persists overnight**. Tested
-adversarially (out-of-sample, walk-forward, transaction costs, trend benchmark,
-permutation null, deflated Sharpe), the **order-flow continuation** edge holds:
-out-of-sample Sharpe ≥ in-sample, **+8.3 bps/day alpha vs the trend** (t≈5.8),
-and a **deployable close-to-close Sharpe ≈ 2.8** (gross). The momentum runner-up
-is mostly the trend in disguise. Dominant risk: managed-float peg/policy-break
-tail that an 18-month sample can't price.
+See **FINDINGS.md** for conclusions.
+
+**Headline.** Ranked on one common accounting basis (`src/rank_strategies.py`), the
+**calendar (quincena) family dominates** — it is the only edge that works in both the
+pegged 2014–2021 regime and the 2021–2026 float. The best configuration is the calendar
+entry plus a **trailing 30 bps + hard 40 bps stop** overlay: in-sample Sharpe **3.70**,
+out-of-sample **3.92**, max drawdown cut ~45%. The overlay is a **risk** improvement, not
+an alpha one — total P&L is statistically unchanged (paired p = 0.73). **Take-profit
+actively hurts** and is not recommended.
+
+The daily **order-flow / volume** signals are directionally real but **regime-contingent**:
+in-sample Sharpe −0.26 to +0.49 against out-of-sample 2.0–3.7, with $240k–$400k drawdowns
+at 80–97 round trips/yr. Their full-sample numbers average a dead regime with a live one.
+
+Dominant risk: a BCCR re-peg / intervention that would mute both the calendar and flow
+signals. The sample is 11.5 years (2,663 sessions), but the *float* regime that carries most
+of the edge is only the last ~4.5 years, so the tail is thinly sampled.
+
+> **Two figures previously quoted here are unsourced and have been removed:** "+8.3 bps/day
+> alpha vs the trend (t≈5.8)" has no reproducing output in any JSON, and the claim that the
+> tail risk is one "an 18-month sample can't price" contradicted this file's own 11.5-year
+> sample. The gross close-to-close Sharpe ≈ 2.8 for the order-flow rule does reproduce
+> (`backtest_results.json` → `Order-flow daily.gross_sharpe`), but it is **gross of
+> slippage**; net of the 0.65 CRC round trip that rule does not survive.
