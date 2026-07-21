@@ -36,6 +36,9 @@ XL = json.loads((OUT / "exit_lab.json").read_text())        # full exit engine, 
 XLB = XL["baseline"]
 XLR = XL["variants"][XL["recommended"]]                     # recommended overlay (trail 30 / floor 40)
 XLP = XL["stage2_joint"]["bps"]                             # the bps joint-grid selection block
+IV = json.loads((OUT / "intervention_results.json").read_text())  # BCCR official-flow & reserves overlay
+IVF, IVR, IVS = IV["flow"], IV["reserves"], IV["strategy"]
+IVRB = IV["reserve_vs_blind"]
 QSLOW = Q["Refined + slow-vol sizing"]
 QBASE = Q["Base quincena (<=15)"]
 QCAL = next(v for k, v in Q.items() if k.startswith("Real calendar"))
@@ -354,6 +357,33 @@ def exit_marginal_table():
                f'<td class="num muted">—</td>'
                f'<td class="num">{XLB["is"]["sharpe"]}</td><td class="num">{XLB["oos"]["sharpe"]}</td>'
                f'<td class="muted">reference</td></tr>')
+    out.append("</table>")
+    return "".join(out)
+
+
+def intervention_table():
+    """Exit-overlay baseline vs the reserve-regime trim, the official-flow trim, and the
+    blind-long-trim control. All on the same VWAP / 231-session basis."""
+    order = [
+        ("Calendar + trail30/floor40", "Calendar + trail30/floor40", "published best (A5b)", False),
+        ("+ reserve-regime long-trim", "+ reserve-regime long-trim", "trim longs when reserves rising", True),
+        ("+ official-flow trim (lagged)", "+ official-flow trim (lagged)", "strictly-lagged official regime", False),
+        ("CONTROL: blind long-trim", "CONTROL: blind long-trim", "trim ALL longs — no BCCR data", False),
+    ]
+    out = ['<table><tr><th>Calendar rule · $1M/trade · VWAP-priced, net cost</th>'
+           '<th class="num">IS Sharpe</th><th class="num">OOS Sharpe</th>'
+           '<th class="num">Full $/yr</th><th class="num">Max DD</th><th>Note</th></tr>']
+    for disp, key, note, best in order:
+        s = IVS[key]
+        rc = ' class="rowbest"' if best else ""
+        star = ' <span class="best">new · best OOS/DD</span>' if best else ""
+        ncls = "muted" if key.startswith("CONTROL") else ""
+        out.append(f'<tr{rc}><td>{disp}{star}</td>'
+                   f'<td class="num {scls(s["is"]["sharpe"])}">{s["is"]["sharpe"]}</td>'
+                   f'<td class="num {scls(s["oos"]["sharpe"])}">{s["oos"]["sharpe"]}</td>'
+                   f'<td class="num">{usd(s["full"]["per_year_usd"])}</td>'
+                   f'<td class="num">{usd(s["full"]["maxdd_usd"])}</td>'
+                   f'<td class="{ncls}" style="font-size:11px">{note}</td></tr>')
     out.append("</table>")
     return "".join(out)
 
@@ -828,6 +858,60 @@ never feeds the ordering. This table <b>supersedes the per-module tables</b> for
    one edge that works in both — a real virtue, but not the same claim as "the flow signals don't work."</li>
 </ul>
 
+<div class="part">Part I · The BCCR's hand — official flow &amp; reserves (newest data)</div>
+<p class="lead">MONEX volume is <b>unsigned</b> — it says how much traded, not who was buying. Two BCCR
+exports (daily FX <b>intervention</b>, CodCuadro 1587; month-end <b>net reserves</b>, CodCuadro 8) fill that
+gap. The official side — the BCCR plus the non-bank public sector's (RECOPE et al.) USD requirement routed
+through MONEX — is <b>a median {IVF['official_share_median']*100:.0f}% of daily MONEX volume</b>
+({IVF['days_with_flow_pct']:.0f}% of sessions carry official flow). So the <b>differential</b> (total MONEX
+minus official) is what the private market actually did, and the signed official flow is information the volume
+series cannot carry. This section adds that data and asks whether it beats the published rule.</p>
+{fig("iv_share.png", "Official (BCCR + public-sector) flow as a share of MONEX volume",
+     "The official footprint is large and persistent — a 60-session average around "
+     f"{IVF['official_share_mean']*100:.0f}% of traded volume, so on a typical day roughly half of what "
+     "crosses MONEX is the BCCR or the public sector, not private supply/demand. Any read of 'private' flow "
+     "from raw volume is therefore contaminated by an official component of this size.")}
+
+<h2><span class="n">I1.</span> The mechanism — official demand marks where the colón turns</h2>
+{fig("iv_intramonth.png", "Official USD demand vs the next-day move, by trading-days-to the deadline",
+     "Official (and specifically public-sector) USD demand PEAKS at and just after the IVA/quincena deadline "
+     "— the shaded window — which is exactly where the colón strengthens hardest next-day (the red line dives "
+     f"to {min(IVF['next_move_by_official_quintile_bps'])/1:.0f}-bps-class moves). Heavy official demand does "
+     "not push USD up; it marks the point where private supply overwhelms and the market reverts. This is the "
+     "same post-deadline reversion the exit overlay (A5b) harvests — now with a name.")}
+{fig("iv_direction.png", "Next-day USD move by official net-buying quintile",
+     "The signed signal volume cannot see: the heaviest official-net-buying days are followed by the largest "
+     f"USD-DOWN moves (contemporaneous corr {IVF['corr_contemp']:+.2f}). It is a real reversion signal, but it "
+     f"decays sharply when lagged one session ({IVF['corr_lag1']:+.2f}) and depends on same-day disclosure of "
+     "the intervention figures — so it is reported as mechanism, not used as a live entry signal.")}
+
+<h2><span class="n">I2.</span> Does it beat the published rule? A reserve-regime size trim</h2>
+<p class="lead">The tradeable win is not the daily flow (redundant with volume, and disclosure-sensitive) but the
+<b>reserves</b>. When BCCR reserves are <b>rising</b> — the bank accumulating USD, a colón-supportive regime —
+we trim long-USD size to half. It is strictly causal (a lagged monthly figure, no disclosure issue) and a
+fixed a-priori rule. Stacked on the published exit overlay it lifts out-of-sample Sharpe
+<b>{IVS['Calendar + trail30/floor40']['oos']['sharpe']} → {IVS['+ reserve-regime long-trim']['oos']['sharpe']}</b>
+and cuts max drawdown <b>{usd(IVS['Calendar + trail30/floor40']['full']['maxdd_usd'])} →
+{usd(IVS['+ reserve-regime long-trim']['full']['maxdd_usd'])}</b>. Reserves rose in only
+{IVR['rising_pct_full']:.0f}% of months (not a one-way trend), so this is a regime read, not a disguised
+"hold less long USD".</p>
+{intervention_table()}
+{fig("iv_strategy.png", "Exit-overlay baseline vs + reserve-regime long-trim — equity &amp; drawdown",
+     "The trim (green) tracks the baseline's compounding while its drawdowns (lower panel) are visibly "
+     "shallower, most clearly through the deep late-sample selloff. Red line = the in-sample / out-of-sample "
+     "boundary; the rule is fixed a-priori, nothing is fit on the test window.")}
+<p class="lead"><b>The reserve signal does real work — it is not just 'trim longs'.</b> A blind control that halves
+<i>every</i> long reaches a similar out-of-sample Sharpe, but the reserve-selective trim earns
+<b>{usd(IVRB['oos_total_delta_usd'])} more out-of-sample</b> at the same risk reduction (paired t =
+{IVRB['paired_t']}, <b>p = {IVRB['paired_p']}</b>) — it keeps full size on the longs reserves say are safe and
+cuts only the ones it flags. Like the exit overlay, this is a <b>risk</b> improvement (lower drawdown, higher
+Sharpe, slightly less total P&amp;L), not an alpha one. The official-flow trim is an equally-causal alternative
+that lands in the same place; the two BCCR series confirm each other.</p>
+{fig("iv_reserves.png", "BCCR net reserves and the rising-reserve (colón-supportive) regime",
+     f"Reserves ran from ${IVR['usd_mn_min']/1e3:.1f}bn to ${IVR['usd_mn_max']/1e3:.1f}bn over the sample; the "
+     "shaded rising-reserve months are when long-USD size is trimmed. The month-to-month change is roughly "
+     f"even ({IVR['rising_pct_full']:.0f}% rising), which is why the trim is a genuine regime read.")}
+
 <div class="part">Part E · Raw relationships behind the signals</div>
 <h2><span class="n">E1.</span> Low volume → USD up (seasonally adjusted)</h2>
 {fig("vm_vol_nextret.png", "Next-day USD move by volume quintile",
@@ -914,6 +998,14 @@ because the VWAP is a steadier reference than a single closing tick.</p>
    <i>slow filter</i> that sizes the calendar trade — that is what turns the plain calendar rule into the
    recommended one — and, conviction-sized, lifts the combined/ML book to Sharpe
    {DY['Combined vote (3 signals)']['sharpe']}–{LG['sharpe']}.</li>
+ <li><b>The BCCR's hand is now visible, and it sharpens the risk controls (Part I).</b> Official flow (BCCR +
+   public sector) is a median {IVF['official_share_median']*100:.0f}% of MONEX volume and peaks at the
+   deadline, exactly where the colón turns — it <i>names</i> the reversion the exit overlay harvests. The
+   tradeable use is the <b>reserves</b>: trimming long-USD size when reserves rise lifts out-of-sample Sharpe
+   {IVS['Calendar + trail30/floor40']['oos']['sharpe']} → {IVS['+ reserve-regime long-trim']['oos']['sharpe']}
+   and cuts drawdown {usd(IVS['Calendar + trail30/floor40']['full']['maxdd_usd'])} →
+   {usd(IVS['+ reserve-regime long-trim']['full']['maxdd_usd'])}, beating a blind long-trim out-of-sample
+   (p = {IVRB['paired_p']}). A risk improvement, not new alpha — and strictly causal.</li>
  <li><b>The mechanism is economic, not technical:</b> exporter USD supply (volume) and the payment/tax
    cycle (quincena). That is why it persists across regimes — and why it would weaken if the BCCR re-pegged
    or intervened heavily, the dominant risk.</li>
@@ -935,9 +1027,11 @@ because the VWAP is a steadier reference than a single closing tick.</p>
   <b>out-of-sample</b> realisation on the held-out 40% ({OREC['split_date']} → {OREC['oos_end']}). Nothing is
   re-fit on the test window. In-sample / out-of-sample = chronological 60/40 split at {OREC['split_date']}.
   Reproducible:
-  <code>parse_monex → analyze → eda → volume_model → dynamics → quincena → exits → backtest_vwap → rank_strategies → exit_lab → build_report</code>.
-  Parts R and A5b read <code>ranking.json</code> / <code>exit_lab.json</code>, both annualised on the venue's
-  real {RKM['sessions_per_year_actual']:.0f} sessions/yr; Parts A–F retain the legacy 252 basis of their source modules.
+  <code>parse_monex → parse_bccr → analyze → … → rank_strategies → exit_lab → intervention → build_report</code>.
+  Parts R, A5b and I read <code>ranking.json</code> / <code>exit_lab.json</code> / <code>intervention_results.json</code>,
+  all annualised on the venue's real {RKM['sessions_per_year_actual']:.0f} sessions/yr; Parts A–F retain the
+  legacy 252 basis of their source modules. Part I adds two BCCR exports (FX intervention CodCuadro 1587,
+  net reserves CodCuadro 8) via <code>parse_bccr.py</code>.
 </footer>
 
 </div>{JS}</body></html>"""
