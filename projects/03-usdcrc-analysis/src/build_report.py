@@ -115,7 +115,7 @@ def layer_table():
                       "the naive alternative — dies out of sample"))
     out.append('<tr><td colspan="5" class="grp">The rule, one design choice at a time</td></tr>')
     out.append(rk_row("① Calendar entry — short USD into the deadline", R_ENTRY,
-                      f"≤6 business days before the IVA/quincena deadline, flat size"))
+                      "≤6 business days before the IVA/quincena deadline, flat size"))
     out.append(rk_row("② + slow-volume size trim", R_TRIM,
                       "half size when the slow 20-day volume regime disagrees — cuts the fat losers",
                       best=True))
@@ -158,7 +158,7 @@ def ranking_table():
     return "".join(out)
 
 
-RULE_LOGIC = f"""<div class="rule"><h4>Exact logic</h4>
+RULE_LOGIC = """<div class="rule"><h4>Exact logic</h4>
   <div class="logic">≤ 6 business days before the IVA (D-104) / quincena deadline (through it) →  SHORT USD $1M<br>
     &nbsp;&nbsp;&nbsp;(firms sell USD to raise colones for the 15th tax filing + payroll → colón strengthens)<br>
     otherwise →  LONG USD $1M   (supply fades, USD drifts back up)<br>
