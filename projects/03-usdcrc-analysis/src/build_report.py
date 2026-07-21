@@ -5,8 +5,14 @@ round-trip slippage. The recommended calendar/quincena rule leads every section;
 secondary signals (volume, skew, combined vote, ML, trend books) are kept but
 tucked into tabs that default to the recommended strategy.
 
-Reads out/{quincena,dynamics,vm,exits,backtest_vwap}_results.json. Run last, after
-analyze / eda / volume_model / dynamics / quincena / exits / backtest_vwap.
+Reads out/{quincena,dynamics,vm,exits,backtest_vwap,ranking,exit_lab}_results.json.
+Run last, after analyze / eda / volume_model / dynamics / quincena / exits /
+backtest_vwap / rank_strategies / exit_lab.
+
+ranking.json and exit_lab.json are the newest runs and are annualised on the venue's
+real ~231 sessions/yr; the older per-module JSONs use the legacy 252 basis. Part R
+(unified ranking) and Part A5b (full exit engine) surface the corrected-basis numbers
+and are flagged as superseding the per-module tables for cross-strategy comparison.
 """
 from __future__ import annotations
 
@@ -24,6 +30,12 @@ XB, XTR, XCB, XI, XM = (XT["baseline"], XT["trailing"], XT["trailing_floor"],
                         XT["improve"], XT["_meta"])
 BV = json.loads((OUT / "backtest_vwap_results.json").read_text())
 BVM = BV["_meta"]
+RK = json.loads((OUT / "ranking.json").read_text())        # unified ranking, correct 231-session basis
+RKM = RK["_meta"]
+XL = json.loads((OUT / "exit_lab.json").read_text())        # full exit engine, correct 231-session basis
+XLB = XL["baseline"]
+XLR = XL["variants"][XL["recommended"]]                     # recommended overlay (trail 30 / floor 40)
+XLP = XL["stage2_joint"]["bps"]                             # the bps joint-grid selection block
 QSLOW = Q["Refined + slow-vol sizing"]
 QBASE = Q["Base quincena (<=15)"]
 QCAL = next(v for k, v in Q.items() if k.startswith("Real calendar"))
@@ -297,6 +309,72 @@ def dist_table():
     return "".join(out)
 
 
+def ranking_table():
+    """Every strategy re-priced on ONE basis (VWAP-to-VWAP, $1M/trade, 231 sessions/yr),
+    ranked by in-sample Sharpe. Supersedes the per-module tables for cross-strategy
+    comparison. The out-of-sample column is carried for honesty, never used to order."""
+    fam_col = {"exit": "blue", "calendar": "ok", "flow": "no", "trend": "mb", "benchmark": "muted"}
+    out = ['<table><tr><th>#</th><th>Strategy · VWAP-priced, net 0.65 CRC RT, 231 sess/yr</th>'
+           '<th>Family</th><th class="num">IS Sharpe</th><th class="num">OOS Sharpe</th>'
+           '<th class="num">IS $/yr</th><th class="num">IS max DD</th></tr>']
+    for r in RK["ranking"]:
+        best = r["rank_is"] == 1
+        rc = ' class="rowbest"' if best else ""
+        star = ' <span class="best">top of book</span>' if best else ""
+        fc = fam_col.get(r["family"], "muted")
+        i, o = r["is"], r["oos"]
+        out.append(f'<tr{rc}><td class="num">{r["rank_is"]}</td><td>{r["label"]}{star}</td>'
+                   f'<td class="{fc}">{r["family"]}</td>'
+                   f'<td class="num {scls(i["sharpe"])}">{i["sharpe"]}</td>'
+                   f'<td class="num {scls(o["sharpe"])}">{o["sharpe"]}</td>'
+                   f'<td class="num">{usd(i["per_year_usd"])}</td>'
+                   f'<td class="num">{usd(i["maxdd_usd"])}</td></tr>')
+    out.append("</table>")
+    return "".join(out)
+
+
+def exit_marginal_table():
+    """Stage-1 marginal value of each exit mechanism ALONE (best bps setting, in-sample)."""
+    bm = XL["stage1_best_per_mechanism"]
+    verdict = {"trail_bps": ("helps", "ok"), "floor_bps": ("helps — more OOS than IS", "ok"),
+               "target_bps": ("HURTS out-of-sample", "no"), "max_days_sessions": ("no value", "muted")}
+    label = {"trail_bps": "Trailing stop", "floor_bps": "Hard stop-loss",
+             "target_bps": "Take-profit", "max_days_sessions": "Time stop"}
+    unit = {"trail_bps": "bps", "floor_bps": "bps", "target_bps": "bps", "max_days_sessions": "sessions"}
+    out = ['<table><tr><th>Mechanism (alone, on the calendar entry)</th><th class="num">Best setting</th>'
+           '<th class="num">IS Sharpe</th><th class="num">OOS Sharpe</th><th>Verdict</th></tr>']
+    for k in ["trail_bps", "floor_bps", "target_bps", "max_days_sessions"]:
+        b = bm[k]
+        vtxt, vcls = verdict[k]
+        out.append(f'<tr><td>{label[k]}</td><td class="num">{b["value"]} {unit[k]}</td>'
+                   f'<td class="num {scls(b["is_sharpe"])}">{b["is_sharpe"]}</td>'
+                   f'<td class="num {scls(b["oos_sharpe"])}">{b["oos_sharpe"]}</td>'
+                   f'<td class="{vcls}">{vtxt}</td></tr>')
+    out.append(f'<tr><td class="muted">Baseline — no exit (calendar entry only)</td>'
+               f'<td class="num muted">—</td>'
+               f'<td class="num">{XLB["is"]["sharpe"]}</td><td class="num">{XLB["oos"]["sharpe"]}</td>'
+               f'<td class="muted">reference</td></tr>')
+    out.append("</table>")
+    return "".join(out)
+
+
+def take_profit_table():
+    """The take-profit sweep on top of trail 30 + floor 40 — the negative result, stated plainly."""
+    out = ['<table><tr><th>Take-profit added to trail 30 + floor 40</th>'
+           '<th class="num">IS Sharpe</th><th class="num">OOS Sharpe</th>'
+           '<th class="num">IS $/yr</th><th class="num">OOS $/yr</th></tr>']
+    for r in XL["take_profit_sweep"]:
+        tg = "none" if r["target_bps"] is None else f'{r["target_bps"]} bps'
+        rc = ' class="rowbest"' if r["target_bps"] is None else ""
+        out.append(f'<tr{rc}><td>{tg}</td>'
+                   f'<td class="num {scls(r["is_sharpe"])}">{r["is_sharpe"]}</td>'
+                   f'<td class="num {scls(r["oos_sharpe"])}">{r["oos_sharpe"]}</td>'
+                   f'<td class="num">{usd(r["is_per_yr"])}</td>'
+                   f'<td class="num">{usd(r["oos_per_yr"])}</td></tr>')
+    out.append("</table>")
+    return "".join(out)
+
+
 # --------------------------------------------------------------------------- #
 # Part C — per-rule logic, as tabs (recommended rule is the default)
 # --------------------------------------------------------------------------- #
@@ -382,6 +460,9 @@ HTML = f"""<!doctype html>
  .lead {{ background:var(--card); border-left:3px solid var(--accent); border-radius:0 10px 10px 0;
    padding:16px 20px; margin:8px 0 0; }}
  .lead b {{ color:var(--accent); }}
+ .note {{ background:rgba(224,168,61,0.08); border:1px solid var(--warn); border-radius:10px;
+   padding:12px 16px; margin:16px 0 0; font-size:13px; color:var(--ink); }}
+ .note b {{ color:var(--warn); }}
  .rule {{ background:var(--card); border:1px solid var(--line); border-radius:12px; padding:2px 18px;
    margin:12px 0; break-inside:avoid; }}
  .rule h4 {{ margin:14px 0 6px; font-size:15px; color:var(--blue); }}
@@ -457,6 +538,13 @@ exit</b> (A5) is a second, independent way to cut the same reversion tail. Every
 secondary signals are kept in tabs but default to this rule.</p>
 
 <div class="kpis" style="margin-top:16px">{kpi_html()}</div>
+
+<p class="note"><b>Two accounting bases in this report.</b> Parts A–F are priced on the legacy
+<b>252</b>-session/yr annualisation used by the per-module scripts; MONEX actually trades
+<b>{RKM['sessions_per_year_actual']:.0f}</b> sessions/yr, so those $/yr figures run ~{RKM['per_year_usd_legacy_inflation']*100:.0f}%
+high and their Sharpes ~{RKM['sharpe_legacy_inflation']*100:.1f}% high. The <b>unified ranking (Part R)</b> and the
+<b>full exit engine (A5b)</b> below are the newest runs and are already on the correct {RKM['sessions_per_year_actual']:.0f}-session
+basis — read those two as the authoritative cross-strategy numbers; they supersede the per-module tables.</p>
 
 <div class="part">Part A · The recommended strategy — calendar / quincena rule</div>
 <h2><span class="n">A1.</span> The rule &amp; the numbers ($1M per trade, VWAP-priced, net of cost)</h2>
@@ -566,6 +654,51 @@ apply blindly together.</p>
      " result on the post-deadline reversion — that one exit is worth ~" + str(XT['episode']['saved_bps']) +
      " bps. The overlay does this systematically across trades; it is the mechanism, on a single trade.")}
 
+<h2><span class="n">A5b.</span> The full exit engine — which stop actually helps (newest run, {RKM['sessions_per_year_actual']:.0f}-session basis)</h2>
+<p class="lead">A5's trailing overlay was tuned by <code>exits.py</code>. The newest run
+(<code>exit_lab.py</code>) rebuilds it as a <b>four-mechanism engine</b> — trailing stop, hard stop-loss,
+take-profit and time stop — each tested <b>alone</b> before any are combined, everything selected on the
+in-sample 60% only and priced on the correct <b>{XL['_meta']['sessions_per_year']:.0f} sessions/yr</b>. The
+verdict is sharper than before: <b>a stop-loss helps, a take-profit actively hurts.</b> The recommended overlay
+is <b>trailing {XLP['parsimonious']['trail']} bps + hard stop {XLP['parsimonious']['floor']} bps, no
+take-profit</b> — in-sample Sharpe <b>{XLR['is']['sharpe']}</b> → out-of-sample <b>{XLR['oos']['sharpe']}</b>
+(the overlay does not decay out of sample), cutting the worst drawdown from {usd(XLB['full']['maxdd_usd'])} to
+{usd(XLR['full']['maxdd_usd'])}.</p>
+{exit_marginal_table()}
+{fig("xl_marginal.png", "Marginal value of each exit mechanism ALONE, on the calendar entry",
+     "Each mechanism swept on its own (dashed = no-exit in-sample baseline " + str(XLB['is']['sharpe']) +
+     ", dotted = out-of-sample " + str(XLB['oos']['sharpe']) + "). Trailing and hard stops lift Sharpe across a "
+     "broad band; the take-profit panel slopes the wrong way — tightening it costs Sharpe — and the time stop "
+     "adds nothing.")}
+<p class="lead"><b>Take-profit is the clear negative result, worth stating plainly.</b> Added on top of the
+trail {XLP['parsimonious']['trail']} / floor {XLP['parsimonious']['floor']} overlay, tightening the target
+degrades the out-of-sample Sharpe monotonically ({XL['take_profit_sweep'][0]['oos_sharpe']} with none →
+{XL['take_profit_sweep'][-1]['oos_sharpe']} at 80 bps). The calendar edge is a <i>drift</i> that accrues while
+the trade is held into the deadline, so capping the winner truncates exactly the move the strategy exists to
+capture.</p>
+{take_profit_table()}
+{fig("xl_plateau_bps.png", "Does in-sample selection survive out-of-sample? Every parameter set plotted",
+     "All " + str(XLP['n_trials']) + " joint-grid cells, in-sample Sharpe (the selection metric) vs "
+     "out-of-sample. corr(IS, OOS) = " + f"{XLP['is_oos_corr']:+.2f}" + " — in-sample ranking genuinely "
+     "predicts out-of-sample for this parameter family. The chosen point (red) sits on the IS=OOS diagonal, "
+     "not above it. Deflated-Sharpe P(true>0) ≈ " + str(XLP['deflated_sharpe_prob']) + " over the "
+     + str(XLP['n_trials']) + " trials; the 18 neighbours of the winner hold a median "
+     + str(XLP['neighbourhood']['median_is_sharpe']) + " (" +
+     f"{XLP['neighbourhood']['ratio_to_best']*100:.0f}%" + " of peak) — a plateau, not a spike.")}
+{fig("xl_equity.png", "Calendar entry with and without the exit overlay — equity &amp; drawdown",
+     "Red line = the in-sample / out-of-sample boundary; the bands are tuned only to the left of it. The "
+     "overlay (green) tracks the baseline's compounding while its drawdowns (lower panel) are visibly "
+     "shallower throughout.")}
+<p class="lead"><b>But read the overlay as a RISK improvement, not more money.</b> A paired t-test on the daily
+out-of-sample P&amp;L difference gives t = {XL['alpha_vs_risk']['paired_t']}, <b>p = {XL['alpha_vs_risk']['paired_p']}</b>:
+total P&amp;L is statistically unchanged (indeed nominally {usd(XL['alpha_vs_risk']['oos_total_usd_delta'])} lower
+out of sample). What the overlay buys is <b>+{XL['alpha_vs_risk']['oos_sharpe_delta']} out-of-sample Sharpe and a
+~{abs(XL['alpha_vs_risk']['oos_maxdd_delta'])/abs(XLB['oos']['maxdd_usd'])*100:.0f}% cut in max drawdown</b> — a
+smoother path you can size up, not the same notional earning more. Volatility-scaled bands (trail
+{XL['stage2_joint']['vol']['parsimonious']['trail']}× / floor {XL['stage2_joint']['vol']['parsimonious']['floor']}×
+realised vol) scored <i>worse</i> than fixed bps in both windows and are reported as a negative result, not
+dropped.</p>
+
 <h2><span class="n">A6.</span> The position against the price</h2>
 {fig("q_position_shading.png", "USD/CRC session VWAP shaded by the recommended calendar position",
      f"Green = long USD, red = short USD (short ≤{CAL_PRE} business days into the IVA/quincena deadline). "
@@ -661,6 +794,40 @@ signals and the ML model follow. Equity curves are tabbed — recommended first.
          "look-ahead), permutation p=" + str(R['perm_p']) + ".")),
 ])}
 
+<div class="part">Part R · Unified ranking — every strategy on one honest basis (newest run)</div>
+<p class="lead">Until this run each module carried its own accounting, so the headline numbers were <b>not
+comparable</b> — <code>strategies.py</code> reported gross Sharpe, <code>backtest.py</code> priced
+close-to-close in bps, the calendar modules priced VWAP in dollars. <code>src/rank_strategies.py</code>
+re-implements <b>every</b> rule against ONE frame and ONE basis — VWAP-to-VWAP, $1M/trade, 0.325 CRC per side,
+annualised on the real <b>{RKM['sessions_per_year_actual']:.0f} sessions/yr</b> — and ranks by <b>in-sample</b>
+Sharpe (first 60% of history, split {RKM['split_date']}). The out-of-sample column is carried for honesty and
+never feeds the ordering. This table <b>supersedes the per-module tables</b> for cross-strategy comparison.</p>
+{ranking_table()}
+{fig("ranking.png", "Every strategy ranked on one common accounting basis (in-sample net Sharpe)",
+     "The calendar family (green) owns the top of the book and the flow family (red) owns the bottom — "
+     "in-sample. The top three seats are the calendar entry plus an exit overlay; the recommended trail 30 + "
+     "floor 40 leads at IS Sharpe " + str(RK['ranking'][0]['is']['sharpe']) + " → OOS " +
+     str(RK['ranking'][0]['oos']['sharpe']) + ".")}
+<ul class="find">
+ <li><b>The calendar family owns the top, the flow family owns the bottom — in-sample.</b> Every flow rule
+   (order-flow, volume, skew, combined vote) is worthless-to-negative on 2014–2021 and only works on
+   2021–2026. Their full-sample numbers average a dead regime with a live one, which is exactly why they read
+   as mediocre-but-real rather than regime-contingent.</li>
+ <li><b>The flow rules carry catastrophic drawdowns</b> — {usd(RK['ranking'][14]['is']['maxdd_usd'])} to
+   {usd(RK['ranking'][10]['is']['maxdd_usd'])} in-sample against the calendar rule's
+   {usd(RK['ranking'][0]['is']['maxdd_usd'])}–{usd(RK['ranking'][7]['is']['maxdd_usd'])}, at 80–97 round
+   trips/yr. Even where the out-of-sample Sharpe looks excellent (Combined vote
+   {RK['ranking'][10]['oos']['sharpe']}), the path is not something a desk would fund.</li>
+ <li><b>Sanity check on the harness:</b> "Always long USD" (IS {RK['ranking'][8]['is']['sharpe']} / OOS
+   {RK['ranking'][8]['oos']['sharpe']}) and "Always short USD" (IS {RK['ranking'][15]['is']['sharpe']} / OOS
+   {RK['ranking'][15]['oos']['sharpe']}) are near-exact mirrors, as two opposite always-on positions must be —
+   confirming the P&amp;L and cost accounting.</li>
+ <li class="muted"><b>Honest caveat on the metric.</b> Because the in-sample window (2014–2021) is the
+   pegged/low-vol regime and the out-of-sample window (2021–2026) is the float, in-sample selection
+   structurally penalises any regime-contingent signal. The calendar rule wins partly <i>because</i> it is the
+   one edge that works in both — a real virtue, but not the same claim as "the flow signals don't work."</li>
+</ul>
+
 <div class="part">Part E · Raw relationships behind the signals</div>
 <h2><span class="n">E1.</span> Low volume → USD up (seasonally adjusted)</h2>
 {fig("vm_vol_nextret.png", "Next-day USD move by volume quintile",
@@ -727,12 +894,21 @@ because the VWAP is a steadier reference than a single closing tick.</p>
    skew turns <b>positive ({RD['Calendar + slow-vol']['skew']:+.2f})</b> and the worst trade halves
    ({usd(RD['Base quincena (≤15)']['min'])} → {usd(RD['Calendar + slow-vol']['min'])}). That tail control, not
    the headline P&amp;L, is why this is the pick.</li>
- <li><b>A dynamic exit is an optional second tail control (A5).</b> On the flat-sized calendar entry, a
-   {XM['trail_bps']}-bps <b>trailing stop</b> that banks each trade once the move stalls lifts P&amp;L to
-   {usd(XTR['full']['per_year_usd'])}/yr (Sharpe {XTR['full']['sharpe']}), and a hard {XM['combo_floor_bps']}-bps
-   floor takes Sharpe to {XCB['full']['sharpe']} while nearly halving the worst drawdown
-   ({usd(XB['full']['maxdd_usd'])} → {usd(XCB['full']['maxdd_usd'])}) — up in both windows. It is an
-   alternative route to the same tail control as the slow-vol trim, not a replacement or a required stack.</li>
+ <li><b>A dynamic exit is an optional second tail control (A5 / A5b).</b> The newest exit-engine run
+   (<code>exit_lab.py</code>, {XL['_meta']['sessions_per_year']:.0f}-session basis) settles the design: on the
+   calendar entry, a <b>trailing {XLP['parsimonious']['trail']} bps + hard stop {XLP['parsimonious']['floor']} bps</b>
+   overlay lifts the in-sample Sharpe from {XLB['is']['sharpe']} to <b>{XLR['is']['sharpe']}</b> and the
+   out-of-sample from {XLB['oos']['sharpe']} to <b>{XLR['oos']['sharpe']}</b>, cutting the worst drawdown
+   {usd(XLB['full']['maxdd_usd'])} → {usd(XLR['full']['maxdd_usd'])}. But a paired test (p =
+   {XL['alpha_vs_risk']['paired_p']}) shows total P&amp;L is unchanged — it is a <b>risk</b> improvement, a
+   smoother path to size up, not more money. <b>A take-profit actively hurts</b> and is not recommended. It is
+   an alternative route to the same tail control as the slow-vol trim, not a required stack.</li>
+ <li><b>Ranked on one honest basis (Part R), the calendar family dominates.</b> Re-priced identically on the
+   real {RKM['sessions_per_year_actual']:.0f} sessions/yr, the top three seats are the calendar entry plus an
+   exit overlay (recommended trail {XLP['parsimonious']['trail']} + floor {XLP['parsimonious']['floor']}, IS
+   Sharpe {RK['ranking'][0]['is']['sharpe']} → OOS {RK['ranking'][0]['oos']['sharpe']}), the flow rules sit at
+   the bottom with {usd(RK['ranking'][14]['is']['maxdd_usd'])}-class drawdowns, and the mirror-image benchmarks
+   confirm the accounting. It is the one edge that works in both the pegged and the float regimes.</li>
  <li><b>Your volume thesis is correct but must be traded gently.</b> Low volume → USD up is real and
    monotonic, but a daily flip pays much of it to slippage even VWAP-priced. Its value here is exactly as the
    <i>slow filter</i> that sizes the calendar trade — that is what turns the plain calendar rule into the
@@ -759,7 +935,9 @@ because the VWAP is a steadier reference than a single closing tick.</p>
   <b>out-of-sample</b> realisation on the held-out 40% ({OREC['split_date']} → {OREC['oos_end']}). Nothing is
   re-fit on the test window. In-sample / out-of-sample = chronological 60/40 split at {OREC['split_date']}.
   Reproducible:
-  <code>parse_monex → analyze → eda → volume_model → dynamics → quincena → exits → backtest_vwap → build_report</code>.
+  <code>parse_monex → analyze → eda → volume_model → dynamics → quincena → exits → backtest_vwap → rank_strategies → exit_lab → build_report</code>.
+  Parts R and A5b read <code>ranking.json</code> / <code>exit_lab.json</code>, both annualised on the venue's
+  real {RKM['sessions_per_year_actual']:.0f} sessions/yr; Parts A–F retain the legacy 252 basis of their source modules.
 </footer>
 
 </div>{JS}</body></html>"""
