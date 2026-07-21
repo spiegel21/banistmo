@@ -1,12 +1,13 @@
 # USD/CRC (MONEX) — Flow & Seasonality model (no technical indicators)
 
 > **⚠️ Annualisation caveat — read before quoting any figure below.**
-> Every module except `rank_strategies.py` and `exit_lab.py` annualises with a
-> hardcoded **252** trading days/year. MONEX actually trades **231.0** sessions/year
+> Every module except `rank_strategies.py`, `exit_lab.py` and `intervention.py`
+> annualises with a hardcoded **252** trading days/year. MONEX actually trades **231.0** sessions/year
 > (2,663 sessions over 11.53 calendar years). So every `$/yr` figure on this page
 > that came from the legacy modules is **overstated by ~9.1%**, and every Sharpe by
 > **~4.5%**. To convert to the correct basis: divide $/yr by 1.091 and Sharpe by 1.045.
-> `out/ranking.json` and `out/exit_lab.json` are already on the correct basis.
+> `out/ranking.json`, `out/exit_lab.json` and `out/intervention_results.json` are
+> already on the correct basis.
 > See **[Unified ranking](#unified-ranking--every-strategy-on-one-basis)** below, which
 > supersedes the per-module tables for cross-strategy comparison.
 
@@ -268,9 +269,62 @@ Overfitting controls, all passed:
 vs 23.4 bps out-of-sample — scores *worse* than fixed bps in both windows (IS 3.47 / OOS 3.21
 vs 3.70 / 3.92). Reported as a negative result rather than dropped.
 
-## Público vs privado volume — NOT possible with this file
+## Público vs privado volume — now possible with the intervention file
 
-The MONEX export contains only *aggregate* traded volume. Splitting público (BCCR /
-sector público) vs privado flow needs a different BCCR dataset (sector-level MONEX /
-ventanilla breakdown). Provide that and the mid-month supply surge can be attributed
-to a specific sector.
+The MONEX export contains only *aggregate* traded volume, but BCCR's **FX-intervention**
+cuadro (CodCuadro 1587) breaks out the official side, so the público/privado split the
+earlier version said was impossible is now available. `src/parse_bccr.py` parses it (and
+the month-end **net reserves**, CodCuadro 8); `src/intervention.py` folds both into the
+calendar strategy.
+
+### The official footprint is large
+
+Official flow — the BCCR's own band / stabilisation / own-account interventions **plus the
+non-bank public sector's (RECOPE et al.) USD requirement routed through MONEX** — is a
+**median ~52 % of daily MONEX volume**, present on ~89 % of sessions. So MONEX volume is not
+a clean read of private supply/demand: roughly half of it is official on a typical day. The
+**differential** (total MONEX − official) is the private flow, and the *signed* official
+buy/sell split is information the unsigned volume series simply cannot carry.
+
+### The intervention explains the calendar reversion
+
+Official (and specifically public-sector) USD demand **peaks at and just after the IVA /
+quincena deadline** — precisely the trading days where the colón strengthens hardest
+next-session (−10 to −17 bps). Heavy official demand does not push USD up; it **marks the
+turn**, where private mid-month supply overwhelms. Contemporaneous official net-buying is
+negatively correlated with the next-day move (**corr −0.25**; top-quintile official-buying
+days average −13.6 bps next-day vs +6.6 for the bottom). This is the same post-deadline
+reversion the exit overlay harvests — now with a mechanism. But the signal **decays to −0.08
+when lagged one session** and depends on same-day disclosure of the intervention figures, so
+it is reported as *mechanism*, not used as a live entry signal.
+
+### The tradeable win is the reserves, not the daily flow
+
+| Calendar rule · VWAP · $1M/trade · 231 sess/yr | IS Sharpe | OOS Sharpe | Full $/yr | Max DD |
+|-----------------------------------------------|----------:|-----------:|----------:|-------:|
+| Calendar + trail30/floor40 (published best)   | 3.70 | 3.92 | $114k | −$26k |
+| **+ reserve-regime long-trim** (new)          | 3.55 | **4.09** | $102k | **−$22k** |
+| + official-flow trim (lagged, strictly causal)| 3.37 | 4.07 | $84k | −$21k |
+| *control:* blind long-trim (no BCCR data)     | 3.62 | 4.10 | $86k | −$21k |
+
+- **Reserve-regime trim.** When BCCR reserves are **rising** (the bank accumulating USD, a
+  colón-supportive regime), trim long-USD size to half. Strictly causal — reserves are a
+  lagged monthly figure with no disclosure issue — and a fixed a-priori rule. Stacked on the
+  exit overlay it lifts OOS Sharpe 3.92 → 4.09 and cuts drawdown −$26k → −$22k.
+- **It is not just "trim longs."** A blind control that halves *every* long reaches a
+  similar OOS Sharpe, but the reserve-selective trim earns **+$56k more out-of-sample**
+  (paired t = +3.31, **p = 0.001**) at the same risk reduction: it keeps full size on the
+  longs the reserve regime says are safe and cuts only the flagged ones.
+- **Redundancy caveat.** The daily official-flow trim lands in the same place as the existing
+  slow-volume trim — unsurprising, since official flow *is* part of volume. Its value is
+  confirmatory (a second, independent BCCR series pointing the same way), not additive.
+- Like the exit overlay, these are **risk** improvements (lower drawdown, higher Sharpe,
+  slightly lower total P&L), not new alpha. Charts: `out/iv_share.png`, `out/iv_intramonth.png`,
+  `out/iv_direction.png`, `out/iv_strategy.png`, `out/iv_reserves.png`.
+
+### Dominant risk, restated
+
+The official footprint makes the re-peg / heavy-intervention risk concrete: the BCCR is
+already ~half of MONEX and could mute both the calendar and the flow edges at will. The
+reserve trim is a partial hedge (it de-risks long-USD exactly when the bank is accumulating),
+not an escape from that regime risk.

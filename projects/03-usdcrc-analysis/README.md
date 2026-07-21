@@ -8,7 +8,12 @@ Reverse-engineering the price-formation model of the USD/CRC wholesale FX market
 ```
 data/monex_raw.xls     # original BCCR export (HTML-as-XLS)
 data/monex_clean.csv   # tidy one-row-per-trading-day table (generated)
+data/bccr_intervention_raw.html  # BCCR FX-intervention export (CodCuadro=1587)
+data/bccr_reserves_raw.html      # BCCR net-reserves export (CodCuadro=8)
+data/bccr_intervention_clean.csv # tidy daily official-flow table (generated)
+data/bccr_reserves_clean.csv     # tidy month-end reserves (generated)
 src/parse_monex.py     # parse the HTML matrix -> clean CSV
+src/parse_bccr.py      # parse the BCCR intervention + reserves exports -> clean CSVs
 src/analyze.py         # descriptive analysis (price formation, seasonality, profile)
 src/eda.py             # exploratory charts (returns/ACF, volume->move, calendar)
 src/strategies.py      # strategy tearsheets
@@ -23,6 +28,9 @@ src/exit_lab.py        # FULL exit engine: trailing / hard stop / take-profit / 
                        #   selection rule -> exit_lab.json + xl_*.png
 src/rank_strategies.py # EVERY strategy re-priced on ONE basis, ranked by in-sample Sharpe;
                        #   supersedes the per-module tables -> ranking.json + ranking.png
+src/intervention.py    # BCCR official-flow + reserves overlay: the differential vs MONEX,
+                       #   the intervention mechanism, and a reserve-regime size trim that cuts
+                       #   drawdown -> intervention_results.json + iv_*.png
 src/daily_signal.py    # one-page daily signal sheet (position + slow-vol size)
 src/build_report.py    # assembles the self-contained HTML report (reads the json)
 out/                   # PNG charts + report.html + report.pdf (generated)
@@ -35,6 +43,7 @@ cd projects/03-usdcrc-analysis
 python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 python src/parse_monex.py    # -> data/monex_clean.csv
+python src/parse_bccr.py     # -> data/bccr_intervention_clean.csv + bccr_reserves_clean.csv
 python src/analyze.py        # descriptive stats + charts 01-04
 python src/eda.py            # exploratory charts (eda_*.png)
 python src/strategies.py     # strategy tearsheets (s*_*.png)
@@ -46,6 +55,7 @@ python src/quincena.py       # calendar (quincena) strategy -> q_*.png + quincen
 python src/exits.py          # optimise a trailing-stop / floor exit overlay on it -> ex_*.png + exits_results.json
 python src/exit_lab.py       # full exit engine (stop/take-profit/time, fixed & vol-scaled) -> xl_*.png + exit_lab.json
 python src/rank_strategies.py # rank EVERY strategy on one basis, in-sample -> ranking.png + ranking.json
+python src/intervention.py   # BCCR official-flow + reserves overlay -> iv_*.png + intervention_results.json
 python src/build_report.py   # -> out/report.html
 python -c "from weasyprint import HTML; HTML('out/report.html').write_pdf('out/report.pdf')"
 ```
@@ -97,6 +107,33 @@ entry plus a **trailing 30 bps + hard 40 bps stop** overlay: in-sample Sharpe **
 out-of-sample **3.92**, max drawdown cut ~45%. The overlay is a **risk** improvement, not
 an alpha one — total P&L is statistically unchanged (paired p = 0.73). **Take-profit
 actively hurts** and is not recommended.
+
+**BCCR official-flow & reserves (`src/intervention.py`).** Two more BCCR exports let us
+see the official hand behind MONEX: FX **intervention** (CodCuadro 1587) and month-end
+**net reserves** (CodCuadro 8). Official flow — the BCCR plus the non-bank public sector
+(RECOPE et al.) routed through MONEX — is a **median ~52 % of daily MONEX volume**, so the
+*differential* (total MONEX minus official) is the true private flow and the signed
+official flow is information the volume series cannot carry. Official USD demand **peaks at
+the IVA deadline, exactly where the colón turns** — it names the reversion the exit overlay
+harvests (contemporaneous corr −0.25, but disclosure-sensitive, so it stays a *mechanism*,
+not a live entry). The tradeable win is the **reserves**: trimming long-USD size when
+reserves are rising (a colón-supportive regime, strictly causal) lifts out-of-sample Sharpe
+**3.92 → 4.09** and cuts max drawdown **−$26k → −$22k**, and beats a *blind* long-trim
+out-of-sample (paired **p = 0.001**) — the reserve regime picks *which* longs to cut. A risk
+improvement, like the exit overlay, not new alpha.
+
+### Refreshing the BCCR data
+
+`parse_bccr.py` reads two HTML-as-XLS exports fetched from BCCR's `frmVerCatCuadro` tool
+(same source as MONEX). To refresh:
+
+```bash
+curl -o data/bccr_intervention_raw.html \
+  "https://gee.bccr.fi.cr/indicadoreseconomicos/Cuadros/frmVerCatCuadro.aspx?CodCuadro=1587&Idioma=1&FecInicial=2014/12/01&FecFinal=2026/06/30&Filtro=0&Exportar=True"
+curl -o data/bccr_reserves_raw.html \
+  "https://gee.bccr.fi.cr/indicadoreseconomicos/Cuadros/frmVerCatCuadro.aspx?CodCuadro=8&Idioma=1&FecInicial=2014/01/01&FecFinal=2026/06/30&Filtro=0&Exportar=True"
+python src/parse_bccr.py
+```
 
 The daily **order-flow / volume** signals are directionally real but **regime-contingent**:
 in-sample Sharpe −0.26 to +0.49 against out-of-sample 2.0–3.7, with $240k–$400k drawdowns

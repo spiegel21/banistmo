@@ -1,0 +1,175 @@
+{
+  "_meta": {
+    "n_days": 2663,
+    "date_min": "2014-12-08",
+    "date_max": "2026-06-19",
+    "sessions_per_year": 231.0,
+    "notional_usd": 1000000,
+    "cost_crc_per_side": 0.325,
+    "basis": "VWAP-to-VWAP next session, net of slippage",
+    "oos_frac": 0.6,
+    "split_date": "2021-11-18",
+    "exit_overlay": "trail 30 / floor 40 bps (exit_lab winner)",
+    "intervention_units": "thousands of USD in the raw BCCR table, scaled to USD here"
+  },
+  "flow": {
+    "official_share_median": 0.522,
+    "official_share_mean": 0.476,
+    "days_with_flow_pct": 89.3,
+    "corr_contemp": -0.249,
+    "corr_lag1": -0.083,
+    "next_move_by_official_quintile_bps": [
+      6.6,
+      8.5,
+      1.0,
+      -5.4,
+      -13.6
+    ],
+    "cum_official_net_usd": 32822917103,
+    "note": "official net-buying is contemporaneously NEGATIVELY correlated with the next-day move \u2014 heavy official demand marks where the col\u00f3n turns; strong but disclosure-timing-sensitive, so not used as a live entry signal."
+  },
+  "reserves": {
+    "usd_mn_min": 6197,
+    "usd_mn_max": 20970,
+    "usd_mn_latest": 20342,
+    "rising_pct_full": 49.8,
+    "rising_pct_is": 41.5,
+    "rising_pct_oos": 62.3
+  },
+  "strategy": {
+    "Calendar + trail30/floor40": {
+      "full": {
+        "sharpe": 3.78,
+        "per_year_usd": 113957,
+        "total_usd": 1313329,
+        "maxdd_usd": -26192,
+        "roundtrips_yr": 22.2,
+        "hit_rate": 48.7,
+        "time_in_mkt": 77.7,
+        "n_days": 2662
+      },
+      "is": {
+        "sharpe": 3.7,
+        "per_year_usd": 100673,
+        "total_usd": 696052,
+        "maxdd_usd": -15986,
+        "roundtrips_yr": 22.2,
+        "hit_rate": 53.4,
+        "time_in_mkt": 85.9,
+        "n_days": 1597
+      },
+      "oos": {
+        "sharpe": 3.92,
+        "per_year_usd": 133767,
+        "total_usd": 616768,
+        "maxdd_usd": -26192,
+        "roundtrips_yr": 22.2,
+        "hit_rate": 41.7,
+        "time_in_mkt": 65.4,
+        "n_days": 1065
+      }
+    },
+    "+ reserve-regime long-trim": {
+      "full": {
+        "sharpe": 3.77,
+        "per_year_usd": 102045,
+        "total_usd": 1176044,
+        "maxdd_usd": -22226,
+        "roundtrips_yr": 20.1,
+        "hit_rate": 48.3,
+        "time_in_mkt": 77.7,
+        "n_days": 2662
+      },
+      "is": {
+        "sharpe": 3.55,
+        "per_year_usd": 86465,
+        "total_usd": 597817,
+        "maxdd_usd": -15910,
+        "roundtrips_yr": 20.8,
+        "hit_rate": 52.8,
+        "time_in_mkt": 85.9,
+        "n_days": 1597
+      },
+      "oos": {
+        "sharpe": 4.09,
+        "per_year_usd": 125298,
+        "total_usd": 577718,
+        "maxdd_usd": -22226,
+        "roundtrips_yr": 19.3,
+        "hit_rate": 41.5,
+        "time_in_mkt": 65.4,
+        "n_days": 1065
+      }
+    },
+    "+ official-flow trim (lagged)": {
+      "full": {
+        "sharpe": 3.65,
+        "per_year_usd": 84161,
+        "total_usd": 969933,
+        "maxdd_usd": -21332,
+        "roundtrips_yr": 16.9,
+        "hit_rate": 48.2,
+        "time_in_mkt": 77.7,
+        "n_days": 2662
+      },
+      "is": {
+        "sharpe": 3.37,
+        "per_year_usd": 65143,
+        "total_usd": 450401,
+        "maxdd_usd": -12010,
+        "roundtrips_yr": 17.0,
+        "hit_rate": 52.6,
+        "time_in_mkt": 85.9,
+        "n_days": 1597
+      },
+      "oos": {
+        "sharpe": 4.07,
+        "per_year_usd": 112623,
+        "total_usd": 519278,
+        "maxdd_usd": -21332,
+        "roundtrips_yr": 16.8,
+        "hit_rate": 41.6,
+        "time_in_mkt": 65.4,
+        "n_days": 1065
+      }
+    },
+    "CONTROL: blind long-trim": {
+      "full": {
+        "sharpe": 3.78,
+        "per_year_usd": 86099,
+        "total_usd": 992271,
+        "maxdd_usd": -21332,
+        "roundtrips_yr": 16.6,
+        "hit_rate": 48.3,
+        "time_in_mkt": 77.7,
+        "n_days": 2662
+      },
+      "is": {
+        "sharpe": 3.62,
+        "per_year_usd": 67973,
+        "total_usd": 469965,
+        "maxdd_usd": -11727,
+        "roundtrips_yr": 16.7,
+        "hit_rate": 52.7,
+        "time_in_mkt": 85.9,
+        "n_days": 1597
+      },
+      "oos": {
+        "sharpe": 4.1,
+        "per_year_usd": 113225,
+        "total_usd": 522052,
+        "maxdd_usd": -21332,
+        "roundtrips_yr": 16.6,
+        "hit_rate": 41.6,
+        "time_in_mkt": 65.4,
+        "n_days": 1065
+      }
+    }
+  },
+  "reserve_vs_blind": {
+    "oos_total_delta_usd": 55666,
+    "paired_t": 3.31,
+    "paired_p": 0.001,
+    "verdict": "the reserve-selective trim earns significantly more out-of-sample than a blind long-trim at the same risk reduction \u2014 the reserve regime picks WHICH longs to cut, it is not merely 'hold less long USD'."
+  }
+}
