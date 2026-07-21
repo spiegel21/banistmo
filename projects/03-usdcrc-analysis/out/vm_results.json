@@ -60,24 +60,24 @@
   "vol_autocorr1": 0.578,
   "decomposition": {
     "volume_only": [
-      2.08,
-      2.88
+      2.0,
+      2.76
     ],
     "calendar_only": [
-      1.58,
-      2.03
+      1.51,
+      1.95
     ],
     "volume_plus_calendar": [
-      2.94,
-      3.81
+      2.81,
+      3.65
     ],
     "full_model": [
-      4.01,
-      4.92
+      3.84,
+      4.71
     ],
     "static_short_usd": [
-      0.35,
-      0.88
+      0.33,
+      0.84
     ]
   },
   "logit_coefs": {
@@ -102,89 +102,89 @@
   "oos_accuracy_logit": 0.695,
   "oos_accuracy_gbm": 0.694,
   "Logit (conviction)": {
-    "sharpe": 4.01,
+    "sharpe": 3.84,
     "mean_bps": 5.31,
-    "ann_bps": 1337.0,
+    "ann_bps": 1225.0,
     "hit": 52.3,
     "maxdd_bps": -359.0,
     "n": 2662,
-    "roundtrips_yr": 59.7
+    "roundtrips_yr": 54.7
   },
   "Logit (conviction)_2019": {
-    "sharpe": 4.92,
+    "sharpe": 4.71,
     "mean_bps": 7.49,
-    "ann_bps": 1888.0,
+    "ann_bps": 1731.0,
     "hit": 54.7,
     "maxdd_bps": -359.0,
     "n": 1726
   },
-  "Logit (conviction)_gross_sh": 6.14,
+  "Logit (conviction)_gross_sh": 5.88,
   "Logit (\u00b11)": {
-    "sharpe": 3.77,
+    "sharpe": 3.61,
     "mean_bps": 5.84,
-    "ann_bps": 1472.0,
+    "ann_bps": 1350.0,
     "hit": 60.8,
     "maxdd_bps": -407.0,
     "n": 2662,
-    "roundtrips_yr": 65.8
+    "roundtrips_yr": 60.3
   },
   "Logit (\u00b11)_2019": {
-    "sharpe": 4.67,
+    "sharpe": 4.47,
     "mean_bps": 8.37,
-    "ann_bps": 2108.0,
+    "ann_bps": 1933.0,
     "hit": 62.5,
     "maxdd_bps": -398.0,
     "n": 1726
   },
-  "Logit (\u00b11)_gross_sh": 5.89,
+  "Logit (\u00b11)_gross_sh": 5.64,
   "Gradient boosting": {
-    "sharpe": 3.85,
+    "sharpe": 3.69,
     "mean_bps": 5.26,
-    "ann_bps": 1325.0,
+    "ann_bps": 1215.0,
     "hit": 53.7,
     "maxdd_bps": -487.0,
     "n": 2662,
-    "roundtrips_yr": 62.3
+    "roundtrips_yr": 57.1
   },
   "Gradient boosting_2019": {
-    "sharpe": 4.83,
+    "sharpe": 4.62,
     "mean_bps": 7.64,
-    "ann_bps": 1924.0,
+    "ann_bps": 1764.0,
     "hit": 55.9,
     "maxdd_bps": -372.0,
     "n": 1726
   },
-  "Gradient boosting_gross_sh": 6.05,
+  "Gradient boosting_gross_sh": 5.79,
   "Simple flow+quincena rule": {
-    "sharpe": 2.32,
+    "sharpe": 2.22,
     "mean_bps": 2.93,
-    "ann_bps": 738.0,
+    "ann_bps": 676.0,
     "hit": 51.4,
     "maxdd_bps": -444.0,
     "n": 2662,
-    "roundtrips_yr": 39.6
+    "roundtrips_yr": 36.3
   },
   "Simple flow+quincena rule_2019": {
-    "sharpe": 2.94,
+    "sharpe": 2.82,
     "mean_bps": 4.33,
-    "ann_bps": 1092.0,
+    "ann_bps": 1001.0,
     "hit": 53.0,
     "maxdd_bps": -444.0,
     "n": 1726
   },
-  "Simple flow+quincena rule_gross_sh": 3.81,
+  "Simple flow+quincena rule_gross_sh": 3.65,
   "Logit (conviction)_is": {
-    "sharpe": 3.27,
+    "sharpe": 3.13,
     "mean_bps": 3.06,
-    "ann_bps": 770.0,
+    "ann_bps": 706.0,
     "hit": 47.8,
     "maxdd_bps": -297.0,
     "n": 1597
   },
   "Logit (conviction)_oos": {
-    "sharpe": 5.01,
+    "sharpe": 4.8,
     "mean_bps": 8.68,
-    "ann_bps": 2187.0,
+    "ann_bps": 2005.0,
     "hit": 56.4,
     "maxdd_bps": -359.0,
     "n": 1065

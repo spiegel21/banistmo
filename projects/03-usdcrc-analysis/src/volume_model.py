@@ -31,12 +31,12 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 
 from analyze import OUT, load
+from basis import ANN, SESSIONS_PER_YEAR
 
 warnings.filterwarnings("ignore")
 plt.rcParams.update({"figure.facecolor": "white", "axes.grid": True, "grid.alpha": 0.25,
                      "axes.spines.top": False, "axes.spines.right": False})
 NAVY, GREEN, RED, GREY, ORANGE, PURPLE = "#1f3b73", "#2e8b57", "#c0392b", "#7f8c8d", "#e08a2b", "#7d3c98"
-ANN = np.sqrt(252)
 COST_SIDE = 0.325            # 0.65 CRC round-trip
 DOW = ["Mon", "Tue", "Wed", "Thu", "Fri"]
 
@@ -138,11 +138,11 @@ def stats(net, turn=None, n=None, mask=None):
     x = x[~np.isnan(x)]
     cum = np.cumsum(x)
     out = {"sharpe": round(float(sharpe(x)), 2), "mean_bps": round(float(x.mean()), 2),
-           "ann_bps": round(float(x.mean() * 252), 0),
+           "ann_bps": round(float(x.mean() * SESSIONS_PER_YEAR), 0),
            "hit": round(float((x[x != 0] > 0).mean() * 100), 1) if (x != 0).any() else 0.0,
            "maxdd_bps": round(float((cum - np.maximum.accumulate(cum)).min()), 0), "n": int(len(x))}
     if turn is not None and n:
-        out["roundtrips_yr"] = round(float(np.nansum(turn) / 2 / (n / 252)), 1)
+        out["roundtrips_yr"] = round(float(np.nansum(turn) / 2 / (n / SESSIONS_PER_YEAR)), 1)
     return out
 
 

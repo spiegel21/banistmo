@@ -22,15 +22,15 @@ import pandas as pd
 from scipy import stats as sps
 
 from analyze import OUT, load
+from basis import ANN, SESSIONS_PER_YEAR
+from basis import NOTIONAL_USD as NOTIONAL
+from basis import COST_CRC_PER_SIDE as COST_SIDE_CRC
 from payment_calendar import annotate
 
 plt.rcParams.update({"figure.facecolor": "white", "axes.grid": True, "grid.alpha": 0.25,
                      "axes.spines.top": False, "axes.spines.right": False,
                      "text.parse_math": False})  # '$' are currency, not math delimiters
 NAVY, GREEN, RED, GREY, PURPLE = "#1f3b73", "#2e8b57", "#c0392b", "#7f8c8d", "#7d3c98"
-NOTIONAL = 1_000_000
-COST_SIDE_CRC = 0.325
-ANN = np.sqrt(252)
 SHORT_START, SHORT_END = 5, 15      # fixed day-of-month short-USD window (legacy proxy)
 CAL_PRE = 6                         # calendar rule: short USD this many trading days
                                     # before the IVA/quincena deadline, through the deadline
@@ -115,7 +115,7 @@ def dollars(pos, df):
 def stat(pos, df):
     net, turn = dollars(pos, df)
     cum = net.cumsum()
-    yrs = len(net) / 252
+    yrs = len(net) / SESSIONS_PER_YEAR
     bps = net / (NOTIONAL / 1e4)
     return {"total_usd": round(float(net.sum())), "per_year_usd": round(float(net.sum() / yrs)),
             "sharpe": round(float(bps.mean() / bps.std() * ANN), 2),
@@ -157,7 +157,7 @@ def chart_peryear(df, res):
     for y, g in df.groupby("year"):
         if len(g) < 50:
             continue
-        rows.append((y, stat(pos_base(g), g)["per_year_usd"] * len(g) / 252 / (len(g) / 252),
+        rows.append((y, stat(pos_base(g), g)["per_year_usd"] * len(g) / SESSIONS_PER_YEAR / (len(g) / SESSIONS_PER_YEAR),
                      dollars(pos_refined(g), g)[0].sum()))
     yr = [r[0] for r in rows]
     ref = [dollars(pos_refined(g), g)[0].sum() for _, g in df.groupby("year") if len(g) >= 50]
@@ -222,7 +222,7 @@ def chart_tearsheet(df, res):
     ax[1, 0].bar(yearly.index.astype(str), yearly.values / 1e3, color=GREEN)
     ax[1, 0].set_title("Net P&L by year (USD k)")
     ax[1, 0].tick_params(axis="x", rotation=90, labelsize=8)
-    mret = s.groupby(s.index.month).mean() * 252 / 12
+    mret = s.groupby(s.index.month).mean() * SESSIONS_PER_YEAR / 12
     ax[1, 1].bar([pd.Timestamp(2025, m, 1).strftime("%b") for m in mret.index],
                  mret.values / 1e3, color=[GREEN if v > 0 else RED for v in mret.values])
     ax[1, 1].set_title("Avg P&L by calendar month (USD k)")
@@ -339,7 +339,7 @@ def _basis_stat(pos, df, r_next, px):
     S = pd.Series(np.asarray(px, float)).reset_index(drop=True)
     net = (pos * NOTIONAL * r - turn * NOTIONAL * COST_SIDE_CRC / S).dropna()
     cum = net.cumsum()
-    yrs = len(net) / 252
+    yrs = len(net) / SESSIONS_PER_YEAR
     bps = net / (NOTIONAL / 1e4)
     return net, {"per_year_usd": round(float(net.sum() / yrs)),
                  "sharpe": round(float(bps.mean() / bps.std() * ANN), 2),
@@ -562,7 +562,8 @@ def main():
     df = frame()
     res = {"_meta": {"n_days": int(len(df)), "notional_usd": NOTIONAL,
                      "short_window": [SHORT_START, SHORT_END], "cal_pre": CAL_PRE,
-                     "years": round(len(df) / 252, 1)}}
+                     "sessions_per_year": SESSIONS_PER_YEAR,
+                     "years": round(len(df) / SESSIONS_PER_YEAR, 1)}}
     res["Base quincena (<=15)"] = stat(pos_base(df), df)
     res["Refined (short 5-15)"] = stat(pos_refined(df), df)
     res["Refined + slow-vol sizing"] = stat(pos_refined_slowvol(df), df)

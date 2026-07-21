@@ -34,6 +34,7 @@ import numpy as np
 import pandas as pd
 
 from analyze import OUT, load
+from basis import SESSIONS_PER_YEAR
 from backtest import (
     COST_CRC,
     COST_CRC_RT,
@@ -184,8 +185,8 @@ def chart_close_vs_vwap(df, res, strats):
         res.setdefault("close_vs_vwap", {})[name] = {
             "close_sharpe": round(float(sc), 2),
             "vwap_sharpe": round(float(sv), 2),
-            "close_ann_bps": round(float(np.nanmean(net_c) * 252), 0),
-            "vwap_ann_bps": round(float(np.nanmean(net_v) * 252), 0),
+            "close_ann_bps": round(float(np.nanmean(net_c) * SESSIONS_PER_YEAR), 0),
+            "vwap_ann_bps": round(float(np.nanmean(net_v) * SESSIONS_PER_YEAR), 0),
             "sharpe_haircut": round(float(sc - sv), 2),
         }
         rows.append(name)

@@ -4,7 +4,8 @@
     "notional_usd": 1000000,
     "cost_crc_roundtrip": 0.65,
     "usd_per_bp": 100.0,
-    "years": 10.6
+    "sessions_per_year": 231.0,
+    "years": 11.5
   },
   "vol_on_usd_up": 18.4,
   "vol_on_usd_down": 28.9,
@@ -63,42 +64,42 @@
   },
   "Volume rule": {
     "total_usd": 494979,
-    "per_year_usd": 46857,
+    "per_year_usd": 42953,
     "per_trade_usd": 603,
     "trades_total": 820,
-    "roundtrips_yr": 77.7,
+    "roundtrips_yr": 71.2,
     "win_rate": 50.5,
-    "sharpe": 1.1,
+    "sharpe": 1.06,
     "maxdd_usd": -241581
   },
   "Quincena rule": {
     "total_usd": 918905,
-    "per_year_usd": 86989,
+    "per_year_usd": 79740,
     "per_trade_usd": 3596,
     "trades_total": 256,
-    "roundtrips_yr": 24.2,
+    "roundtrips_yr": 22.2,
     "win_rate": 56.2,
-    "sharpe": 2.05,
+    "sharpe": 1.97,
     "maxdd_usd": -62220
   },
   "Precio-ponderado skew rule": {
     "total_usd": 435180,
-    "per_year_usd": 41197,
+    "per_year_usd": 37764,
     "per_trade_usd": 403,
     "trades_total": 1080,
-    "roundtrips_yr": 102.2,
+    "roundtrips_yr": 93.7,
     "win_rate": 49.5,
-    "sharpe": 0.98,
+    "sharpe": 0.93,
     "maxdd_usd": -396557
   },
   "Combined vote (3 signals)": {
     "total_usd": 940981,
-    "per_year_usd": 89079,
+    "per_year_usd": 81655,
     "per_trade_usd": 1045,
     "trades_total": 900,
-    "roundtrips_yr": 85.2,
+    "roundtrips_yr": 78.1,
     "win_rate": 53.6,
-    "sharpe": 2.12,
+    "sharpe": 2.03,
     "maxdd_usd": -278033
   }
 }

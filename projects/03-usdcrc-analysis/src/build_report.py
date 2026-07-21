@@ -9,10 +9,10 @@ Reads out/{quincena,dynamics,vm,exits,backtest_vwap,ranking,exit_lab}_results.js
 Run last, after analyze / eda / volume_model / dynamics / quincena / exits /
 backtest_vwap / rank_strategies / exit_lab.
 
-ranking.json and exit_lab.json are the newest runs and are annualised on the venue's
-real ~231 sessions/yr; the older per-module JSONs use the legacy 252 basis. Part R
-(unified ranking) and Part A5b (full exit engine) surface the corrected-basis numbers
-and are flagged as superseding the per-module tables for cross-strategy comparison.
+Every JSON this reads is now annualised on ONE basis — the venue's real ~231 sessions/yr,
+sourced from src/basis.py — so the per-module tables and the unified ranking (Part R) agree
+by construction. Part R remains the master cross-strategy comparison because it re-prices
+every rule through a single code path; the per-module parts add the mechanism and context.
 """
 from __future__ import annotations
 
@@ -30,9 +30,9 @@ XB, XTR, XCB, XI, XM = (XT["baseline"], XT["trailing"], XT["trailing_floor"],
                         XT["improve"], XT["_meta"])
 BV = json.loads((OUT / "backtest_vwap_results.json").read_text())
 BVM = BV["_meta"]
-RK = json.loads((OUT / "ranking.json").read_text())        # unified ranking, correct 231-session basis
+RK = json.loads((OUT / "ranking.json").read_text())        # unified ranking, one 231-session basis (src/basis.py)
 RKM = RK["_meta"]
-XL = json.loads((OUT / "exit_lab.json").read_text())        # full exit engine, correct 231-session basis
+XL = json.loads((OUT / "exit_lab.json").read_text())        # full exit engine, one 231-session basis (src/basis.py)
 XLB = XL["baseline"]
 XLR = XL["variants"][XL["recommended"]]                     # recommended overlay (trail 30 / floor 40)
 XLP = XL["stage2_joint"]["bps"]                             # the bps joint-grid selection block
@@ -569,12 +569,14 @@ secondary signals are kept in tabs but default to this rule.</p>
 
 <div class="kpis" style="margin-top:16px">{kpi_html()}</div>
 
-<p class="note"><b>Two accounting bases in this report.</b> Parts A–F are priced on the legacy
-<b>252</b>-session/yr annualisation used by the per-module scripts; MONEX actually trades
-<b>{RKM['sessions_per_year_actual']:.0f}</b> sessions/yr, so those $/yr figures run ~{RKM['per_year_usd_legacy_inflation']*100:.0f}%
-high and their Sharpes ~{RKM['sharpe_legacy_inflation']*100:.1f}% high. The <b>unified ranking (Part R)</b> and the
-<b>full exit engine (A5b)</b> below are the newest runs and are already on the correct {RKM['sessions_per_year_actual']:.0f}-session
-basis — read those two as the authoritative cross-strategy numbers; they supersede the per-module tables.</p>
+<p class="note"><b>One accounting basis throughout.</b> Every figure in this report — every part,
+every table — is priced the same way: <b>VWAP-to-VWAP</b> next session, <b>${DY['_meta']['notional_usd']:,.0f}</b> per
+trade, net of the <b>0.65 CRC</b> round-trip slippage (0.325/side), and annualised on the
+<b>{RKM['sessions_per_year_actual']:.0f}</b> sessions/yr MONEX actually trades — not the 252 equity-market
+convention (which would overstate $/yr by ~{RKM['per_year_usd_legacy_inflation']*100:.0f}% and Sharpe by
+~{RKM['sharpe_legacy_inflation']*100:.1f}%). All modules read this basis from a single source
+(<code>src/basis.py</code>), so the per-module tables (Parts A–F) and the unified ranking (Part R) now agree
+by construction. The <b>unified ranking (Part R)</b> remains the master cross-strategy comparison.</p>
 
 <div class="part">Part A · The recommended strategy — calendar / quincena rule</div>
 <h2><span class="n">A1.</span> The rule &amp; the numbers ($1M per trade, VWAP-priced, net of cost)</h2>
@@ -1028,10 +1030,10 @@ because the VWAP is a steadier reference than a single closing tick.</p>
   re-fit on the test window. In-sample / out-of-sample = chronological 60/40 split at {OREC['split_date']}.
   Reproducible:
   <code>parse_monex → parse_bccr → analyze → … → rank_strategies → exit_lab → intervention → build_report</code>.
-  Parts R, A5b and I read <code>ranking.json</code> / <code>exit_lab.json</code> / <code>intervention_results.json</code>,
-  all annualised on the venue's real {RKM['sessions_per_year_actual']:.0f} sessions/yr; Parts A–F retain the
-  legacy 252 basis of their source modules. Part I adds two BCCR exports (FX intervention CodCuadro 1587,
-  net reserves CodCuadro 8) via <code>parse_bccr.py</code>.
+  Every part is annualised on the venue's real {RKM['sessions_per_year_actual']:.0f} sessions/yr, priced
+  VWAP-to-VWAP net of the 0.65 CRC round trip, from a single basis (<code>src/basis.py</code>) — so the
+  per-module tables (A–F) and the unified ranking (R) agree by construction. Part I adds two BCCR exports
+  (FX intervention CodCuadro 1587, net reserves CodCuadro 8) via <code>parse_bccr.py</code>.
 </footer>
 
 </div>{JS}</body></html>"""

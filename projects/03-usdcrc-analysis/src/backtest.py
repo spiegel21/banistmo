@@ -25,13 +25,13 @@ import numpy as np
 import pandas as pd
 
 from analyze import OUT, load
+from basis import ANN, SESSIONS_PER_YEAR
 
 plt.rcParams.update({
     "figure.facecolor": "white", "axes.grid": True, "grid.alpha": 0.25,
     "axes.spines.top": False, "axes.spines.right": False,
 })
 NAVY, GREEN, RED, GREY, ORANGE = "#1f3b73", "#2e8b57", "#c0392b", "#7f8c8d", "#e08a2b"
-ANN = np.sqrt(252)
 COST_CRC_RT = 0.65        # slippage per ROUND TRIP, in colones (user-specified)
 COST_CRC = COST_CRC_RT / 2   # => per side = 0.325 CRC (~6.8 bps at a ~475 spot)
 OOS_FRAC = 0.60
@@ -74,7 +74,7 @@ def sharpe_lo(x, lag=10):
     sr = x.mean() / x.std()
     xc = x - x.mean()
     d = (xc * xc).sum()
-    q = 252
+    q = SESSIONS_PER_YEAR
     s = sum((q - k) * (xc[k:] * xc[:-k]).sum() / d for k in range(1, lag + 1))
     return float(sr * q / np.sqrt(q + 2 * s))
 
@@ -87,14 +87,14 @@ def block(net, turn=None, n=None):
         "sharpe": round(float(sharpe(x)), 2),
         "sharpe_lo": round(float(sharpe_lo(x)), 2),
         "mean_bps": round(float(x.mean()), 2),
-        "ann_bps": round(float(x.mean() * 252), 0),
+        "ann_bps": round(float(x.mean() * SESSIONS_PER_YEAR), 0),
         "hit": round(float((x[x != 0] > 0).mean() * 100), 1) if (x != 0).any() else 0.0,
         "total_bps": round(float(x.sum()), 0),
         "maxdd_bps": round(float((cum - np.maximum.accumulate(cum)).min()), 0),
         "n": int(len(x)),
     }
     if turn is not None and n is not None:
-        out["roundtrips_yr"] = round(float(turn.sum() / 2 / (n / 252)), 1)
+        out["roundtrips_yr"] = round(float(turn.sum() / 2 / (n / SESSIONS_PER_YEAR)), 1)
     return out
 
 
