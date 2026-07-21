@@ -7,62 +7,63 @@
       15
     ],
     "cal_pre": 6,
-    "years": 10.6
+    "sessions_per_year": 231.0,
+    "years": 11.5
   },
   "Base quincena (<=15)": {
     "total_usd": 918905,
-    "per_year_usd": 86989,
-    "sharpe": 2.05,
-    "roundtrips_yr": 24.2,
+    "per_year_usd": 79740,
+    "sharpe": 1.97,
+    "roundtrips_yr": 22.2,
     "win_rate": 56.2,
     "maxdd_usd": -62220
   },
   "Refined (short 5-15)": {
     "total_usd": 1305209,
-    "per_year_usd": 123558,
-    "sharpe": 2.96,
-    "roundtrips_yr": 24.2,
+    "per_year_usd": 113262,
+    "sharpe": 2.84,
+    "roundtrips_yr": 22.2,
     "win_rate": 59.5,
     "maxdd_usd": -49584
   },
   "Refined + slow-vol sizing": {
     "total_usd": 1084337,
-    "per_year_usd": 102650,
-    "sharpe": 3.37,
-    "roundtrips_yr": 19.9,
+    "per_year_usd": 94095,
+    "sharpe": 3.23,
+    "roundtrips_yr": 18.2,
     "win_rate": 59.2,
     "maxdd_usd": -37451
   },
   "Real calendar (<=6d to deadline)": {
     "total_usd": 1316807,
-    "per_year_usd": 124656,
-    "sharpe": 3.0,
-    "roundtrips_yr": 24.2,
+    "per_year_usd": 114268,
+    "sharpe": 2.88,
+    "roundtrips_yr": 22.2,
     "win_rate": 59.8,
     "maxdd_usd": -47692
   },
   "Calendar + slow-vol (recommended)": {
     "total_usd": 1092458,
-    "per_year_usd": 103418,
-    "sharpe": 3.46,
-    "roundtrips_yr": 19.9,
+    "per_year_usd": 94800,
+    "sharpe": 3.31,
+    "roundtrips_yr": 18.2,
     "win_rate": 59.5,
     "maxdd_usd": -36761
   },
   "oos_refined": {
     "is": {
       "total_usd": 683549,
-      "per_year_usd": 107861,
-      "sharpe": 3.33,
-      "roundtrips_yr": 24.2,
+      "per_year_usd": 98873,
+      "sharpe": 3.19,
+      "roundtrips_yr": 22.2,
       "win_rate": 59.7,
       "maxdd_usd": -46427
     },
     "oos": {
       "total_usd": 621151,
-      "per_year_usd": 146977,
-      "sharpe": 2.79,
-      "roundtrips_yr": 24.3,
+      "per_year_usd": 134729,
+      "sharpe": 2.67,
+      "roundtrips_yr": 22.2,
       "win_rate": 59.2,
       "maxdd_usd": -49584
     },
@@ -74,17 +75,17 @@
   "oos_calendar": {
     "is": {
       "total_usd": 672186,
-      "per_year_usd": 106068,
-      "sharpe": 3.28,
-      "roundtrips_yr": 24.2,
+      "per_year_usd": 97229,
+      "sharpe": 3.14,
+      "roundtrips_yr": 22.2,
       "win_rate": 60.2,
       "maxdd_usd": -44687
     },
     "oos": {
       "total_usd": 644112,
-      "per_year_usd": 152410,
-      "sharpe": 2.91,
-      "roundtrips_yr": 24.3,
+      "per_year_usd": 139709,
+      "sharpe": 2.79,
+      "roundtrips_yr": 22.2,
       "win_rate": 59.3,
       "maxdd_usd": -47692
     },
@@ -96,17 +97,17 @@
   "oos_recommended": {
     "is": {
       "total_usd": 524819,
-      "per_year_usd": 82814,
-      "sharpe": 3.36,
-      "roundtrips_yr": 20.8,
+      "per_year_usd": 75913,
+      "sharpe": 3.22,
+      "roundtrips_yr": 19.1,
       "win_rate": 59.5,
       "maxdd_usd": -23662
     },
     "oos": {
       "total_usd": 568839,
-      "per_year_usd": 134599,
-      "sharpe": 3.71,
-      "roundtrips_yr": 18.4,
+      "per_year_usd": 123382,
+      "sharpe": 3.55,
+      "roundtrips_yr": 16.9,
       "win_rate": 59.3,
       "maxdd_usd": -36761
     },
@@ -119,17 +120,17 @@
     "Base quincena (\u226415)": {
       "is": {
         "total_usd": 428637,
-        "per_year_usd": 67637,
-        "sharpe": 2.05,
-        "roundtrips_yr": 24.2,
+        "per_year_usd": 62001,
+        "sharpe": 1.96,
+        "roundtrips_yr": 22.2,
         "win_rate": 55.9,
         "maxdd_usd": -55144
       },
       "oos": {
         "total_usd": 489759,
-        "per_year_usd": 115887,
-        "sharpe": 2.17,
-        "roundtrips_yr": 24.3,
+        "per_year_usd": 106229,
+        "sharpe": 2.08,
+        "roundtrips_yr": 22.2,
         "win_rate": 56.6,
         "maxdd_usd": -62220
       },
@@ -141,17 +142,17 @@
     "Real calendar": {
       "is": {
         "total_usd": 672186,
-        "per_year_usd": 106068,
-        "sharpe": 3.28,
-        "roundtrips_yr": 24.2,
+        "per_year_usd": 97229,
+        "sharpe": 3.14,
+        "roundtrips_yr": 22.2,
         "win_rate": 60.2,
         "maxdd_usd": -44687
       },
       "oos": {
         "total_usd": 644112,
-        "per_year_usd": 152410,
-        "sharpe": 2.91,
-        "roundtrips_yr": 24.3,
+        "per_year_usd": 139709,
+        "sharpe": 2.79,
+        "roundtrips_yr": 22.2,
         "win_rate": 59.3,
         "maxdd_usd": -47692
       },
@@ -163,17 +164,17 @@
     "Refined (fixed 5\u201315)": {
       "is": {
         "total_usd": 683549,
-        "per_year_usd": 107861,
-        "sharpe": 3.33,
-        "roundtrips_yr": 24.2,
+        "per_year_usd": 98873,
+        "sharpe": 3.19,
+        "roundtrips_yr": 22.2,
         "win_rate": 59.7,
         "maxdd_usd": -46427
       },
       "oos": {
         "total_usd": 621151,
-        "per_year_usd": 146977,
-        "sharpe": 2.79,
-        "roundtrips_yr": 24.3,
+        "per_year_usd": 134729,
+        "sharpe": 2.67,
+        "roundtrips_yr": 22.2,
         "win_rate": 59.2,
         "maxdd_usd": -49584
       },
@@ -185,17 +186,17 @@
     "Refined + slow-vol": {
       "is": {
         "total_usd": 533918,
-        "per_year_usd": 84250,
-        "sharpe": 3.44,
-        "roundtrips_yr": 20.8,
+        "per_year_usd": 77229,
+        "sharpe": 3.3,
+        "roundtrips_yr": 19.0,
         "win_rate": 59.2,
         "maxdd_usd": -25292
       },
       "oos": {
         "total_usd": 553845,
-        "per_year_usd": 131051,
-        "sharpe": 3.5,
-        "roundtrips_yr": 18.4,
+        "per_year_usd": 120130,
+        "sharpe": 3.35,
+        "roundtrips_yr": 16.9,
         "win_rate": 59.2,
         "maxdd_usd": -37451
       },
@@ -207,17 +208,17 @@
     "Calendar + slow-vol": {
       "is": {
         "total_usd": 524819,
-        "per_year_usd": 82814,
-        "sharpe": 3.36,
-        "roundtrips_yr": 20.8,
+        "per_year_usd": 75913,
+        "sharpe": 3.22,
+        "roundtrips_yr": 19.1,
         "win_rate": 59.5,
         "maxdd_usd": -23662
       },
       "oos": {
         "total_usd": 568839,
-        "per_year_usd": 134599,
-        "sharpe": 3.71,
-        "roundtrips_yr": 18.4,
+        "per_year_usd": 123382,
+        "sharpe": 3.55,
+        "roundtrips_yr": 16.9,
         "win_rate": 59.3,
         "maxdd_usd": -36761
       },
@@ -227,8 +228,8 @@
       "oos_end": "2026-06-19"
     }
   },
-  "window_sharpe_min": 1.1,
-  "window_sharpe_max": 2.97,
+  "window_sharpe_min": 1.05,
+  "window_sharpe_max": 2.84,
   "refined_worst_year_usd": 34424,
   "interaction_bps": {
     "1st half|high vol": -11.0,
@@ -258,13 +259,13 @@
   "calendar_worst_year_usd": 24447,
   "execution": {
     "vwap": {
-      "per_year_usd": 103418,
-      "sharpe": 3.46,
+      "per_year_usd": 94800,
+      "sharpe": 3.31,
       "maxdd_usd": -36761
     },
     "close": {
-      "per_year_usd": 103631,
-      "sharpe": 3.34,
+      "per_year_usd": 94995,
+      "sharpe": 3.2,
       "maxdd_usd": -33729
     }
   },
@@ -286,8 +287,8 @@
       "var99": -25984.96,
       "min": -49583.93,
       "max": 40102.56,
-      "is_sharpe": 2.05,
-      "oos_sharpe": 2.17
+      "is_sharpe": 1.96,
+      "oos_sharpe": 2.08
     },
     "Real calendar": {
       "n": 103,
@@ -301,8 +302,8 @@
       "var99": -28949.45,
       "min": -36497.46,
       "max": 46598.19,
-      "is_sharpe": 3.28,
-      "oos_sharpe": 2.91
+      "is_sharpe": 3.14,
+      "oos_sharpe": 2.79
     },
     "Refined + slow-vol": {
       "n": 103,
@@ -316,8 +317,8 @@
       "var99": -13908.49,
       "min": -19232.52,
       "max": 36736.58,
-      "is_sharpe": 3.44,
-      "oos_sharpe": 3.5
+      "is_sharpe": 3.3,
+      "oos_sharpe": 3.35
     },
     "Calendar + slow-vol": {
       "n": 103,
@@ -331,23 +332,23 @@
       "var99": -14794.69,
       "min": -18494.87,
       "max": 39446.89,
-      "is_sharpe": 3.36,
-      "oos_sharpe": 3.71
+      "is_sharpe": 3.22,
+      "oos_sharpe": 3.55
     }
   },
   "return_dist_best": "Calendar + slow-vol",
   "calendar_pre_sharpe": {
-    "3": 1.51,
-    "4": 2.15,
-    "5": 2.69,
-    "6": 3.0,
-    "7": 3.01,
-    "8": 2.82,
-    "9": 2.45,
-    "10": 2.03
+    "3": 1.45,
+    "4": 2.05,
+    "5": 2.58,
+    "6": 2.88,
+    "7": 2.88,
+    "8": 2.7,
+    "9": 2.34,
+    "10": 1.95
   },
-  "calendar_pre_sharpe_min": 1.51,
-  "calendar_pre_sharpe_max": 3.01,
+  "calendar_pre_sharpe_min": 1.45,
+  "calendar_pre_sharpe_max": 2.88,
   "trading_calendar": {
     "1": "LONG USD",
     "2": "LONG USD",

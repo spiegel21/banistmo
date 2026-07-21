@@ -15,6 +15,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import numpy as np
+from basis import ANN, SESSIONS_PER_YEAR
 import pandas as pd
 import matplotlib
 
@@ -76,7 +77,7 @@ def section_overview(df):
           f"  max {df.n_trades.max():.0f}")
     print(f"Avg ticket (US$)    : mean {df.avg_ticket_usd.mean():,.0f}  median {df.avg_ticket_usd.median():,.0f}")
     print(f"Daily |VWAP move|   : mean {df.ret_vwap_bps.abs().mean():.1f} bps  "
-          f"std {df.ret_vwap_bps.std():.1f} bps  (annualized vol ~{df.ret_vwap_bps.std()/1e4*np.sqrt(252)*100:.1f}%)")
+          f"std {df.ret_vwap_bps.std():.1f} bps  (annualized vol ~{df.ret_vwap_bps.std()/1e4*ANN*100:.1f}%)")
 
 
 def section_price_model(df):
@@ -132,7 +133,7 @@ def section_price_model(df):
     sl, ic, rr, pv, se = stats.linregress(df["t"], df["vwap"])
     print("\n(e) SECULAR DRIFT (crawl)")
     print(f"    VWAP ~ {ic:.2f} {sl:+.4f}*day   => {sl*21:+.3f} colones/month, "
-          f"{sl*252:+.2f} colones/yr  (R^2={rr**2:.3f})")
+          f"{sl*SESSIONS_PER_YEAR:+.2f} colones/yr  (R^2={rr**2:.3f})")
 
     # chart: VWAP path + open-gap anchoring
     fig, ax = plt.subplots(2, 1, figsize=(11, 8), height_ratios=[2, 1])
@@ -292,7 +293,7 @@ def _sharpe(daily_bps):
     daily_bps = pd.Series(daily_bps).dropna()
     if daily_bps.std() == 0 or len(daily_bps) < 5:
         return np.nan
-    return daily_bps.mean() / daily_bps.std() * np.sqrt(252)
+    return daily_bps.mean() / daily_bps.std() * ANN
 
 
 def section_signals(df):

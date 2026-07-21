@@ -17,6 +17,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+from basis import ANN
 import pandas as pd
 
 from analyze import OUT, load
@@ -30,7 +31,7 @@ GREEN, NAVY, RED, GREY = "#2e8b57", "#1f3b73", "#c0392b", "#7f8c8d"
 
 def _sharpe(x):
     x = pd.Series(x).dropna()
-    return np.nan if x.std() == 0 or len(x) < 5 else x.mean() / x.std() * np.sqrt(252)
+    return np.nan if x.std() == 0 or len(x) < 5 else x.mean() / x.std() * ANN
 
 
 def _maxdd(cum):

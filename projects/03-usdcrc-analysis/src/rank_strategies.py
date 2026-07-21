@@ -48,13 +48,13 @@ import numpy as np
 import pandas as pd
 
 from analyze import OUT
+from basis import NOTIONAL_USD as NOTIONAL
+from basis import COST_CRC_PER_SIDE as COST_SIDE_CRC
+from basis import ann_days, SESSIONS_PER_YEAR_LEGACY
 from exits import apply_exit
 from quincena import (CAL_PRE, OOS_FRAC, SHORT_END, SHORT_START, frame,
                       pos_base, pos_calendar, pos_calendar_slowvol,
                       pos_refined, pos_refined_slowvol)
-
-NOTIONAL = 1_000_000
-COST_SIDE_CRC = 0.325          # 0.65 CRC round trip
 NAVY, GREEN, RED, GREY, PURPLE, ORANGE = (
     "#1f3b73", "#2e8b57", "#c0392b", "#7f8c8d", "#7d3c98", "#e08a2b")
 
@@ -62,16 +62,6 @@ NAVY, GREEN, RED, GREY, PURPLE, ORANGE = (
 # --------------------------------------------------------------------------- #
 # accounting
 # --------------------------------------------------------------------------- #
-def ann_days(df):
-    """Sessions per year measured from the data itself (~231 for MONEX).
-
-    The other modules assume 252. Using the real density matters: it rescales
-    every per-year P&L by 231/252 and every Sharpe by sqrt(231/252).
-    """
-    span_yrs = (df.date.max() - df.date.min()).days / 365.25
-    return len(df) / span_yrs
-
-
 def pnl(pos, df):
     """Daily net P&L in USD for a position series, VWAP-to-VWAP, net of slippage.
 
@@ -266,9 +256,9 @@ def main():
             "date_min": str(df.date.min().date()),
             "date_max": str(df.date.max().date()),
             "sessions_per_year_actual": round(float(apy), 1),
-            "sessions_per_year_legacy": 252,
-            "per_year_usd_legacy_inflation": round(252 / apy - 1, 4),
-            "sharpe_legacy_inflation": round(float(np.sqrt(252 / apy) - 1), 4),
+            "sessions_per_year_legacy": SESSIONS_PER_YEAR_LEGACY,
+            "per_year_usd_legacy_inflation": round(SESSIONS_PER_YEAR_LEGACY / apy - 1, 4),
+            "sharpe_legacy_inflation": round(float(np.sqrt(SESSIONS_PER_YEAR_LEGACY / apy) - 1), 4),
             "notional_usd": NOTIONAL,
             "cost_crc_per_side": COST_SIDE_CRC,
             "basis": "VWAP-to-VWAP next session, net of slippage",

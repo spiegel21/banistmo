@@ -25,9 +25,10 @@ from analyze import OUT, load
 plt.rcParams.update({"figure.facecolor": "white", "axes.grid": True, "grid.alpha": 0.25,
                      "axes.spines.top": False, "axes.spines.right": False})
 NAVY, GREEN, RED, GREY, ORANGE, PURPLE = "#1f3b73", "#2e8b57", "#c0392b", "#7f8c8d", "#e08a2b", "#7d3c98"
-NOTIONAL = 1_000_000       # USD per full position
-COST_SIDE_CRC = 0.325      # 0.65 round-trip
-ANN = np.sqrt(252)
+from basis import ANN, SESSIONS_PER_YEAR
+from basis import NOTIONAL_USD as NOTIONAL
+from basis import COST_CRC_PER_SIDE as COST_SIDE_CRC
+
 USD_PER_BP = NOTIONAL / 1e4   # = 100
 
 
@@ -87,7 +88,7 @@ def dollars(pos, df):
 def rule_stats(pos, df):
     net, turn = dollars(pos, df)
     cum = net.cumsum()
-    years = len(net) / 252
+    years = len(net) / SESSIONS_PER_YEAR
     trades = float(np.nansum(turn) / 2)
     bps = net / USD_PER_BP
     return {
@@ -214,8 +215,9 @@ def chart_dollar_equity(df, rules, res):
 def main():
     df = frame()
     res = {"_meta": {"n_days": int(len(df)), "notional_usd": NOTIONAL,
-                     "cost_crc_roundtrip": 0.65, "usd_per_bp": USD_PER_BP,
-                     "years": round(len(df) / 252, 1)}}
+                     "cost_crc_roundtrip": COST_SIDE_CRC * 2, "usd_per_bp": USD_PER_BP,
+                     "sessions_per_year": SESSIONS_PER_YEAR,
+                     "years": round(len(df) / SESSIONS_PER_YEAR, 1)}}
     chart_mechanism(df, res)
     chart_domcycle(df, res)
     chart_skew(df, res)
