@@ -31,12 +31,12 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.preprocessing import StandardScaler
 
 from analyze import OUT, load
+from basis import ANN, SESSIONS_PER_YEAR
 
 warnings.filterwarnings("ignore")
 plt.rcParams.update({"figure.facecolor": "white", "axes.grid": True, "grid.alpha": 0.25,
                      "axes.spines.top": False, "axes.spines.right": False})
 NAVY, GREEN, RED, GREY, ORANGE, PURPLE = "#1f3b73", "#2e8b57", "#c0392b", "#7f8c8d", "#e08a2b", "#7d3c98"
-from basis import ANN, SESSIONS_PER_YEAR
 COST_SIDE = 0.325            # 0.65 CRC round-trip
 DOW = ["Mon", "Tue", "Wed", "Thu", "Fri"]
 

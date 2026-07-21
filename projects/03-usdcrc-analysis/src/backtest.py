@@ -25,13 +25,13 @@ import numpy as np
 import pandas as pd
 
 from analyze import OUT, load
+from basis import ANN, SESSIONS_PER_YEAR
 
 plt.rcParams.update({
     "figure.facecolor": "white", "axes.grid": True, "grid.alpha": 0.25,
     "axes.spines.top": False, "axes.spines.right": False,
 })
 NAVY, GREEN, RED, GREY, ORANGE = "#1f3b73", "#2e8b57", "#c0392b", "#7f8c8d", "#e08a2b"
-from basis import ANN, SESSIONS_PER_YEAR
 COST_CRC_RT = 0.65        # slippage per ROUND TRIP, in colones (user-specified)
 COST_CRC = COST_CRC_RT / 2   # => per side = 0.325 CRC (~6.8 bps at a ~475 spot)
 OOS_FRAC = 0.60

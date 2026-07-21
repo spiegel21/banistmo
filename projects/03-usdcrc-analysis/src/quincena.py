@@ -22,15 +22,15 @@ import pandas as pd
 from scipy import stats as sps
 
 from analyze import OUT, load
+from basis import ANN, SESSIONS_PER_YEAR
+from basis import NOTIONAL_USD as NOTIONAL
+from basis import COST_CRC_PER_SIDE as COST_SIDE_CRC
 from payment_calendar import annotate
 
 plt.rcParams.update({"figure.facecolor": "white", "axes.grid": True, "grid.alpha": 0.25,
                      "axes.spines.top": False, "axes.spines.right": False,
                      "text.parse_math": False})  # '$' are currency, not math delimiters
 NAVY, GREEN, RED, GREY, PURPLE = "#1f3b73", "#2e8b57", "#c0392b", "#7f8c8d", "#7d3c98"
-from basis import ANN, SESSIONS_PER_YEAR
-from basis import NOTIONAL_USD as NOTIONAL
-from basis import COST_CRC_PER_SIDE as COST_SIDE_CRC
 SHORT_START, SHORT_END = 5, 15      # fixed day-of-month short-USD window (legacy proxy)
 CAL_PRE = 6                         # calendar rule: short USD this many trading days
                                     # before the IVA/quincena deadline, through the deadline
