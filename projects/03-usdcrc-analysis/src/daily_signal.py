@@ -32,11 +32,31 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
-from analyze import OUT, load
-from quincena import CAL_PRE, NOTIONAL
+from basis import CAL_PRE
+from basis import NOTIONAL_USD as NOTIONAL
 from payment_calendar import td_to_iva_for
 
 DOW_NAME = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+ROOT = Path(__file__).resolve().parents[1]
+OUT = ROOT / "out"
+OUT.mkdir(exist_ok=True)
+
+
+def load() -> pd.DataFrame:
+    """Minimal trading-day loader for the daily signal (pandas/numpy only).
+
+    Reads just the columns the signal actually uses (date, close, vwap,
+    volume_usd) from ``data/monex_clean.csv`` and drops non-trading days — the
+    same slice ``analyze.load()`` produces, but importing none of the research
+    stack (matplotlib/scipy). That keeps this module — and the production
+    notifier that reuses it — runnable on a work machine with only pandas+numpy
+    installed, so the daily job stays light.
+    """
+    clean = ROOT / "data" / "monex_clean.csv"
+    df = pd.read_csv(clean, parse_dates=["date"])
+    df = df[df["is_trading_day"]].copy().sort_values("date").reset_index(drop=True)
+    return df
 
 
 def build_history() -> pd.DataFrame:

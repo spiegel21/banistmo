@@ -25,6 +25,7 @@ from analyze import OUT, load
 from basis import ANN, SESSIONS_PER_YEAR
 from basis import NOTIONAL_USD as NOTIONAL
 from basis import COST_CRC_PER_SIDE as COST_SIDE_CRC
+from basis import CAL_PRE  # canonical home is basis.py; re-exported here for dependents
 from payment_calendar import annotate
 
 plt.rcParams.update({"figure.facecolor": "white", "axes.grid": True, "grid.alpha": 0.25,
@@ -32,8 +33,7 @@ plt.rcParams.update({"figure.facecolor": "white", "axes.grid": True, "grid.alpha
                      "text.parse_math": False})  # '$' are currency, not math delimiters
 NAVY, GREEN, RED, GREY, PURPLE = "#1f3b73", "#2e8b57", "#c0392b", "#7f8c8d", "#7d3c98"
 SHORT_START, SHORT_END = 5, 15      # fixed day-of-month short-USD window (legacy proxy)
-CAL_PRE = 6                         # calendar rule: short USD this many trading days
-                                    # before the IVA/quincena deadline, through the deadline
+# CAL_PRE (calendar rule window) now lives in basis.py and is imported above.
 OOS_FRAC = 0.60                     # chronological split: first 60% in-sample, last 40% out-of-sample
                                     # (matches backtest.py / backtest_vwap.py)
 
