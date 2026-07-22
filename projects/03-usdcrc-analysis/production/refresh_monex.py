@@ -19,8 +19,7 @@ from __future__ import annotations
 import sys
 import urllib.request
 from dataclasses import dataclass
-from datetime import date, timedelta
-from pathlib import Path
+from datetime import date
 
 import pandas as pd
 
