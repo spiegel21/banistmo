@@ -89,8 +89,8 @@ def _parse_date(s: str):
         return None
 
 
-def parse() -> pd.DataFrame:
-    html = RAW.read_text(encoding="windows-1252")
+def parse(raw: Path = RAW) -> pd.DataFrame:
+    html = Path(raw).read_text(encoding="windows-1252")
     trs = re.findall(r"<tr.*?</tr>", html, re.S)
 
     def cells(tr):

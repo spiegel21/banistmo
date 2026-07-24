@@ -1,0 +1,14 @@
+# Minimal runtime for the daily-signal notifier — a fraction of the research
+# stack in ../requirements.txt (no scipy / statsmodels / scikit-learn / weasyprint,
+# which are only needed for the backtests and are painful to install on Windows).
+#
+# Required:
+pandas
+numpy
+
+# Optional — install only if you want the corresponding feature:
+#   pywin32     -> send the signal as an Outlook e-mail (NOTIFY_CHANNEL outlook/both/auto)
+#                  The popup channel needs nothing beyond the standard library.
+#   matplotlib  -> render/attach the one-page PNG signal card (config.ATTACH_PNG)
+# pywin32
+# matplotlib

@@ -30,6 +30,13 @@ COST_CRC_ROUNDTRIP = 0.65         # == 2 * COST_CRC_PER_SIDE
 SESSIONS_PER_YEAR = 231.0         # MONEX's real trading density (not 252)
 SESSIONS_PER_YEAR_LEGACY = 252    # the equity convention this project deliberately drops
 
+# Calendar (quincena) rule window — the single tunable of the recommended strategy:
+# SHORT USD when within CAL_PRE business days of the IVA/quincena deadline (through
+# it), LONG otherwise. Lives here (the basis) rather than in quincena.py so the
+# lightweight daily-signal path can read it without importing the research stack;
+# quincena.py re-exports it, so its dependents are unaffected.
+CAL_PRE = 6
+
 # Sharpe annualisation factor (daily Sharpe * ANN = annualised Sharpe).
 ANN = math.sqrt(SESSIONS_PER_YEAR)
 
