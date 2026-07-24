@@ -59,28 +59,70 @@ the message can never drift from the backtested rule.
   that machine isn't on CR time, set `-Time` to the CR-close equivalent in local
   time (see the PowerShell script's header).
 
+## Can I run this on my work laptop?
+
+Almost certainly yes. It's a normal Python script plus a per-user scheduled task —
+**no admin rights, no server, no database, no open ports**. Here's the checklist:
+
+| Requirement | Needed for | If you don't have it |
+|-------------|-----------|----------------------|
+| **Windows 10/11** | popup, Outlook, Task Scheduler | These are Windows-only. On Mac/Linux the script still runs and writes `out/daily_signal.txt`, just without the popup/Outlook/Task-Scheduler wiring. |
+| **Python 3.10+** | everything | Install from [python.org](https://www.python.org/downloads/windows/) (tick **"Add python.exe to PATH"**) or the Microsoft Store — both install per-user, no admin. Check with `python --version`. |
+| **`pip install` access** | pandas + numpy (~1 min) | If your network blocks PyPI, set the corporate proxy: `pip install --proxy http://user:pass@proxy:port -r ...`, or ask IT to allow `pypi.org`. |
+| **Outlook desktop, signed in** | the e-mail channel only | Use `--channel popup` instead — it needs nothing beyond the standard library. |
+| **Reach to `gee.bccr.fi.cr`** | the daily data refresh only | **Optional.** If BCCR is blocked (VPN/proxy), the job still runs on the data shipped in the repo — the LONG/SHORT direction is always correct; only the size multiplier can be a bit stale. Run with `--no-refresh` to skip the fetch entirely. |
+
+Footprint: one ~2-second run per day, ~150 MB peak RAM, a few MB on disk. Nothing runs in the background between runs.
+
 ## Setup (on the Windows work computer)
 
+**0. Get the code onto the laptop.** Clone the repo (or download the ZIP from
+GitHub → *Code* → *Download ZIP* and unzip it), then open **PowerShell** in it:
+
 ```powershell
-cd projects\03-usdcrc-analysis
+git clone https://github.com/spiegel21/banistmo.git
+cd banistmo\projects\03-usdcrc-analysis
+```
+
+**1. Create an isolated environment and install the two runtime deps:**
+
+```powershell
 py -m venv .venv
 .\.venv\Scripts\Activate.ps1
 pip install -r production\requirements-prod.txt
-# for the Outlook channel also:  pip install pywin32
-# for the PNG card also:         pip install matplotlib
-
-# try it once (writes out\daily_signal.txt and pops/sends per config):
-python production\run_notifier.py --channel popup
-
-# schedule it (weekdays 16:45 local):
-cd production
-powershell -ExecutionPolicy Bypass -File .\Register-DailySignalTask.ps1
-# e.g. Outlook e-mail, machine on Colombia time (17:45 = 16:45 CR):
-#   .\Register-DailySignalTask.ps1 -Time 17:45 -Channel outlook
+# for the Outlook e-mail channel also:  pip install pywin32
+# for the PNG card also:                pip install matplotlib
 ```
 
-Run the task on demand to verify: `Start-ScheduledTask -TaskName "USDCRC Daily Signal"`.
-Remove it with `Unregister-ScheduledTask -TaskName "USDCRC Daily Signal" -Confirm:$false`.
+**2. Try it once** (writes `out\daily_signal.txt` and pops up / e-mails per config):
+
+```powershell
+python production\run_notifier.py --channel popup      # a message box appears
+python production\run_notifier.py --channel outlook     # an e-mail lands in your inbox
+python production\run_notifier.py --no-refresh          # skip the BCCR fetch (fully offline)
+```
+
+**3. Schedule it** (weekday task, fires 16:45 local by default):
+
+```powershell
+cd production
+powershell -ExecutionPolicy Bypass -File .\Register-DailySignalTask.ps1
+# examples:
+#   Outlook e-mail, laptop on Colombia time (17:45 local = 16:45 CR):
+#     .\Register-DailySignalTask.ps1 -Time 17:45 -Channel outlook
+#   popup only, laptop already on CR time:
+#     .\Register-DailySignalTask.ps1 -Channel popup
+```
+
+**4. Verify / manage the task:**
+
+```powershell
+Start-ScheduledTask   -TaskName "USDCRC Daily Signal"                  # run it right now
+Get-ScheduledTaskInfo -TaskName "USDCRC Daily Signal"                  # last run time + result
+Unregister-ScheduledTask -TaskName "USDCRC Daily Signal" -Confirm:$false  # remove it
+```
+
+If anything misbehaves, the full story is in `production\logs\notifier.log`.
 
 ## Configuration
 
