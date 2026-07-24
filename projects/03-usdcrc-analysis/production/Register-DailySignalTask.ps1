@@ -2,23 +2,20 @@
   Register (or update) the Windows Scheduled Task that runs the USD/CRC daily
   signal notifier every weekday after the Costa Rica market close.
 
-  Costa Rica is UTC-6 year-round (no daylight saving). MONEX trades ~09:00-16:00
-  CST and BCCR posts the day's session shortly after; the default 16:45 fires
-  after that, so the notification is for the NEXT session with today's data in
-  hand. IMPORTANT: Task Scheduler uses the WORK COMPUTER'S local time. If that
-  machine is not on CR time, pass -Time as the CR-close equivalent in local time
-  (e.g. a machine in Colombia/UTC-5 would use "17:45" for 16:45 CR).
+  Fires on the WORK COMPUTER'S local clock. Default is 13:50 local. Override with
+  -Time "HH:mm" for a different local time. (For reference, Costa Rica is UTC-6
+  year-round with no daylight saving, and MONEX trades ~09:00-16:00 CST.)
 
   Usage (run in PowerShell, no admin needed for a per-user task):
       cd projects\03-usdcrc-analysis\production
       powershell -ExecutionPolicy Bypass -File .\Register-DailySignalTask.ps1
-      powershell -ExecutionPolicy Bypass -File .\Register-DailySignalTask.ps1 -Time 17:45 -Channel popup
+      powershell -ExecutionPolicy Bypass -File .\Register-DailySignalTask.ps1 -Time 13:50 -Channel popup
 
   Remove it later with:
       Unregister-ScheduledTask -TaskName "USDCRC Daily Signal" -Confirm:$false
 #>
 param(
-    [string]$Time = "16:45",                       # local clock time to fire (see note above)
+    [string]$Time = "13:50",                       # local clock time to fire
     [string]$TaskName = "USDCRC Daily Signal",
     [ValidateSet("auto", "outlook", "popup", "both", "none")]
     [string]$Channel = "",                          # blank = use config.py default

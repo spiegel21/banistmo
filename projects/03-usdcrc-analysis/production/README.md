@@ -102,16 +102,14 @@ python production\run_notifier.py --channel outlook     # an e-mail lands in you
 python production\run_notifier.py --no-refresh          # skip the BCCR fetch (fully offline)
 ```
 
-**3. Schedule it** (weekday task, fires 16:45 local by default):
+**3. Schedule it** (weekday task, fires 13:50 on the laptop's local clock by default):
 
 ```powershell
 cd production
 powershell -ExecutionPolicy Bypass -File .\Register-DailySignalTask.ps1
 # examples:
-#   Outlook e-mail, laptop on Colombia time (17:45 local = 16:45 CR):
-#     .\Register-DailySignalTask.ps1 -Time 17:45 -Channel outlook
-#   popup only, laptop already on CR time:
-#     .\Register-DailySignalTask.ps1 -Channel popup
+#   different local time:      .\Register-DailySignalTask.ps1 -Time 16:45
+#   popup only:                .\Register-DailySignalTask.ps1 -Channel popup
 ```
 
 **4. Verify / manage the task:**
@@ -123,6 +121,30 @@ Unregister-ScheduledTask -TaskName "USDCRC Daily Signal" -Confirm:$false  # remo
 ```
 
 If anything misbehaves, the full story is in `production\logs\notifier.log`.
+
+## Running it on demand (no scheduler)
+
+You don't need the scheduled task to get a signal — three ways to trigger one yourself:
+
+1. **Double-click `production\Signal-Now.bat`.** It runs the whole thing, shows the
+   sheet in a window, e-mails/pops it, and waits for a keypress. For a clickable
+   desktop icon, right-click it → *Send to* → *Desktop (create shortcut)* (then
+   rename / set an icon if you like). This is the "click an app" option.
+2. **One CLI command** (from the project folder, venv active):
+   ```powershell
+   python production\run_notifier.py                 # uses config defaults
+   python production\run_notifier.py --channel popup  # force a popup
+   ```
+   The scheduled task's `Start-ScheduledTask ...` above also works as a trigger.
+3. **A real standalone `.exe`** (optional): if you specifically want a single
+   double-clickable executable that runs without a Python install, you can build
+   one with [PyInstaller](https://pyinstaller.org): `pip install pyinstaller`, then
+   `pyinstaller --onefile --console --paths src production\run_notifier.py`. Note the
+   trade-offs — the exe is ~100 MB, still needs the `data\` and `out\` folders beside
+   it, must be rebuilt when the code changes, and an unsigned exe may be flagged by
+   corporate SmartScreen/antivirus. For a single work laptop the `.bat` in (1) is
+   simpler and avoids all of that; the exe only earns its keep if you're handing the
+   tool to someone who has no Python. Ask and I can add a ready-made build script.
 
 ## Configuration
 
